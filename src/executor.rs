@@ -66,19 +66,15 @@ impl WaitPoll {
 impl Future for WaitPoll {
     type Output = ();
 
-    fn poll(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Self::Output> {
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match &mut self.get_mut().0 {
             this @ WaitPollInner::Unregistered(_) => {
                 let waker = Arc::new(WaitPollWaker::new(cx.waker()));
 
                 if let Some(sender) = POLLABLE_SINK.get() {
-                    if let WaitPollInner::Unregistered(pollable) = mem::replace(
-                        this,
-                        WaitPollInner::Registered(waker.clone()),
-                    ) {
+                    if let WaitPollInner::Unregistered(pollable) =
+                        mem::replace(this, WaitPollInner::Registered(waker.clone()))
+                    {
                         sender
                             .clone()
                             .unbounded_send(TableEntry(pollable, waker.into()))
@@ -89,9 +85,7 @@ impl Future for WaitPoll {
                         unreachable!();
                     }
                 } else {
-                    panic!(
-                        "cannot create a WaitPoll before creating an Executor"
-                    );
+                    panic!("cannot create a WaitPoll before creating an Executor");
                 }
             }
             WaitPollInner::Registered(waker) => {
@@ -193,9 +187,7 @@ impl Executor {
 
         loop {
             match rx.try_recv() {
-                Err(_) => panic!(
-                    "internal error: sender of run until has been dropped"
-                ),
+                Err(_) => panic!("internal error: sender of run until has been dropped"),
                 Ok(Some(val)) => return val,
                 Ok(None) => {
                     self.poll_local();

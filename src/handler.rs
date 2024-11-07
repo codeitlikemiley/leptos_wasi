@@ -16,25 +16,23 @@ use hydration_context::SsrSharedContext;
 use leptos::{
     prelude::{provide_context, Owner, ScopedFuture},
     server_fn::{
-        codec::Encoding, http_export::Request,
-        response::generic::Body as ServerFnBody, ServerFn, ServerFnTraitObj,
+        codec::Encoding, http_export::Request, response::generic::Body as ServerFnBody, ServerFn,
+        ServerFnTraitObj,
     },
     IntoView,
 };
 use leptos_integration_utils::{ExtendResponse, PinnedStream};
 use leptos_meta::ServerMetaContext;
 use leptos_router::{
-    components::provide_server_redirect, location::RequestUrl, PathSegment,
-    RouteList, RouteListing, SsrMode,
+    components::provide_server_redirect, location::RequestUrl, PathSegment, RouteList,
+    RouteListing, SsrMode,
 };
 use mime_guess::MimeGuess;
 use routefinder::Router;
 use server_fn::middleware::Service;
 use thiserror::Error;
 
-use wasi::http::types::{
-    IncomingRequest, OutgoingBody, OutgoingResponse, ResponseOutparam,
-};
+use wasi::http::types::{IncomingRequest, OutgoingBody, OutgoingResponse, ResponseOutparam};
 
 use crate::{
     response::{Body, Response, ResponseOptions},
@@ -103,8 +101,7 @@ pub struct Handler {
     res_out: ResponseOutparam,
 
     // *shortcut* if any is set
-    server_fn:
-        Option<ServerFnTraitObj<Request<Bytes>, http::Response<ServerFnBody>>>,
+    server_fn: Option<ServerFnTraitObj<Request<Bytes>, http::Response<ServerFnBody>>>,
     preset_res: Option<Response>,
     should_404: bool,
 
@@ -116,10 +113,7 @@ impl Handler {
     /// Wraps the WASI resources to handle the request.
     /// Could fail if the [`IncomingRequest`] cannot be converted to
     /// a [`http:Request`].
-    pub fn build(
-        req: IncomingRequest,
-        res_out: ResponseOutparam,
-    ) -> Result<Self, HandlerError> {
+    pub fn build(req: IncomingRequest, res_out: ResponseOutparam) -> Result<Self, HandlerError> {
         Ok(Self {
             req: crate::request::Request(req).try_into()?,
             res_out,
@@ -142,18 +136,14 @@ impl Handler {
     /// the call to [`Handler::handle_with_context`].
     pub fn with_server_fn<T>(mut self) -> Self
     where
-        T: ServerFn<
-                ServerRequest = Request<Bytes>,
-                ServerResponse = http::Response<ServerFnBody>,
-            > + 'static,
+        T: ServerFn<ServerRequest = Request<Bytes>, ServerResponse = http::Response<ServerFnBody>>
+            + 'static,
     {
         if self.shortcut() {
             return self;
         }
 
-        if self.req.method() == T::InputEncoding::METHOD
-            && self.req.uri().path() == T::PATH
-        {
+        if self.req.method() == T::InputEncoding::METHOD && self.req.uri().path() == T::PATH {
             self.server_fn = Some(ServerFnTraitObj::new(
                 T::PATH,
                 T::InputEncoding::METHOD,
@@ -186,9 +176,12 @@ impl Handler {
             return self;
         }
 
-        if let Some(trimmed_url) = self.req.uri().path().strip_prefix(
-            prefix.try_into().expect("you passed an invalid Uri").path(),
-        ) {
+        if let Some(trimmed_url) = self
+            .req
+            .uri()
+            .path()
+            .strip_prefix(prefix.try_into().expect("you passed an invalid Uri").path())
+        {
             match handler(trimmed_url.to_string()) {
                 None => self.should_404 = true,
                 Some(body) => {
@@ -197,10 +190,8 @@ impl Handler {
 
                     res.headers_mut().insert(
                         http::header::CONTENT_TYPE,
-                        HeaderValue::from_str(
-                            mime.first_or_octet_stream().as_ref(),
-                        )
-                        .expect("internal error: could not parse MIME type"),
+                        HeaderValue::from_str(mime.first_or_octet_stream().as_ref())
+                            .expect("internal error: could not parse MIME type"),
                     );
 
                     self.preset_res = Some(Response(res));
@@ -213,10 +204,7 @@ impl Handler {
 
     /// This mocks a request to the `app_fn` component to extract your
     /// `<Router>`'s `<Routes>`.
-    pub fn generate_routes<IV>(
-        self,
-        app_fn: impl Fn() -> IV + 'static + Send + Clone,
-    ) -> Self
+    pub fn generate_routes<IV>(self, app_fn: impl Fn() -> IV + 'static + Send + Clone) -> Self
     where
         IV: IntoView + 'static,
     {
@@ -236,11 +224,7 @@ impl Handler {
     where
         IV: IntoView + 'static,
     {
-        self.generate_routes_with_exclusions_and_context(
-            app_fn,
-            None,
-            additional_context,
-        )
+        self.generate_routes_with_exclusions_and_context(app_fn, None, additional_context)
     }
 
     /// This mocks a request to the `app_fn` component to extract your
@@ -321,106 +305,116 @@ impl Handler {
         let req = Request::from_parts(parts, body);
 
         let owner = Owner::new();
-        let response = owner.with(|| {
-            ScopedFuture::new(async move {
-                let res_opts = ResponseOptions::default();
-                let response: Option<Response> = if self.should_404 {
-                    None
-                } else if self.preset_res.is_some() {
-                    self.preset_res
-                } else if let Some(mut sfn) = self.server_fn {
-                    provide_contexts(additional_context, context_parts, res_opts.clone());
+        let response = owner
+            .with(|| {
+                ScopedFuture::new(async move {
+                    let res_opts = ResponseOptions::default();
+                    let response: Option<Response> = if self.should_404 {
+                        None
+                    } else if self.preset_res.is_some() {
+                        self.preset_res
+                    } else if let Some(mut sfn) = self.server_fn {
+                        provide_contexts(additional_context, context_parts, res_opts.clone());
 
-                    // store Accepts and Referer in case we need them for redirect (below)
-                    let accepts_html = req
-                        .headers()
-                        .get(ACCEPT)
-                        .and_then(|v| v.to_str().ok())
-                        .map(|v| v.contains("text/html"))
-                        .unwrap_or(false);
-                    let referrer = req.headers().get(REFERER).cloned();
+                        // store Accepts and Referer in case we need them for redirect (below)
+                        let accepts_html = req
+                            .headers()
+                            .get(ACCEPT)
+                            .and_then(|v| v.to_str().ok())
+                            .map(|v| v.contains("text/html"))
+                            .unwrap_or(false);
+                        let referrer = req.headers().get(REFERER).cloned();
 
-                    let mut res = sfn.run(req).await;
+                        let mut res = sfn.run(req).await;
 
-                    // if it accepts text/html (i.e., is a plain form post) and doesn't already have a
-                    // Location set, then redirect to to Referer
-                    if accepts_html {
-                        if let Some(referrer) = referrer {
-                            let has_location =
-                                res.headers().get(LOCATION).is_some();
-                            if !has_location {
-                                *res.status_mut() = StatusCode::FOUND;
-                                res.headers_mut().insert(LOCATION, referrer);
+                        // if it accepts text/html (i.e., is a plain form post) and doesn't already have a
+                        // Location set, then redirect to to Referer
+                        if accepts_html {
+                            if let Some(referrer) = referrer {
+                                let has_location = res.headers().get(LOCATION).is_some();
+                                if !has_location {
+                                    *res.status_mut() = StatusCode::FOUND;
+                                    res.headers_mut().insert(LOCATION, referrer);
+                                }
                             }
                         }
-                    }
 
-                    Some(res.into())
-                } else if let Some(best_match) = best_match {
-                    let listing = best_match.handler();
-                    let (meta_context, meta_output) = ServerMetaContext::new();
+                        Some(res.into())
+                    } else if let Some(best_match) = best_match {
+                        let listing = best_match.handler();
+                        let (meta_context, meta_output) = ServerMetaContext::new();
 
-                    let add_ctx = additional_context.clone();
-                    let additional_context = {
-                        let res_opts = res_opts.clone();
-                        let meta_ctx = meta_context.clone();
-                        move || {
-                            provide_contexts(add_ctx, context_parts, res_opts);
-                            provide_context(meta_ctx);
-                        }
+                        let add_ctx = additional_context.clone();
+                        let additional_context = {
+                            let res_opts = res_opts.clone();
+                            let meta_ctx = meta_context.clone();
+                            move || {
+                                provide_contexts(add_ctx, context_parts, res_opts);
+                                provide_context(meta_ctx);
+                            }
+                        };
+
+                        Some(
+                            Response::from_app(
+                                app,
+                                meta_output,
+                                additional_context,
+                                res_opts.clone(),
+                                match listing.mode() {
+                                    SsrMode::Async => |app, chunks| {
+                                        Box::pin(async move {
+                                            let app = if cfg!(feature = "islands-router") {
+                                                app.to_html_stream_in_order_branching()
+                                            } else {
+                                                app.to_html_stream_in_order()
+                                            };
+                                            let app = app.collect::<String>().await;
+                                            let chunks = chunks();
+                                            Box::pin(once(async move { app }).chain(chunks))
+                                                as PinnedStream<String>
+                                        })
+                                    },
+                                    SsrMode::InOrder => |app, chunks| {
+                                        Box::pin(async move {
+                                            let app = if cfg!(feature = "islands-router") {
+                                                app.to_html_stream_in_order_branching()
+                                            } else {
+                                                app.to_html_stream_in_order()
+                                            };
+                                            Box::pin(app.chain(chunks())) as PinnedStream<String>
+                                        })
+                                    },
+                                    SsrMode::PartiallyBlocked | SsrMode::OutOfOrder => {
+                                        |app, chunks| {
+                                            Box::pin(async move {
+                                                let app = if cfg!(feature = "islands-router") {
+                                                    app.to_html_stream_out_of_order_branching()
+                                                } else {
+                                                    app.to_html_stream_out_of_order()
+                                                };
+                                                Box::pin(app.chain(chunks()))
+                                                    as PinnedStream<String>
+                                            })
+                                        }
+                                    }
+                                    SsrMode::Static(_) => {
+                                        panic!("SsrMode::Static routes are not supported yet!")
+                                    }
+                                },
+                            )
+                            .await,
+                        )
+                    } else {
+                        None
                     };
 
-                    Some(Response::from_app(
-                        app,
-                        meta_output,
-                        additional_context,
-                        res_opts.clone(),
-                        match listing.mode() {
-                            SsrMode::Async => |app, chunks| {
-                                Box::pin(async move {
-                                    let app = if cfg!(feature = "islands-router") {
-                                        app.to_html_stream_in_order_branching()
-                                    } else {
-                                        app.to_html_stream_in_order()
-                                    };
-                                    let app = app.collect::<String>().await;
-                                    let chunks = chunks();
-                                    Box::pin(once(async move { app }).chain(chunks)) as PinnedStream<String>
-                                })
-                            },
-                            SsrMode::InOrder => |app, chunks| {
-                                Box::pin(async move {
-                                    let app = if cfg!(feature = "islands-router") {
-                                        app.to_html_stream_in_order_branching()
-                                    } else {
-                                        app.to_html_stream_in_order()
-                                    };
-                                    Box::pin(app.chain(chunks())) as PinnedStream<String>
-                                })
-                            },
-                            SsrMode::PartiallyBlocked | SsrMode::OutOfOrder => |app, chunks| {
-                                Box::pin(async move {
-                                    let app = if cfg!(feature = "islands-router") {
-                                        app.to_html_stream_out_of_order_branching()
-                                    } else {
-                                        app.to_html_stream_out_of_order()
-                                    };
-                                    Box::pin(app.chain(chunks())) as PinnedStream<String>
-                                })
-                            },
-                            SsrMode::Static(_) => panic!("SsrMode::Static routes are not supported yet!")
-                        }
-                    ).await)
-                } else {
-                    None
-                };
-
-                response.map(|mut req| {
-                    req.extend_response(&res_opts);
-                    req
+                    response.map(|mut req| {
+                        req.extend_response(&res_opts);
+                        req
+                    })
                 })
             })
-        }).await;
+            .await;
 
         let response = response.unwrap_or_else(|| {
             let body = Bytes::from("404 not found");
@@ -457,8 +451,7 @@ impl Handler {
         }
 
         drop(output_stream);
-        OutgoingBody::finish(body, None)
-            .map_err(HandlerError::WasiResponseBody)?;
+        OutgoingBody::finish(body, None).map_err(HandlerError::WasiResponseBody)?;
 
         Ok(())
     }
@@ -499,6 +492,11 @@ impl RouterPathRepresentation for &[PathSegment] {
                     path.push('*');
                 }
                 PathSegment::Unit => {}
+                PathSegment::OptionalParam(s) => {
+                    path.push(':');
+                    path.push_str(s);
+                    path.push('?');
+                }
             }
         }
         path

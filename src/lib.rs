@@ -50,9 +50,9 @@ pub mod prelude {
     pub use crate::handler::Handler;
     pub use crate::response::Body;
     pub use crate::utils::redirect;
-    pub use wasi::exports::wasi::http::incoming_handler::{
-        IncomingRequest, ResponseOutparam,
-    };
+    pub use any_spawner::Executor;
+    pub use http::StatusCode;
+    pub use wasi::exports::wasi::http::incoming_handler::{IncomingRequest, ResponseOutparam};
 }
 
 /// When working with streams, this crate will try to chunk bytes with

@@ -47,15 +47,7 @@ pub enum Body {
     /// The response body will be written asynchronously,
     /// this execution model is also known as
     /// "streaming".
-    Async(
-        Pin<
-            Box<
-                dyn Stream<Item = Result<Bytes, throw_error::Error>>
-                    + Send
-                    + 'static,
-            >,
-        >,
-    ),
+    Async(Pin<Box<dyn Stream<Item = Result<Bytes, throw_error::Error>> + Send + 'static>>),
 }
 
 impl From<ServerFnBody> for Body {
@@ -105,12 +97,8 @@ impl ResponseOptions {
 impl ExtendResponse for Response {
     type ResponseOptions = ResponseOptions;
 
-    fn from_stream(
-        stream: impl Stream<Item = String> + Send + 'static,
-    ) -> Self {
-        let stream = stream.map(|data| {
-            Result::<Bytes, throw_error::Error>::Ok(Bytes::from(data))
-        });
+    fn from_stream(stream: impl Stream<Item = String> + Send + 'static) -> Self {
+        let stream = stream.map(|data| Result::<Bytes, throw_error::Error>::Ok(Bytes::from(data)));
 
         Self(http::Response::new(Body::Async(Box::pin(stream))))
     }
