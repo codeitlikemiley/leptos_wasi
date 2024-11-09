@@ -1,0 +1,12 @@
+# Copied from https://github.com/leptos-rs/leptos/blob/main/rustfmt.toml
+# to follow the same conventions across the organisation.
+
+# Stable options
+edition = "2021"
+max_width = 80
+
+# Unstable options
+imports_granularity = "Crate"
+format_strings = true
+group_imports = "One"
+format_code_in_doc_comments = true

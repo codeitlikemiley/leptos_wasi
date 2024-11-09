@@ -20,15 +20,6 @@
 //! [`Mode`] enum to trade-off reactivity for less host context switch
 //! with the [`Mode::Stalled`] variant.
 
-use std::{
-    cell::RefCell,
-    future::Future,
-    mem,
-    rc::Rc,
-    sync::{Arc, OnceLock},
-    task::{Context, Poll, Wake, Waker},
-};
-
 use any_spawner::CustomExecutor;
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -37,6 +28,14 @@ use futures::{
     FutureExt, Stream,
 };
 use parking_lot::Mutex;
+use std::{
+    cell::RefCell,
+    future::Future,
+    mem,
+    rc::Rc,
+    sync::{Arc, OnceLock},
+    task::{Context, Poll, Wake, Waker},
+};
 use wasi::{
     clocks::monotonic_clock::{subscribe_duration, Duration},
     io::poll::{poll, Pollable},
@@ -66,15 +65,19 @@ impl WaitPoll {
 impl Future for WaitPoll {
     type Output = ();
 
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Self::Output> {
         match &mut self.get_mut().0 {
             this @ WaitPollInner::Unregistered(_) => {
                 let waker = Arc::new(WaitPollWaker::new(cx.waker()));
 
                 if let Some(sender) = POLLABLE_SINK.get() {
-                    if let WaitPollInner::Unregistered(pollable) =
-                        mem::replace(this, WaitPollInner::Registered(waker.clone()))
-                    {
+                    if let WaitPollInner::Unregistered(pollable) = mem::replace(
+                        this,
+                        WaitPollInner::Registered(waker.clone()),
+                    ) {
                         sender
                             .clone()
                             .unbounded_send(TableEntry(pollable, waker.into()))
@@ -85,7 +88,9 @@ impl Future for WaitPoll {
                         unreachable!();
                     }
                 } else {
-                    panic!("cannot create a WaitPoll before creating an Executor");
+                    panic!(
+                        "cannot create a WaitPoll before creating an Executor"
+                    );
                 }
             }
             WaitPollInner::Registered(waker) => {
@@ -181,13 +186,18 @@ impl Executor {
         let (tx, mut rx) = futures::channel::oneshot::channel::<T::Output>();
         self.spawn_local(Box::pin(fut.then(|val| async move {
             if tx.send(val).is_err() {
-                panic!("failed to send the return value of the future passed to run_until");
+                panic!(
+                    "failed to send the return value of the future passed to \
+                     run_until"
+                );
             }
         })));
 
         loop {
             match rx.try_recv() {
-                Err(_) => panic!("internal error: sender of run until has been dropped"),
+                Err(_) => panic!(
+                    "internal error: sender of run until has been dropped"
+                ),
                 Ok(Some(val)) => return val,
                 Ok(None) => {
                     self.poll_local();

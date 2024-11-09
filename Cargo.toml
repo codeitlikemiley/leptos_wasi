@@ -9,19 +9,22 @@ edition = "2021"
 
 [dependencies]
 any_spawner = { git = "https://github.com/leptos-rs/leptos",  features = ["futures-executor"] }
-throw_error = { version = "0.2.0-rc1" }
-hydration_context = { version = "0.2.0-rc1" }
+throw_error = { git = "https://github.com/leptos-rs/leptos" }
+hydration_context = { git = "https://github.com/leptos-rs/leptos" }
 futures = "0.3.30"
 wasi = "0.13.1+wasi-0.2.0"
-leptos = { version = "0.7.0-rc1",  features = ["nonce", "ssr"] }
-leptos_meta = { version = "0.7.0-rc1",  features = ["ssr"] }
-leptos_router = { version = "0.7.0-rc1",  features = ["ssr"] }
-leptos_macro = { version = "0.7.0-rc1",  features = ["generic"] }
-leptos_integration_utils = { version = "0.7.0-rc1" }
-server_fn = { version = "0.7.0-rc1",  features = ["generic"] }
+leptos = { git = "https://github.com/leptos-rs/leptos",  features = ["nonce", "ssr"] }
+leptos_meta = { git = "https://github.com/leptos-rs/leptos",  features = ["ssr"] }
+leptos_router = { git = "https://github.com/leptos-rs/leptos",  features = ["ssr"] }
+leptos_macro = { git = "https://github.com/leptos-rs/leptos",  features = ["generic"] }
+leptos_integration_utils = { git = "https://github.com/leptos-rs/leptos" }
+server_fn = { git = "https://github.com/leptos-rs/leptos",  features = ["generic"] }
 http = "1.1.0"
 parking_lot = "0.12.3"
 bytes = "1.7.2"
 routefinder = "0.5.4"
 mime_guess = "2.0"
 thiserror = "1.0.65"
+
+[features]
+islands-router = []

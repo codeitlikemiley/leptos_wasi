@@ -13,23 +13,23 @@
 //! that you can leverage to use this crate.
 //!
 //! ```
+//! use leptos::task::Executor;
+//! use leptos_wasi::prelude::WasiExecutor;
 //! use wasi::exports::http::incoming_handler::*;
 //!
 //! struct LeptosServer;
 //!
-//! // NB(raskyld): for now, the types to use for the HTTP handlers are the one from
-//! // the `leptos_wasi` crate, not the one generated in your crate.
 //! impl Guest for LeptosServer {
 //!     fn handle(request: IncomingRequest, response_out: ResponseOutparam) {
 //!         // Initiate a single-threaded [`Future`] Executor so we can run the
 //!         // rendering system and take advantage of bodies streaming.
-//!         Executor::init_futures_local_executor().expect("cannot init future executor");
-//!         Executor::spawn(async {
-//!             // declare an async function called `handle_request` and
-//!             // use the Handler in this function.
-//!             handle_request(request, response_out).await;
-//!         });
-//!         Executor::run();
+//!         let executor =
+//!             WasiExecutor::new(leptos_wasi::executor::Mode::Stalled);
+//!         Executor::init_local_custom_executor(executor.clone())
+//!             .expect("cannot init future executor");
+//!         executor.run_until(async {
+//!             //handle_request(request, response_out).await;
+//!         })
 //!     }
 //! }
 //! ```
@@ -46,13 +46,15 @@ pub mod utils;
 
 #[allow(clippy::pub_use)]
 pub mod prelude {
-    pub use crate::executor::Executor as WasiExecutor;
-    pub use crate::handler::Handler;
-    pub use crate::response::Body;
-    pub use crate::utils::redirect;
+    pub use crate::{
+        executor::Executor as WasiExecutor, handler::Handler, response::Body,
+        utils::redirect,
+    };
     pub use any_spawner::Executor;
     pub use http::StatusCode;
-    pub use wasi::exports::wasi::http::incoming_handler::{IncomingRequest, ResponseOutparam};
+    pub use wasi::exports::wasi::http::incoming_handler::{
+        IncomingRequest, ResponseOutparam,
+    };
 }
 
 /// When working with streams, this crate will try to chunk bytes with
