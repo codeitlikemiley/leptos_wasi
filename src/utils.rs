@@ -1,8 +1,7 @@
+use crate::response::ResponseOptions;
 use http::{header, request::Parts, HeaderName, HeaderValue, StatusCode};
 use leptos::prelude::use_context;
 use server_fn::redirect::REDIRECT_HEADER;
-
-use crate::response::ResponseOptions;
 
 /// Allow to return an HTTP redirection from components.
 pub fn redirect(path: &str) {
@@ -37,8 +36,8 @@ pub fn redirect(path: &str) {
         }
     } else {
         eprintln!(
-            "Couldn't retrieve either Parts or ResponseOptions while \
-                trying to redirect()."
+            "Couldn't retrieve either Parts or ResponseOptions while trying \
+             to redirect()."
         );
     }
 }

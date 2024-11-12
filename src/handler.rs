@@ -1,7 +1,10 @@
 #![forbid(unsafe_code)]
 
-use std::sync::Arc;
-
+use crate::{
+    response::{Body, Response, ResponseOptions},
+    utils::redirect,
+    CHUNK_BYTE_SIZE,
+};
 use bytes::Bytes;
 use futures::{
     stream::{self, once},
@@ -15,58 +18,28 @@ use http::{
 use hydration_context::SsrSharedContext;
 use leptos::{
     prelude::{provide_context, Owner, ScopedFuture},
-    server_fn::{
-        codec::Encoding, http_export::Request, response::generic::Body as ServerFnBody, ServerFn,
-        ServerFnTraitObj,
-    },
     IntoView,
 };
 use leptos_integration_utils::{ExtendResponse, PinnedStream};
 use leptos_meta::ServerMetaContext;
 use leptos_router::{
-    components::provide_server_redirect, location::RequestUrl, PathSegment, RouteList,
-    RouteListing, SsrMode,
+    components::provide_server_redirect, location::RequestUrl, PathSegment,
+    RouteList, RouteListing, SsrMode,
 };
 use mime_guess::MimeGuess;
 use routefinder::Router;
-use server_fn::middleware::Service;
+use server_fn::{
+    codec::Encoding, http_export::Request, middleware::Service,
+    response::generic::Body as ServerFnBody, ServerFn, ServerFnTraitObj,
+};
+use std::sync::Arc;
 use thiserror::Error;
-
-use wasi::http::types::{IncomingRequest, OutgoingBody, OutgoingResponse, ResponseOutparam};
-
-use crate::{
-    response::{Body, Response, ResponseOptions},
-    utils::redirect,
-    CHUNK_BYTE_SIZE,
+use wasi::http::types::{
+    IncomingRequest, OutgoingBody, OutgoingResponse, ResponseOutparam,
 };
 
 /// Handle routing, static file serving and response tx using the low-level
 /// `wasi:http` APIs.
-///
-/// ## Usage
-///
-/// Please, note that the handler expect to be run with a local Executor initiated.
-///
-/// ```
-/// use leptos_wasi::prelude::Handler;
-///
-/// let conf = get_configuration(None).unwrap();
-/// let leptos_options = conf.leptos_options;
-///
-/// Handler::build(request, response_out)
-///    .expect("could not create handler")
-///    // Those two functions should be called first because they can
-///    // *shortcut* the handler, see "Performance Considerations".
-///
-///    // Any HTTP request prefixed with `/pkg` will call the passed
-///    // `serve_static_files` function to deliver static files.
-///    .static_files_handler("/pkg", serve_static_files)
-///    .with_server_fn::<YourServerFn>()
-///    // Fetch all available routes from your App.
-///    .generate_routes(App)
-///    // Actually process the request and write the response.
-///    .handle_with_context(move || shell(leptos_options.clone()), || {}).await.expect("could not handle the request");
-/// ```
 ///
 /// ## Performance Considerations
 ///
@@ -101,7 +74,8 @@ pub struct Handler {
     res_out: ResponseOutparam,
 
     // *shortcut* if any is set
-    server_fn: Option<ServerFnTraitObj<Request<Bytes>, http::Response<ServerFnBody>>>,
+    server_fn:
+        Option<ServerFnTraitObj<Request<Bytes>, http::Response<ServerFnBody>>>,
     preset_res: Option<Response>,
     should_404: bool,
 
@@ -113,7 +87,10 @@ impl Handler {
     /// Wraps the WASI resources to handle the request.
     /// Could fail if the [`IncomingRequest`] cannot be converted to
     /// a [`http:Request`].
-    pub fn build(req: IncomingRequest, res_out: ResponseOutparam) -> Result<Self, HandlerError> {
+    pub fn build(
+        req: IncomingRequest,
+        res_out: ResponseOutparam,
+    ) -> Result<Self, HandlerError> {
         Ok(Self {
             req: crate::request::Request(req).try_into()?,
             res_out,
@@ -136,14 +113,18 @@ impl Handler {
     /// the call to [`Handler::handle_with_context`].
     pub fn with_server_fn<T>(mut self) -> Self
     where
-        T: ServerFn<ServerRequest = Request<Bytes>, ServerResponse = http::Response<ServerFnBody>>
-            + 'static,
+        T: ServerFn<
+                ServerRequest = Request<Bytes>,
+                ServerResponse = http::Response<ServerFnBody>,
+            > + 'static,
     {
         if self.shortcut() {
             return self;
         }
 
-        if self.req.method() == T::InputEncoding::METHOD && self.req.uri().path() == T::PATH {
+        if self.req.method() == T::InputEncoding::METHOD
+            && self.req.uri().path() == T::PATH
+        {
             self.server_fn = Some(ServerFnTraitObj::new(
                 T::PATH,
                 T::InputEncoding::METHOD,
@@ -176,12 +157,9 @@ impl Handler {
             return self;
         }
 
-        if let Some(trimmed_url) = self
-            .req
-            .uri()
-            .path()
-            .strip_prefix(prefix.try_into().expect("you passed an invalid Uri").path())
-        {
+        if let Some(trimmed_url) = self.req.uri().path().strip_prefix(
+            prefix.try_into().expect("you passed an invalid Uri").path(),
+        ) {
             match handler(trimmed_url.to_string()) {
                 None => self.should_404 = true,
                 Some(body) => {
@@ -190,8 +168,10 @@ impl Handler {
 
                     res.headers_mut().insert(
                         http::header::CONTENT_TYPE,
-                        HeaderValue::from_str(mime.first_or_octet_stream().as_ref())
-                            .expect("internal error: could not parse MIME type"),
+                        HeaderValue::from_str(
+                            mime.first_or_octet_stream().as_ref(),
+                        )
+                        .expect("internal error: could not parse MIME type"),
                     );
 
                     self.preset_res = Some(Response(res));
@@ -204,7 +184,10 @@ impl Handler {
 
     /// This mocks a request to the `app_fn` component to extract your
     /// `<Router>`'s `<Routes>`.
-    pub fn generate_routes<IV>(self, app_fn: impl Fn() -> IV + 'static + Send + Clone) -> Self
+    pub fn generate_routes<IV>(
+        self,
+        app_fn: impl Fn() -> IV + 'static + Send + Clone,
+    ) -> Self
     where
         IV: IntoView + 'static,
     {
@@ -224,7 +207,11 @@ impl Handler {
     where
         IV: IntoView + 'static,
     {
-        self.generate_routes_with_exclusions_and_context(app_fn, None, additional_context)
+        self.generate_routes_with_exclusions_and_context(
+            app_fn,
+            None,
+            additional_context,
+        )
     }
 
     /// This mocks a request to the `app_fn` component to extract your
@@ -451,7 +438,8 @@ impl Handler {
         }
 
         drop(output_stream);
-        OutgoingBody::finish(body, None).map_err(HandlerError::WasiResponseBody)?;
+        OutgoingBody::finish(body, None)
+            .map_err(HandlerError::WasiResponseBody)?;
 
         Ok(())
     }

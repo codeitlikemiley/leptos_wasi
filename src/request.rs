@@ -1,13 +1,11 @@
+use crate::CHUNK_BYTE_SIZE;
 use bytes::Bytes;
 use http::{uri::Parts, Uri};
 use thiserror::Error;
-
 use wasi::{
     http::types::{IncomingBody, IncomingRequest, Method, Scheme},
     io::streams::StreamError,
 };
-
-use crate::CHUNK_BYTE_SIZE;
 
 pub struct Request(pub IncomingRequest);
 
