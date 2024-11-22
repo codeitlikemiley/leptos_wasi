@@ -13,8 +13,7 @@
 //! that you can leverage to use this crate.
 //!
 //! ```
-//! use leptos::task::Executor;
-//! use leptos_wasi::prelude::WasiExecutor;
+//! use leptos_wasi::prelude::{Executor, WasiExecutor};
 //! use wasi::exports::http::incoming_handler::*;
 //!
 //! struct LeptosServer;
