@@ -8,17 +8,18 @@ version = "0.0.1"
 edition = "2021"
 
 [dependencies]
-any_spawner = { git = "https://github.com/leptos-rs/leptos", rev = "84bdd6b56892cc859b512b0de1dc139f83375f5d" , features = ["futures-executor"] }
-throw_error = { version = "0.2.0-rc1" }
-hydration_context = { version = "0.2.0-rc1" }
+# TODO: use new published version of any_spawner once available
+any_spawner = { git = "https://github.com/leptos-rs/leptos", rev = "84bdd6b56892cc859b512b0de1dc139f83375f5d", features = ["futures-executor"] }
+throw_error = { version = "0.2.0-rc2" }
+hydration_context = { version = "0.2.0-rc2" }
 futures = "0.3.30"
 wasi = "0.13.1+wasi-0.2.0"
-leptos = { version = "0.7.0-rc1",  features = ["nonce", "ssr"] }
-leptos_meta = { version = "0.7.0-rc1",  features = ["ssr"] }
-leptos_router ={ version = "0.7.0-rc1",  features = ["ssr"] }
-leptos_macro ={ version = "0.7.0-rc1",  features = ["generic"] }
-leptos_integration_utils = { version = "0.7.0-rc1" }
-server_fn = { version = "0.7.0-rc1",  features = ["generic"] }
+leptos = { version = "0.7.0-rc2",  features = ["nonce", "ssr"] }
+leptos_meta = { version = "0.7.0-rc2",  features = ["ssr"] }
+leptos_router ={ version = "0.7.0-rc2",  features = ["ssr"] }
+leptos_macro ={ version = "0.7.0-rc2",  features = ["generic"] }
+leptos_integration_utils = { version = "0.7.0-rc2" }
+server_fn = { version = "0.7.0-rc2",  features = ["generic"] }
 http = "1.1.0"
 parking_lot = "0.12.3"
 bytes = "1.7.2"
