@@ -13,7 +13,8 @@
 //! that you can leverage to use this crate.
 //!
 //! ```
-//! use leptos_wasi::prelude::{Executor, WasiExecutor};
+//! use leptos::task::Executor;
+//! use leptos_wasi::prelude::WasiExecutor;
 //! use wasi::exports::http::incoming_handler::*;
 //!
 //! struct LeptosServer;
@@ -49,7 +50,6 @@ pub mod prelude {
         executor::Executor as WasiExecutor, handler::Handler, response::Body,
         utils::redirect,
     };
-    pub use any_spawner::Executor;
     pub use http::StatusCode;
     pub use wasi::exports::wasi::http::incoming_handler::{
         IncomingRequest, ResponseOutparam,
