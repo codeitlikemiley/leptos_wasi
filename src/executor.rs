@@ -20,13 +20,13 @@
 //! [`Mode`] enum to trade-off reactivity for less host context switch
 //! with the [`Mode::Stalled`] variant.
 
-use any_spawner::CustomExecutor;
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
     executor::{LocalPool, LocalSpawner},
     task::{LocalSpawnExt, SpawnExt},
     FutureExt, Stream,
 };
+use leptos::task::{any_spawner, CustomExecutor};
 use parking_lot::Mutex;
 use std::{
     cell::RefCell,
