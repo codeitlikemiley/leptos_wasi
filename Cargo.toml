@@ -4,7 +4,7 @@ authors = ["Enzo Nocera"]
 license = "MIT"
 repository = "https://github.com/leptos-rs/leptos_wasi"
 description = "WASI integrations for the Leptos web framework."
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
