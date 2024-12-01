@@ -23,8 +23,8 @@ use leptos::{
 use leptos_integration_utils::{ExtendResponse, PinnedStream};
 use leptos_meta::ServerMetaContext;
 use leptos_router::{
-    components::provide_server_redirect, location::RequestUrl, PathSegment,
-    RouteList, RouteListing, SsrMode,
+    components::provide_server_redirect, location::RequestUrl, ExpandOptionals,
+    PathSegment, RouteList, RouteListing, SsrMode,
 };
 use mime_guess::MimeGuess;
 use routefinder::Router;
@@ -241,22 +241,23 @@ impl Handler {
         }
 
         let owner = Owner::new_root(Some(Arc::new(SsrSharedContext::new())));
-        let (mock_meta, _) = ServerMetaContext::new();
         let routes = owner
             .with(|| {
                 // as we are generating the app to extract
                 // the <Router/>, we want to mock the root path.
                 provide_context(RequestUrl::new(""));
-                provide_context(ResponseOptions::default());
-                provide_context(http::uri::Parts::default());
+                let (mock_meta, _) = ServerMetaContext::new();
+                let (mock_parts, _) = Request::new("").into_parts();
                 provide_context(mock_meta);
+                provide_context(mock_parts);
+                provide_context(ResponseOptions::default());
                 additional_context();
                 RouteList::generate(&app_fn)
             })
             .unwrap_or_default()
             .into_inner()
             .into_iter()
-            .map(|rt| (rt.path().to_rf_str_representation(), rt))
+            .flat_map(IntoRouteListing::into_route_listing)
             .filter(|route| {
                 excluded_routes.as_ref().map_or(true, |excluded_routes| {
                     !excluded_routes.iter().any(|ex_path| *ex_path == route.0)
@@ -457,11 +458,34 @@ fn provide_contexts(
     provide_server_redirect(redirect);
 }
 
+trait IntoRouteListing: Sized {
+    fn into_route_listing(self) -> Vec<(String, RouteListing)>;
+}
+
+impl IntoRouteListing for RouteListing {
+    fn into_route_listing(self) -> Vec<(String, RouteListing)> {
+        self.path()
+            .to_vec()
+            .expand_optionals()
+            .into_iter()
+            .map(|path| {
+                let path = path.to_rf_str_representation();
+                let path = if path.is_empty() {
+                    "/".to_string()
+                } else {
+                    path
+                };
+                (path, self.clone())
+            })
+            .collect()
+    }
+}
+
 trait RouterPathRepresentation {
     fn to_rf_str_representation(&self) -> String;
 }
 
-impl RouterPathRepresentation for &[PathSegment] {
+impl RouterPathRepresentation for Vec<PathSegment> {
     fn to_rf_str_representation(&self) -> String {
         let mut path = String::new();
         for segment in self.iter() {
@@ -480,10 +504,9 @@ impl RouterPathRepresentation for &[PathSegment] {
                     path.push('*');
                 }
                 PathSegment::Unit => {}
-                PathSegment::OptionalParam(s) => {
-                    path.push(':');
-                    path.push_str(s);
-                    path.push('?');
+                PathSegment::OptionalParam(_) => {
+                    eprintln!("to_rf_str_representation should only be called on expanded paths, which do not have OptionalParam any longer");
+                    Default::default()
                 }
             }
         }
