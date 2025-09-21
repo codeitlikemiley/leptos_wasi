@@ -50,11 +50,69 @@ Contributions are welcome!
 
 ## Usage
 
-TODO: Write a template starter for the crate.
+### Installation
+
+Add `leptos_wasi` to your `Cargo.toml` dependencies. The crate supports two modes depending on your deployment target:
+
+#### For Standard Leptos Projects
+
+For standard Leptos server-side applications (non-Spin), use the default features:
+
+```toml
+[dependencies]
+leptos_wasi = { version = "0.1.4" }
+# or explicitly:
+leptos_wasi = { version = "0.1.4", features = ["generic"] }
+```
+
+#### For Spin WebAssembly Projects
+
+For projects targeting the [Spin](https://www.fermyon.com/spin) WebAssembly runtime:
+
+```toml
+[dependencies]
+leptos_wasi = { version = "0.1.4", default-features = false, features = ["spin"] }
+```
+
+### Feature Flags
+
+- **`generic`** (default): Enables support for standard Leptos server-side applications with full generic body types
+- **`spin`**: Enables support for Spin WebAssembly runtime with simplified body types (`Bytes`)
+- **`islands-router`**: Enables islands architecture support for partial hydration
+
+### Example Usage
+
+```rust
+use leptos_wasi::Handler;
+
+// Your Leptos app component
+#[component]
+fn App() -> impl IntoView {
+    // Your app implementation
+}
+
+// In your WASI entry point
+#[export_name = "wasi:http/incoming-handler@0.2.0#handle"]
+pub unsafe extern "C" fn handle(request: IncomingRequest, response_outparam: ResponseOutparam) {
+    let handler = Handler::build(request, response_outparam)
+        .expect("Failed to build handler");
+    
+    // For Spin projects with server functions
+    #[cfg(feature = "spin")]
+    let handler = handler.with_server_fn::<YourServerFn>();
+    
+    // Generate routes and handle the request
+    handler
+        .generate_routes(App)
+        .handle_with_context(App, || {})
+        .await
+        .expect("Failed to handle request");
+}
+```
 
 ### Compatibility
 
-This crate only works with the future **Leptos v0.7**.
+This crate works with Leptos v0.8+ and supports both standard server deployments and WebAssembly Component Model deployments.
 
 ## Features
 

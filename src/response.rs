@@ -3,7 +3,11 @@ use futures::{Stream, StreamExt};
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use leptos_integration_utils::ExtendResponse;
 use parking_lot::RwLock;
+#[cfg(feature = "generic")]
 use server_fn::response::generic::Body as ServerFnBody;
+
+#[cfg(not(feature = "generic"))]
+use bytes::Bytes as ServerFnBody;
 use std::{pin::Pin, sync::Arc};
 use thiserror::Error;
 use wasi::http::types::{HeaderError, Headers};
@@ -55,12 +59,20 @@ pub enum Body {
     ),
 }
 
+#[cfg(feature = "generic")]
 impl From<ServerFnBody> for Body {
     fn from(value: ServerFnBody) -> Self {
         match value {
             ServerFnBody::Sync(data) => Self::Sync(data),
             ServerFnBody::Async(stream) => Self::Async(stream),
         }
+    }
+}
+
+#[cfg(not(feature = "generic"))]
+impl From<ServerFnBody> for Body {
+    fn from(value: ServerFnBody) -> Self {
+        Self::Sync(value)
     }
 }
 
