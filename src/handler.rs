@@ -1,3 +1,10 @@
+// MIGRATION DIAGNOSTIC: Tracking API changes in server_fn 0.8.7 and leptos_integration_utils 0.8.5
+// Issue 1: ServerFn no longer has ServerRequest/ServerResponse associated types
+// Issue 2: ServerFnTraitObj::new() signature changed from 4 params to 1
+// Issue 3: Response::from_app() now requires 6th boolean param (supports_ooo)
+// Issue 4: SSR mode closures need 3 params (added boolean)
+// Issue 5: middleware run() needs error serialization function
+
 #![forbid(unsafe_code)]
 
 use crate::{
@@ -29,8 +36,8 @@ use leptos_router::{
 use mime_guess::MimeGuess;
 use routefinder::Router;
 use server_fn::{
-    codec::Encoding, http_export::Request, middleware::Service,
-    response::generic::Body as ServerFnBody, ServerFn, ServerFnTraitObj,
+    http_export::Request, middleware::Service,
+    response::generic::Body as ServerFnBody, Protocol, ServerFn, ServerFnTraitObj,
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -114,22 +121,34 @@ impl Handler {
     pub fn with_server_fn<T>(mut self) -> Self
     where
         T: ServerFn<
-                ServerRequest = Request<Bytes>,
-                ServerResponse = http::Response<ServerFnBody>,
+                Server: server_fn::server::Server<
+                    T::Error,
+                    T::InputStreamError,
+                    T::OutputStreamError,
+                    Request = Request<Bytes>,
+                    Response = http::Response<ServerFnBody>,
+                >,
             > + 'static,
+        Request<Bytes>: server_fn::request::Req<
+                T::Error,
+                T::InputStreamError,
+                T::OutputStreamError,
+                WebsocketResponse = http::Response<ServerFnBody>,
+            > + Send
+            + 'static,
+        http::Response<ServerFnBody>: server_fn::response::TryRes<T::Error> + Send + 'static,
     {
         if self.shortcut() {
             return self;
         }
 
-        if self.req.method() == T::InputEncoding::METHOD
+        // Use Protocol::METHOD from the ServerFn's Protocol associated type
+        if self.req.method() == <T::Protocol as Protocol<T, T::Output, T::Client, T::Server, T::Error, T::InputStreamError, T::OutputStreamError>>::METHOD
             && self.req.uri().path() == T::PATH
         {
-            self.server_fn = Some(ServerFnTraitObj::new(
-                T::PATH,
-                T::InputEncoding::METHOD,
+            // ServerFnTraitObj::new() now only takes the handler function
+            self.server_fn = Some(ServerFnTraitObj::new::<T>(
                 |request| Box::pin(T::run_on_server(request)),
-                T::middlewares,
             ));
         }
 
@@ -313,7 +332,8 @@ impl Handler {
                             .unwrap_or(false);
                         let referrer = req.headers().get(REFERER).cloned();
 
-                        let mut res = sfn.run(req).await;
+                        // The run method now requires an error serialization function that returns Bytes
+                        let mut res = sfn.run(req, |err| Bytes::from(err.to_string())).await;
 
                         // if it accepts text/html (i.e., is a plain form post) and doesn't already have a
                         // Location set, then redirect to to Referer
@@ -349,7 +369,7 @@ impl Handler {
                                 additional_context,
                                 res_opts.clone(),
                                 match listing.mode() {
-                                    SsrMode::Async => |app, chunks| {
+                                    SsrMode::Async => |app, chunks, _islands_nav| {
                                         Box::pin(async move {
                                             let app = if cfg!(feature = "islands-router") {
                                                 app.to_html_stream_in_order_branching()
@@ -362,7 +382,7 @@ impl Handler {
                                                 as PinnedStream<String>
                                         })
                                     },
-                                    SsrMode::InOrder => |app, chunks| {
+                                    SsrMode::InOrder => |app, chunks, _islands_nav| {
                                         Box::pin(async move {
                                             let app = if cfg!(feature = "islands-router") {
                                                 app.to_html_stream_in_order_branching()
@@ -373,7 +393,7 @@ impl Handler {
                                         })
                                     },
                                     SsrMode::PartiallyBlocked | SsrMode::OutOfOrder => {
-                                        |app, chunks| {
+                                        |app, chunks, _islands_nav| {
                                             Box::pin(async move {
                                                 let app = if cfg!(feature = "islands-router") {
                                                     app.to_html_stream_out_of_order_branching()
@@ -389,6 +409,8 @@ impl Handler {
                                         panic!("SsrMode::Static routes are not supported yet!")
                                     }
                                 },
+                                // Add the 6th parameter for out-of-order streaming support
+                                cfg!(feature = "islands-router"),
                             )
                             .await,
                         )
