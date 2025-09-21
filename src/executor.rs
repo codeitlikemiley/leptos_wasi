@@ -26,7 +26,6 @@ use futures::{
     task::{LocalSpawnExt, SpawnExt},
     FutureExt, Stream,
 };
-use leptos::task::{any_spawner, CustomExecutor};
 use parking_lot::Mutex;
 use std::{
     cell::RefCell,
@@ -40,6 +39,8 @@ use wasi::{
     clocks::monotonic_clock::{subscribe_duration, Duration},
     io::poll::{poll, Pollable},
 };
+
+use any_spawner::{CustomExecutor, PinnedFuture, PinnedLocalFuture};
 
 struct TableEntry(Pollable, Waker);
 
@@ -208,11 +209,11 @@ impl Executor {
 }
 
 impl CustomExecutor for Executor {
-    fn spawn(&self, fut: any_spawner::PinnedFuture<()>) {
+    fn spawn(&self, fut: PinnedFuture<()>) {
         self.0.spawner.spawn(fut).unwrap();
     }
 
-    fn spawn_local(&self, fut: any_spawner::PinnedLocalFuture<()>) {
+    fn spawn_local(&self, fut: PinnedLocalFuture<()>) {
         self.0.spawner.spawn_local(fut).unwrap();
     }
 
