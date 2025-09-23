@@ -26,6 +26,8 @@ bytes = "1.7.2"
 routefinder = "0.5.4"
 mime_guess = "2.0"
 thiserror = "2"
+async-stream = "0.3.6"
+axum-core = "0.5.2"
 
 [features]
 islands-router = []

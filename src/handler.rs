@@ -119,16 +119,17 @@ impl Handler {
     /// Tests if the request path matches the bound server function
     /// and *shortcut* the [`Handler`] to quickly reach
     /// the call to [`Handler::handle_with_context`].
-    pub fn with_server_fn<T>(mut self) -> Self
+    pub fn with_server_fn<T, ServerBody>(mut self) -> Self
     where
         T: ServerFn + 'static,
         T::Server: server_fn::server::Server<
             T::Error,
             T::InputStreamError,
             T::OutputStreamError,
-            Request = Request<Body>,
-            Response = http::Response<Body>,
+            Request = Request<ServerBody>,
+            Response = http::Response<ServerBody>,
         >,
+        ServerBody: Into<crate::response::Body> + From<Bytes> + 'static,
     {
         if self.shortcut() {
             return self;
@@ -149,7 +150,30 @@ impl Handler {
             // We can't use ServerFnTraitObj::new due to type constraints
             // Instead, create a boxed function that calls the server function
             self.server_fn = Some(Box::new(move |request| {
-                Box::pin(async move { T::run_on_server(request).await })
+                Box::pin(async move {
+                    // Convert Request<Body> to Request<ServerBody>
+                    let server_request = request.map(|body| match body {
+                        Body::Sync(bytes) => ServerBody::from(bytes),
+                        Body::Async(_) => {
+                            // For async bodies, we'll need to collect them first
+                            // This is a limitation but necessary for type safety
+                            panic!("Async request bodies are not yet supported for server functions")
+                        }
+                    });
+                    let response = T::run_on_server(server_request).await;
+                    // Convert Response<ServerBody> to Response<server_fn::response::generic::Body>
+                    response.map(|body| {
+                        let our_body: crate::response::Body = body.into();
+                        match our_body {
+                            crate::response::Body::Sync(bytes) => {
+                                Body::Sync(bytes)
+                            }
+                            crate::response::Body::Async(stream) => {
+                                Body::Async(stream)
+                            }
+                        }
+                    })
+                })
             }));
         }
 
@@ -167,7 +191,10 @@ impl Handler {
     pub fn static_files_handler<T>(
         mut self,
         prefix: T,
-        handler: impl Fn(String) -> Option<Body> + 'static + Send + Clone,
+        handler: impl Fn(String) -> Option<crate::response::Body>
+            + 'static
+            + Send
+            + Clone,
     ) -> Self
     where
         T: TryInto<Uri>,
@@ -183,9 +210,7 @@ impl Handler {
             match handler(trimmed_url.to_string()) {
                 None => self.should_404 = true,
                 Some(body) => {
-                    // Convert from server_fn::response::generic::Body to crate::response::Body
-                    let response_body = crate::response::Body::from(body);
-                    let mut res = http::Response::new(response_body);
+                    let mut res = http::Response::new(body);
                     let mime = MimeGuess::from_path(trimmed_url);
 
                     res.headers_mut().insert(
