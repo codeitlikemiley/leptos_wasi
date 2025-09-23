@@ -28,9 +28,12 @@ use leptos_router::{
 };
 use mime_guess::MimeGuess;
 use routefinder::Router;
+use server_fn::Protocol;
+
+use http::Request;
 use server_fn::{
-    http_export::Request, middleware::Service,
-    response::generic::Body as ServerFnBody, ServerFn, ServerFnTraitObj,
+    middleware::Service, response::generic::Body as ServerFnBody, ServerFn,
+    ServerFnTraitObj,
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -111,21 +114,44 @@ impl Handler {
     /// Tests if the request path matches the bound server function
     /// and *shortcut* the [`Handler`] to quickly reach
     /// the call to [`Handler::handle_with_context`].
-    pub fn with_server_fn<T>(self) -> Self
+    pub fn with_server_fn<T>(mut self) -> Self
     where
-        T: ServerFn + 'static,
+        T: ServerFn<
+                Server: server_fn::server::Server<
+                    T::Error,
+                    Request = Request<Bytes>,
+                    Response = http::Response<ServerFnBody>,
+                >,
+            > + 'static,
+        Request<Bytes>: server_fn::request::Req<
+                T::Error,
+                WebsocketResponse = http::Response<ServerFnBody>,
+            > + Send
+            + 'static,
+        http::Response<ServerFnBody>:
+            server_fn::response::TryRes<T::Error> + Send + 'static,
     {
         if self.shortcut() {
             return self;
         }
 
-        // TODO: Fix ServerFnTraitObj instantiation for 0.8.x
-        // The API has changed significantly and needs proper migration
-        // if self.req.uri().path() == T::PATH {
-        //     self.server_fn = Some(ServerFnTraitObj::new(
-        //         |request| Box::pin(T::run_on_server(request))
-        //     ));
-        // }
+        if self.req.method()
+            == <T::Protocol as Protocol<
+                T,
+                T::Output,
+                T::Client,
+                T::Server,
+                T::Error,
+                T::InputStreamError,
+                T::OutputStreamError,
+            >>::METHOD
+            && self.req.uri().path() == T::PATH
+        {
+            // ServerFnTraitObj::new() now only takes the handler function
+            self.server_fn = Some(ServerFnTraitObj::new::<T>(|request| {
+                Box::pin(T::run_on_server(request))
+            }));
+        }
 
         self
     }
@@ -307,7 +333,8 @@ impl Handler {
                             .unwrap_or(false);
                         let referrer = req.headers().get(REFERER).cloned();
 
-                        let mut res = sfn.run(req, |e| Bytes::from(e.to_string())).await;
+                        // The run method now requires an error serialization function that returns Bytes
+                        let mut res = sfn.run(req, |err| Bytes::from(err.to_string())).await;
 
                         // if it accepts text/html (i.e., is a plain form post) and doesn't already have a
                         // Location set, then redirect to to Referer
@@ -383,7 +410,8 @@ impl Handler {
                                         panic!("SsrMode::Static routes are not supported yet!")
                                     }
                                 },
-                                false, // blocking parameter
+                                // Add the 6th parameter for out-of-order streaming support
+                                cfg!(feature = "islands-router"),
                             )
                             .await,
                         )
@@ -501,7 +529,9 @@ impl RouterPathRepresentation for Vec<PathSegment> {
                 }
                 PathSegment::Unit => {}
                 PathSegment::OptionalParam(_) => {
-                    eprintln!("to_rf_str_representation should only be called on expanded paths, which do not have OptionalParam any longer");
+                    eprintln!(
+                        "to_rf_str_representation should only be called on expanded paths, which do not have OptionalParam any longer"
+                    );
                     Default::default()
                 }
             }
