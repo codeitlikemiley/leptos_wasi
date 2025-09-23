@@ -119,6 +119,13 @@ impl Handler {
     /// Tests if the request path matches the bound server function
     /// and *shortcut* the [`Handler`] to quickly reach
     /// the call to [`Handler::handle_with_context`].
+    ///
+    /// Note: You may need to specify the body type explicitly:
+    /// `.with_server_fn::<MyServerFn, _>()`
+    ///
+    /// For most use cases, prefer the convenience methods:
+    /// - `.with_server_fn_axum::<MyServerFn>()` (most common)
+    /// - `.with_server_fn_generic::<MyServerFn>()` (other backends)
     pub fn with_server_fn<T, ServerBody>(mut self) -> Self
     where
         T: ServerFn + 'static,
@@ -178,6 +185,56 @@ impl Handler {
         }
 
         self
+    }
+
+    /// Convenience method for server functions using the generic server_fn body.
+    /// This works with backends that use `server_fn::response::generic::Body`.
+    ///
+    /// Note: Most leptos projects use the axum backend, so you probably want
+    /// `with_server_fn_axum` instead.
+    ///
+    /// # Example
+    /// ```ignore
+    /// handler.with_server_fn_generic::<UpdateCount>()
+    /// ```
+    pub fn with_server_fn_generic<T>(self) -> Self
+    where
+        T: ServerFn + 'static,
+        T::Server: server_fn::server::Server<
+            T::Error,
+            T::InputStreamError,
+            T::OutputStreamError,
+            Request = Request<server_fn::response::generic::Body>,
+            Response = http::Response<server_fn::response::generic::Body>,
+        >,
+    {
+        self.with_server_fn::<T, server_fn::response::generic::Body>()
+    }
+
+    /// Convenience method for server functions using the axum backend.
+    /// This is the recommended method for most leptos projects as it avoids
+    /// needing to specify the body type parameter.
+    ///
+    /// # Example
+    /// ```ignore
+    /// handler.with_server_fn_axum::<UpdateCount>()
+    /// ```
+    /// instead of:
+    /// ```ignore
+    /// handler.with_server_fn::<UpdateCount, _>()
+    /// ```
+    pub fn with_server_fn_axum<T>(self) -> Self
+    where
+        T: ServerFn + 'static,
+        T::Server: server_fn::server::Server<
+            T::Error,
+            T::InputStreamError,
+            T::OutputStreamError,
+            Request = Request<axum_core::body::Body>,
+            Response = http::Response<axum_core::body::Body>,
+        >,
+    {
+        self.with_server_fn::<T, axum_core::body::Body>()
     }
 
     /// If the request is prefixed with `prefix` [`Uri`], then
