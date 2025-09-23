@@ -116,20 +116,7 @@ impl Handler {
     /// the call to [`Handler::handle_with_context`].
     pub fn with_server_fn<T>(mut self) -> Self
     where
-        T: ServerFn<
-                Server: server_fn::server::Server<
-                    T::Error,
-                    Request = Request<Bytes>,
-                    Response = http::Response<ServerFnBody>,
-                >,
-            > + 'static,
-        Request<Bytes>: server_fn::request::Req<
-                T::Error,
-                WebsocketResponse = http::Response<ServerFnBody>,
-            > + Send
-            + 'static,
-        http::Response<ServerFnBody>:
-            server_fn::response::TryRes<T::Error> + Send + 'static,
+        T: ServerFn + 'static,
     {
         if self.shortcut() {
             return self;
