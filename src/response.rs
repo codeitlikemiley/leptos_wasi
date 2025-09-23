@@ -100,10 +100,14 @@ impl
                             yield Ok(data.clone());
                         }
                     }
-                    Err(_e) => {
-                        // For now, just skip errors to avoid the type issues
-                        // TODO: properly handle errors when throw_error supports it
-                        break;
+                    Err(e) => {
+                        // Convert Box<dyn Error + Send + Sync> to throw_error::Error
+                        // We use std::io::Error as an intermediate since boxed trait objects
+                        // don't implement std::error::Error themselves
+                        yield Err(throw_error::Error::from(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("Body frame error: {}", e)
+                        )));
                     }
                 }
             }
@@ -129,9 +133,10 @@ impl From<axum_core::body::Body> for Body {
                             yield Ok(data.clone());
                         }
                     }
-                    Err(_e) => {
-                        // For now, just skip errors
-                        break;
+                    Err(e) => {
+                        // Convert axum_core::Error to throw_error::Error
+                        // axum_core::Error implements std::error::Error so this works directly
+                        yield Err(throw_error::Error::from(e));
                     }
                 }
             }
