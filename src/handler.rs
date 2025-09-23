@@ -32,10 +32,9 @@ use server_fn::Protocol;
 
 use http::Request;
 use server_fn::{
-    middleware::Service, response::generic::Body as ServerFnBody, ServerFn,
-    ServerFnTraitObj,
+    response::generic::Body as ServerFnBody, server::Server, ServerFn,
 };
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 use thiserror::Error;
 use wasi::http::types::{
     IncomingRequest, OutgoingBody, OutgoingResponse, ResponseOutparam,
@@ -77,8 +76,19 @@ pub struct Handler {
     res_out: ResponseOutparam,
 
     // *shortcut* if any is set
-    server_fn:
-        Option<ServerFnTraitObj<Request<Bytes>, http::Response<ServerFnBody>>>,
+    // We use a type-erased function since ServerFnTraitObj has strict type constraints
+    server_fn: Option<
+        Box<
+            dyn Fn(
+                    Request<Bytes>,
+                ) -> Pin<
+                    Box<
+                        dyn Future<Output = http::Response<ServerFnBody>>
+                            + Send,
+                    >,
+                > + Send,
+        >,
+    >,
     preset_res: Option<Response>,
     should_404: bool,
 
@@ -117,6 +127,13 @@ impl Handler {
     pub fn with_server_fn<T>(mut self) -> Self
     where
         T: ServerFn + 'static,
+        T::Server: Server<
+            T::Error,
+            T::InputStreamError,
+            T::OutputStreamError,
+            Request = Request<Bytes>,
+            Response = http::Response<ServerFnBody>,
+        >,
     {
         if self.shortcut() {
             return self;
@@ -134,8 +151,9 @@ impl Handler {
             >>::METHOD
             && self.req.uri().path() == T::PATH
         {
-            // ServerFnTraitObj::new() now only takes the handler function
-            self.server_fn = Some(ServerFnTraitObj::new::<T>(|request| {
+            // We can't use ServerFnTraitObj::new due to type constraints
+            // Instead, create a boxed function that calls the server function
+            self.server_fn = Some(Box::new(move |request| {
                 Box::pin(T::run_on_server(request))
             }));
         }
@@ -308,7 +326,7 @@ impl Handler {
                         None
                     } else if self.preset_res.is_some() {
                         self.preset_res
-                    } else if let Some(mut sfn) = self.server_fn {
+                    } else if let Some(sfn) = self.server_fn {
                         provide_contexts(additional_context, context_parts, res_opts.clone());
 
                         // store Accepts and Referer in case we need them for redirect (below)
@@ -320,8 +338,8 @@ impl Handler {
                             .unwrap_or(false);
                         let referrer = req.headers().get(REFERER).cloned();
 
-                        // The run method now requires an error serialization function that returns Bytes
-                        let mut res = sfn.run(req, |err| Bytes::from(err.to_string())).await;
+                        // Call the server function directly
+                        let mut res = sfn(req).await;
 
                         // if it accepts text/html (i.e., is a plain form post) and doesn't already have a
                         // Location set, then redirect to to Referer

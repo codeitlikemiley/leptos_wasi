@@ -64,6 +64,12 @@ impl From<ServerFnBody> for Body {
     }
 }
 
+impl From<Bytes> for Body {
+    fn from(value: Bytes) -> Self {
+        Self::Sync(value)
+    }
+}
+
 /// This struct lets you define headers and override the status of the Response from an Element or a Server Function
 /// Typically contained inside of a ResponseOptions. Setting this is useful for cookies and custom responses.
 #[derive(Debug, Clone, Default)]
