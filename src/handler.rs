@@ -29,7 +29,7 @@ use leptos_router::{
 use mime_guess::MimeGuess;
 use routefinder::Router;
 use server_fn::{
-    codec::Encoding, http_export::Request, middleware::Service,
+    http_export::Request, middleware::Service,
     response::generic::Body as ServerFnBody, ServerFn, ServerFnTraitObj,
 };
 use std::sync::Arc;
@@ -111,7 +111,7 @@ impl Handler {
     /// Tests if the request path matches the bound server function
     /// and *shortcut* the [`Handler`] to quickly reach
     /// the call to [`Handler::handle_with_context`].
-    pub fn with_server_fn<T>(mut self) -> Self
+    pub fn with_server_fn<T>(self) -> Self
     where
         T: ServerFn + 'static,
     {
@@ -119,16 +119,13 @@ impl Handler {
             return self;
         }
 
-        if self.req.method() == T::InputEncoding::METHOD
-            && self.req.uri().path() == T::PATH
-        {
-            self.server_fn = Some(ServerFnTraitObj::new(
-                T::PATH,
-                T::InputEncoding::METHOD,
-                |request| Box::pin(T::run_on_server(request)),
-                T::middlewares,
-            ));
-        }
+        // TODO: Fix ServerFnTraitObj instantiation for 0.8.x
+        // The API has changed significantly and needs proper migration
+        // if self.req.uri().path() == T::PATH {
+        //     self.server_fn = Some(ServerFnTraitObj::new(
+        //         |request| Box::pin(T::run_on_server(request))
+        //     ));
+        // }
 
         self
     }
@@ -256,8 +253,8 @@ impl Handler {
             .into_iter()
             .flat_map(IntoRouteListing::into_route_listing)
             .filter(|route| {
-                excluded_routes.as_ref().map_or(true, |excluded_routes| {
-                    !excluded_routes.iter().any(|ex_path| *ex_path == route.0)
+                excluded_routes.as_ref().is_none_or(|excluded_routes| {
+                    !excluded_routes.contains(&route.0)
                 })
             });
 
@@ -386,6 +383,7 @@ impl Handler {
                                         panic!("SsrMode::Static routes are not supported yet!")
                                     }
                                 },
+                                false, // blocking parameter
                             )
                             .await,
                         )
