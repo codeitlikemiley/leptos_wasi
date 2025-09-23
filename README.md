@@ -48,6 +48,11 @@ community-driven project and be battle-tested to be deemed *production-ready*.
 
 Contributions are welcome!
 
+## Compatibility
+
+- leptos `0.8.9` fully tested
+- spin_sdk `5` fully test
+
 ## Usage
 
 ### Quick Start
@@ -106,23 +111,22 @@ handler.static_files_handler("/public", serve_static_files)
 
 ## Migration Guide
 
-### Upgrading to v0.1.3+
+### Upgrading to v0.1.4+
 
 If you're using the older syntax with type placeholders, you can easily upgrade:
 
-#### Before (v0.1.2 and earlier)
+#### Before (v0.1.3 and earlier)
+
 ```rust
-.with_server_fn::<UpdateCount, _>()    // Required ugly placeholder
-.with_server_fn::<GetCount, _>()
+.with_server_fn::<GetCount>()
 ```
 
-#### After (v0.1.3+)
+#### After (v0.1.4+)
 ```rust
-.with_server_fn_axum::<UpdateCount>()  // Clean and clear!
-.with_server_fn_axum::<GetCount>()
+.with_server_fn::<GetCount,_>() // for custom backend ResponseBody
+.with_server_fn_axum::<UpdateCount>() 
+.with_server_fn_generic::<GetCount>()
 ```
-
-The old syntax still works for backward compatibility, but the new methods provide better ergonomics and clearer intent.
 
 ### Static File Handler Updates
 
@@ -134,32 +138,6 @@ fn serve_static_files(path: String) -> Option<leptos_wasi::response::Body> {
     // Implementation remains the same
 }
 ```
-
-### Compatibility
-
-This crate works with **Leptos v0.8.x** (specifically tested with v0.8.9).
-
-**Migration Note**: This crate has been migrated from Leptos 0.7.x to 0.8.x. The migration includes:
-- Updated to use `any_spawner` crate instead of `leptos::tasks::Executor`
-- Adapted to new server function API changes
-- Updated SSR mode handling for new API requirements
-
-## Recent Improvements (v0.1.3+)
-
-### 🎯 **Enhanced Developer Experience**
-* **Clean Server Function Registration**: No more ugly `_` placeholders! Use `.with_server_fn_axum::<MyServerFn>()` instead of `.with_server_fn::<MyServerFn, _>()`
-* **Automatic Backend Detection**: Choose the right method for your backend with clear, descriptive names
-* **Better Error Messages**: Improved compilation errors with helpful suggestions
-
-### 🔧 **Robust Error Handling**
-* **Proper Error Propagation**: Body reading errors are now properly converted and propagated instead of being silently dropped
-* **Multiple Backend Support**: Seamless integration with different server function backends (axum, generic)
-* **Type-Safe Conversions**: Automatic conversion between different Body types with compile-time safety
-
-### 🛠️ **Technical Improvements**
-* **Stream-Based Body Processing**: Efficient async streaming for HTTP body handling
-* **Enhanced Type System**: Better trait bounds and type constraints for improved reliability
-* **Backward Compatibility**: All existing code continues to work while new conveniences are available
 
 ## Core Features
 
@@ -179,19 +157,6 @@ This crate works with **Leptos v0.8.x** (specifically tested with v0.8.9).
 ## Troubleshooting
 
 ### Common Issues
-
-#### "Body type mismatch" errors
-If you encounter body type compilation errors, make sure you're using the correct convenience method:
-- For axum backend (most common): `.with_server_fn_axum::<YourServerFn>()`
-- For other backends: `.with_server_fn_generic::<YourServerFn>()`
-- For custom setups: `.with_server_fn::<YourServerFn, YourBodyType>()`
-
-#### "No method named `with_server_fn_axum`"
-Make sure you're using leptos_wasi v0.1.3 or later:
-```toml
-[dependencies]
-leptos_wasi = "0.1.3"
-```
 
 #### Server function not found (404)
 Ensure your server function is properly registered:
