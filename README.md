@@ -54,7 +54,12 @@ TODO: Write a template starter for the crate.
 
 ### Compatibility
 
-This crate only works with the future **Leptos v0.7**.
+This crate works with **Leptos v0.8.x** (specifically tested with v0.8.9).
+
+**Migration Note**: This crate has been migrated from Leptos 0.7.x to 0.8.x. The migration includes:
+- Updated to use `any_spawner` crate instead of `leptos::tasks::Executor`
+- Adapted to new server function API changes
+- Updated SSR mode handling for new API requirements
 
 ## Features
 
