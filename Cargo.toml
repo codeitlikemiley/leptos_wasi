@@ -17,7 +17,7 @@ leptos_meta = { version = "0.8.5",  features = ["ssr"] }
 leptos_router = { version = "0.8.7",  features = ["ssr"] }
 leptos_macro = { version = "0.8.8",  features = ["generic"] }
 leptos_integration_utils = { version = "0.8.5" }
-server_fn = { version = "0.8.7",  features = ["generic"] , default-features = false}
+server_fn = { version = "0.8.7",  features = ["generic","axum-no-default"] , default-features = false}
 any_spawner = { version = "0.3.0", features = ["futures-executor"] }
 http = "1.1.0"
 http-body-util = "0.1.3"
@@ -29,4 +29,3 @@ thiserror = "2"
 
 [features]
 islands-router = []
-axum-no-default = ["server_fn/axum-no-default"]

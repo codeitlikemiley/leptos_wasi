@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use crate::{
-    response::{Body, Response, ResponseOptions},
+    response::{Response, ResponseOptions},
     utils::redirect,
     CHUNK_BYTE_SIZE,
 };
@@ -28,7 +28,7 @@ use leptos_router::{
 };
 use mime_guess::MimeGuess;
 use routefinder::Router;
-use server_fn::Protocol;
+use server_fn::{response::generic::Body, Protocol};
 
 use http::Request;
 use server_fn::ServerFn;
@@ -183,7 +183,9 @@ impl Handler {
             match handler(trimmed_url.to_string()) {
                 None => self.should_404 = true,
                 Some(body) => {
-                    let mut res = http::Response::new(body);
+                    // Convert from server_fn::response::generic::Body to crate::response::Body
+                    let response_body = crate::response::Body::from(body);
+                    let mut res = http::Response::new(response_body);
                     let mime = MimeGuess::from_path(trimmed_url);
 
                     res.headers_mut().insert(
@@ -194,7 +196,7 @@ impl Handler {
                         .expect("internal error: could not parse MIME type"),
                     );
 
-                    self.preset_res = Some(Response(res));
+                    self.preset_res = Some(res.into());
                 }
             }
         }
@@ -431,9 +433,10 @@ impl Handler {
 
         let response = response.unwrap_or_else(|| {
             let body = Bytes::from("404 not found");
-            let mut res = http::Response::new(Body::Sync(body));
+            let mut res =
+                http::Response::new(crate::response::Body::Sync(body));
             *res.status_mut() = http::StatusCode::NOT_FOUND;
-            Response(res)
+            res.into()
         });
 
         let headers = response.headers()?;
@@ -449,8 +452,10 @@ impl Handler {
             .write()
             .expect("unable to open writable stream on body");
         let mut input_stream = match response.0.into_body() {
-            Body::Sync(buf) => Box::pin(stream::once(async { Ok(buf) })),
-            Body::Async(stream) => stream,
+            crate::response::Body::Sync(buf) => {
+                Box::pin(stream::once(async { Ok(buf) }))
+            }
+            crate::response::Body::Async(stream) => stream,
         };
 
         while let Some(buf) = input_stream.next().await {
