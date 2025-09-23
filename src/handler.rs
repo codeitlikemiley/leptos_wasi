@@ -31,9 +31,7 @@ use routefinder::Router;
 use server_fn::Protocol;
 
 use http::Request;
-use server_fn::{
-    response::generic::Body as ServerFnBody, server::Server, ServerFn,
-};
+use server_fn::ServerFn;
 use std::{future::Future, pin::Pin, sync::Arc};
 use thiserror::Error;
 use wasi::http::types::{
@@ -80,13 +78,10 @@ pub struct Handler {
     server_fn: Option<
         Box<
             dyn Fn(
-                    Request<Bytes>,
-                ) -> Pin<
-                    Box<
-                        dyn Future<Output = http::Response<ServerFnBody>>
-                            + Send,
-                    >,
-                > + Send,
+                    Request<Body>,
+                )
+                    -> Pin<Box<dyn Future<Output = http::Response<Body>> + Send>>
+                + Send,
         >,
     >,
     preset_res: Option<Response>,
@@ -127,12 +122,12 @@ impl Handler {
     pub fn with_server_fn<T>(mut self) -> Self
     where
         T: ServerFn + 'static,
-        T::Server: Server<
+        T::Server: server_fn::server::Server<
             T::Error,
             T::InputStreamError,
             T::OutputStreamError,
-            Request = Request<Bytes>,
-            Response = http::Response<ServerFnBody>,
+            Request = Request<Body>,
+            Response = http::Response<Body>,
         >,
     {
         if self.shortcut() {
@@ -154,7 +149,7 @@ impl Handler {
             // We can't use ServerFnTraitObj::new due to type constraints
             // Instead, create a boxed function that calls the server function
             self.server_fn = Some(Box::new(move |request| {
-                Box::pin(T::run_on_server(request))
+                Box::pin(async move { T::run_on_server(request).await })
             }));
         }
 
@@ -339,7 +334,9 @@ impl Handler {
                         let referrer = req.headers().get(REFERER).cloned();
 
                         // Call the server function directly
-                        let mut res = sfn(req).await;
+                        // Convert Request<Bytes> to Request<Body>
+                        let req_with_body = req.map(Body::from);
+                        let mut res = sfn(req_with_body).await;
 
                         // if it accepts text/html (i.e., is a plain form post) and doesn't already have a
                         // Location set, then redirect to to Referer
