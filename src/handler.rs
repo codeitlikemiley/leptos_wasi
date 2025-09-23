@@ -42,6 +42,17 @@ use wasi::http::types::{
     IncomingRequest, OutgoingBody, OutgoingResponse, ResponseOutparam,
 };
 
+/// We use a type-erased alias to define the server function handler's type.
+/// It replaces `ServerFnTraitObj` because that type has strict constraints.
+/// Takes a Request<Body> and returns a pinned future that outputs Response<Body>
+type ServerFnHandler = Box<
+    dyn Fn(
+            Request<Body>,
+        )
+            -> Pin<Box<dyn Future<Output = http::Response<Body>> + Send>>
+        + Send,
+>;
+
 /// Handle routing, static file serving and response tx using the low-level
 /// `wasi:http` APIs.
 ///
@@ -78,16 +89,7 @@ pub struct Handler {
     res_out: ResponseOutparam,
 
     // *shortcut* if any is set
-    // We use a type-erased function since ServerFnTraitObj has strict type constraints
-    server_fn: Option<
-        Box<
-            dyn Fn(
-                    Request<Body>,
-                )
-                    -> Pin<Box<dyn Future<Output = http::Response<Body>> + Send>>
-                + Send,
-        >,
-    >,
+    server_fn: Option<ServerFnHandler>,
     preset_res: Option<Response>,
     should_404: bool,
 
