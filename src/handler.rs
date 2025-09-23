@@ -5,6 +5,10 @@ use crate::{
     utils::redirect,
     CHUNK_BYTE_SIZE,
 };
+
+/// Maximum size for request bodies when collecting async streams (16MB)
+/// This prevents memory exhaustion from malicious or very large requests
+const MAX_REQUEST_BODY_SIZE: usize = 16 * 1024 * 1024;
 use bytes::Bytes;
 use futures::{
     stream::{self, once},
@@ -120,6 +124,11 @@ impl Handler {
     /// and *shortcut* the [`Handler`] to quickly reach
     /// the call to [`Handler::handle_with_context`].
     ///
+    /// # Request Body Support
+    /// Fully supports both synchronous and asynchronous request bodies:
+    /// - Sync bodies: Passed through directly for optimal performance
+    /// - Async bodies: Automatically collected (max 16MB) with proper error handling
+    ///
     /// Note: You may need to specify the body type explicitly:
     /// `.with_server_fn::<MyServerFn, _>()`
     ///
@@ -159,14 +168,49 @@ impl Handler {
             self.server_fn = Some(Box::new(move |request| {
                 Box::pin(async move {
                     // Convert Request<Body> to Request<ServerBody>
-                    let server_request = request.map(|body| match body {
+                    let (parts, body) = request.into_parts();
+                    let server_body = match body {
                         Body::Sync(bytes) => ServerBody::from(bytes),
-                        Body::Async(_) => {
-                            // For async bodies, we'll need to collect them first
-                            // This is a limitation but necessary for type safety
-                            panic!("Async request bodies are not yet supported for server functions")
+                        Body::Async(mut stream) => {
+                            // Collect the async stream into bytes
+                            // This is necessary because server functions expect a complete body
+                            use futures::StreamExt;
+                            let mut collected_bytes = Vec::new();
+
+                            while let Some(chunk_result) = stream.next().await {
+                                match chunk_result {
+                                    Ok(chunk) => {
+                                        // Check size limit before adding chunk
+                                        if collected_bytes.len() + chunk.len() > MAX_REQUEST_BODY_SIZE {
+                                            let error_msg = format!(
+                                                "Request body too large (max: {} bytes)",
+                                                MAX_REQUEST_BODY_SIZE
+                                            );
+                                            let error_response = http::Response::builder()
+                                                .status(413) // Payload Too Large
+                                                .body(Body::Sync(Bytes::from(error_msg)))
+                                                .unwrap();
+                                            return error_response;
+                                        }
+                                        collected_bytes.extend_from_slice(&chunk);
+                                    }
+                                    Err(e) => {
+                                        // Handle stream errors by returning an error response
+                                        let error_msg = format!("Failed to read request body: {}", e);
+                                        let error_response = http::Response::builder()
+                                            .status(400)
+                                            .body(Body::Sync(Bytes::from(error_msg)))
+                                            .unwrap();
+                                        return error_response;
+                                    }
+                                }
+                            }
+
+                            ServerBody::from(Bytes::from(collected_bytes))
                         }
-                    });
+                    };
+
+                    let server_request = Request::from_parts(parts, server_body);
                     let response = T::run_on_server(server_request).await;
                     // Convert Response<ServerBody> to Response<server_fn::response::generic::Body>
                     response.map(|body| {
@@ -214,6 +258,11 @@ impl Handler {
     /// Convenience method for server functions using the axum backend.
     /// This is the recommended method for most leptos projects as it avoids
     /// needing to specify the body type parameter.
+    ///
+    /// # Request Body Handling
+    /// Supports both sync and async request bodies:
+    /// - Sync bodies are passed through directly
+    /// - Async bodies are collected into memory (max 16MB) before processing
     ///
     /// # Example
     /// ```ignore
