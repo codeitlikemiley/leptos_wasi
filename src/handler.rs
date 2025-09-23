@@ -113,10 +113,7 @@ impl Handler {
     /// the call to [`Handler::handle_with_context`].
     pub fn with_server_fn<T>(mut self) -> Self
     where
-        T: ServerFn<
-                ServerRequest = Request<Bytes>,
-                ServerResponse = http::Response<ServerFnBody>,
-            > + 'static,
+        T: ServerFn + 'static,
     {
         if self.shortcut() {
             return self;
@@ -313,7 +310,7 @@ impl Handler {
                             .unwrap_or(false);
                         let referrer = req.headers().get(REFERER).cloned();
 
-                        let mut res = sfn.run(req).await;
+                        let mut res = sfn.run(req, |e| Bytes::from(e.to_string())).await;
 
                         // if it accepts text/html (i.e., is a plain form post) and doesn't already have a
                         // Location set, then redirect to to Referer
@@ -349,7 +346,7 @@ impl Handler {
                                 additional_context,
                                 res_opts.clone(),
                                 match listing.mode() {
-                                    SsrMode::Async => |app, chunks| {
+                                    SsrMode::Async => |app, chunks, _| {
                                         Box::pin(async move {
                                             let app = if cfg!(feature = "islands-router") {
                                                 app.to_html_stream_in_order_branching()
@@ -362,7 +359,7 @@ impl Handler {
                                                 as PinnedStream<String>
                                         })
                                     },
-                                    SsrMode::InOrder => |app, chunks| {
+                                    SsrMode::InOrder => |app, chunks, _| {
                                         Box::pin(async move {
                                             let app = if cfg!(feature = "islands-router") {
                                                 app.to_html_stream_in_order_branching()
@@ -373,7 +370,7 @@ impl Handler {
                                         })
                                     },
                                     SsrMode::PartiallyBlocked | SsrMode::OutOfOrder => {
-                                        |app, chunks| {
+                                        |app, chunks, _| {
                                             Box::pin(async move {
                                                 let app = if cfg!(feature = "islands-router") {
                                                     app.to_html_stream_out_of_order_branching()
