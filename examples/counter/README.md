@@ -1,38 +1,144 @@
-# Counter
+# Leptos Wasi Demo Using `wasmtime` and `spin_sdk` `v5`
 
-A Leptos application running as a WASI Component
+This project supports both **Spin** and **Wasmtime** runtimes without using feature flags. The runtime is selected at build time using environment variables.
 
-## Adding Server Functions
+## Usage
 
-Server functions allow you to run code on the server from client interactions. To add a new server function:
+### Option 1: Using Spin Runtime
+```bash
+make spin
+```
+- Builds with Spin's key-value store support
+- Runs on http://127.0.0.1:3000
+- Data stored in `.spin/default.db`
+- Uses spin-sdk for KV storage
 
-1. Define the function with `#[server]` attribute in your component file
-2. Register it in `src/server.rs` with `.with_server_fn::<YourFunction>()`
+### Option 2: Using Wasmtime Runtime
+```bash
+make wasmtime
+```
+- Builds with filesystem storage
+- Runs on http://127.0.0.1:3000
+- Data stored in `data/` directory
+- Uses standard filesystem APIs
 
-Example:
-```rust
-#[server]
-pub async fn my_server_function() -> Result<String, ServerFnError> {
-    // Your server-side logic here
-    Ok("Result".to_string())
-}
+
+## Prerequisites
+
+### 1. Install Rust with WASI support
+```bash
+# Install Rust if not already installed
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Add WASI target
+rustup target add wasm32-wasip2
 ```
 
-## Troubleshooting
+### 2. Install Spin (for Spin runtime)
+```bash
+# On macOS
+brew install fermyon/tap/spin
 
-### Build Errors
-- Ensure you have `wasm32-wasip2` target installed
-- Check that all dependencies in Cargo.toml are correct versions
+# Or using installer script
+curl -fsSL https://developer.fermyon.com/downloads/install.sh | bash
 
-### Runtime Errors
-- Verify wasmtime is installed and up to date
-- Check that the `--dir=target/site::/` flag is present in serve.sh
-- Ensure static files are being built to `target/site/public/`
+# Verify installation
+spin --version
+```
 
-### Server Functions Not Working
-- Confirm the function is registered in `src/server.rs`
-- Check browser console for any client-side errors
-- Verify the server is receiving requests (check terminal output)
+### 3. Install Wasmtime (for Wasmtime runtime)
+```bash
+# On macOS
+brew install wasmtime
+
+# Or download from releases
+curl -L https://github.com/bytecodealliance/wasmtime/releases/download/v24.0.0/wasmtime-v24.0.0-x86_64-macos.tar.xz | tar xJ
+sudo mv wasmtime-v24.0.0-x86_64-macos/wasmtime /usr/local/bin/
+
+# Verify installation (need v14.0+ for serve command)
+wasmtime --version
+```
+
+### 4. Install cargo-leptos
+```bash
+cargo install cargo-leptos
+```
+
+### 5. Install Make (usually pre-installed)
+```bash
+# On macOS
+brew install make
+
+# Verify
+make --version
+```
+
+## How It Works
+
+### Architecture
+```
+┌─────────────────┐
+│  User Request   │
+└────────┬────────┘
+         │
+    ┌────▼────┐
+    │ Makefile │
+    └────┬────┘
+         │
+    ┌────▼────┐
+    │ build.rs │ ← Detects WASI_RUNTIME env var
+    └────┬────┘
+         │
+    ┌────▼────────────────┐
+    │ Conditional Compile  │
+    └──┬─────────────┬────┘
+       │             │
+  ┌────▼───┐    ┌───▼──────┐
+  │  Spin  │    │ Wasmtime │
+  │  Build │    │  Build   │
+  └────┬───┘    └───┬──────┘
+       │            │
+  ┌────▼───┐    ┌───▼──────┐
+  │Spin KV │    │Filesystem│
+  │Storage │    │ Storage  │
+  └────────┘    └──────────┘
+```
+
+
+## Project Structure
+```
+counter/
+├── Makefile           # Build orchestration
+├── build.rs           # Runtime detection
+├── Cargo.toml         # Dependencies
+├── spin.toml          # Spin configuration
+├── src/
+│   ├── lib.rs         # Main library
+│   ├── storage.rs     # Runtime-agnostic storage
+│   └── pages/
+│       └── home.rs    # Counter logic
+├── target/
+│   ├── wasm32-wasip2/ # Spin build output
+│   └── wasmtime/      # Wasmtime file storage
+│   └── site/
+│       └── data       # Data Store Wasmtime
+└── .spin/             # Spin KV storage
+```
+
+## How Runtime Selection Works
+
+1. **Environment Variable**: `WASI_RUNTIME` is set to either `spin` or `wasmtime`
+2. **build.rs**: Reads this variable and sets compile-time flags
+3. **Conditional Compilation**: Code in `storage.rs` compiles differently based on flags
+4. **No Feature Flags**: Everything controlled by environment variables
+
+## Storage Backends
+
+| Runtime  | Storage Type | Location | Technology |
+|----------|-------------|----------|------------|
+| Spin     | Key-Value   | `.spin/default.db` | spin-sdk KV store |
+| Wasmtime | Filesystem  | `data/` directory | Standard file I/O |
+
 
 ## License
 
