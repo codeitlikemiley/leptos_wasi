@@ -101,65 +101,40 @@ pub fn Home() -> impl IntoView {
 
 #[server]
 pub async fn update_count() -> Result<(), ServerFnError> {
-    use wasi::filesystem::{preopens::get_directories, types::{DescriptorFlags, OpenFlags, PathFlags}};
+    use crate::storage;
 
     println!("User requested an update to the store");
     let updated_value = get_count().await? + 1;
-    let directories = get_directories();
-    let (fd, _) = directories.first().expect("no directory given");
 
-    fd
-        .open_at(PathFlags::empty(), "store.txt", OpenFlags::CREATE, DescriptorFlags::WRITE)
-        .map(|fd| {
-            let stream = fd.write_via_stream(0).expect("failed to open a stream to write");
-            stream.blocking_write_and_flush(updated_value.to_string().as_bytes()).expect("could not write to the store");
-            ()
-        })
-        .map_err(|err| {
-            ServerFnError::ServerError(err.message().to_string())
-        })
+    // Set the counter value
+    storage::set("counter", updated_value.to_string().as_bytes()).await?;
+
+    println!("Successfully updated counter to: {}", updated_value);
+    Ok(())
 }
 
 #[server]
 pub async fn get_count() -> Result<u64, ServerFnError> {
-    use wasi::filesystem::{preopens::get_directories, types::{DescriptorFlags, OpenFlags, PathFlags}};
+    use crate::storage;
 
     println!("Getting the store");
-    let directories = get_directories();
-    let (fd, _) = directories.first().expect("no directory given");
 
-    match fd.open_at(PathFlags::empty(), "store.txt", OpenFlags::CREATE, DescriptorFlags::READ) {
-        Err(err) => {
-            println!("could not open store for reading");
-            println!("reason: {}", err.message());
+    // Get the counter value
+    match storage::get("counter").await {
+        Ok(Some(value)) => {
+            let count_str = String::from_utf8(value)
+                .map_err(|e| ServerFnError::new(format!("Invalid UTF-8: {}", e)))?;
+            let count = count_str.parse::<u64>().unwrap_or(0);
+            println!("Retrieved counter value: {}", count);
+            Ok(count)
+        }
+        Ok(None) => {
+            println!("No counter value found, returning 0");
             Ok(0)
-        },
-        Ok(fd) => {
-            let file_size = fd.stat().expect("should be able to stat").size;
-            match fd.read_via_stream(0) {
-                Err(err) => {
-                    println!("could not open stream to store");
-                    println!("reason: {}", err.message());
-                    Ok(0)
-                },
-                Ok(stream) => {
-                    let mut store: Vec<u8> = Vec::new();
-                    loop {
-                        if store.len() as u64 >= file_size {
-                            break;
-                        }
-
-                        match stream.blocking_read(256) {
-                            Err(_) => return Ok(0),
-                            Ok(data) => {
-                                store.extend(data);
-                            }
-                        }
-                    }
-                    let result = String::from_utf8(store).expect("no utf-8");
-                    Ok(result.parse::<u64>().unwrap_or(0))
-                }
-            }
+        }
+        Err(e) => {
+            println!("Error reading counter: {}", e);
+            Ok(0)
         }
     }
 }

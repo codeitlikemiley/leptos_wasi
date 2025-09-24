@@ -4,6 +4,9 @@ pub mod routes;
 #[cfg(feature = "ssr")]
 mod server;
 
+#[cfg(feature = "ssr")]
+mod storage;
+
 /// This is the entrypoint called by the JS "igniter" script.
 #[cfg(feature = "hydrate")]
 #[wasm_bindgen::prelude::wasm_bindgen]

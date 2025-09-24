@@ -45,9 +45,9 @@ async fn handle_request(request: IncomingRequest, response_out: ResponseOutparam
     
     Handler::build(request, response_out)
         .expect("could not create handler")
-        // All static assets should be served on /public/...
+        // All static assets should be served on /pkg/...
         // when the user request this path, the passed function is called
-        .static_files_handler("/public", serve_static_files)
+        .static_files_handler("/pkg", serve_static_files)
         // Register your server functions here
         .with_server_fn_axum::<UpdateCount>()
         .with_server_fn_axum::<GetCount>()
@@ -60,14 +60,33 @@ async fn handle_request(request: IncomingRequest, response_out: ResponseOutparam
 }
 
 fn serve_static_files(path: String) -> Option<Body> {
-    println!("serving {}", &path);
+    println!("serving static file: {}", &path);
     let directories = get_directories();
+
+    // Debug: Print available directories
+    println!("Available directories: {:?}", directories.len());
+    for (i, (_fd, mount_path)) in directories.iter().enumerate() {
+        println!("Directory {}: {}", i, mount_path);
+    }
+
+    // The path comes in as /counter.css, /counter.js, etc.
+    // Strip the leading slash
     let path = path.strip_prefix("/").unwrap_or(&path);
+
+    // Check runtime and adjust path accordingly
+    #[cfg(runtime_spin)]
+    let file_path = format!("pkg/{}", path); // Spin needs pkg/ prefix
+
+    #[cfg(not(runtime_spin))]
+    let file_path = path.to_string(); // Wasmtime mounts directly at root
+
+    println!("Looking for file at: {}", file_path);
+
     let (fd, _) = directories.first().expect("there seems to be no static files to serve");
 
-    match fd.open_at(PathFlags::empty(), &path, OpenFlags::empty(), DescriptorFlags::READ) {
+    match fd.open_at(PathFlags::empty(), &file_path, OpenFlags::empty(), DescriptorFlags::READ) {
         Err(err) => {
-            println!("could not serve file {}", path);
+            println!("could not serve file {}", file_path);
             println!("reason: {}", err.message());
             return None;
         },
@@ -75,7 +94,7 @@ fn serve_static_files(path: String) -> Option<Body> {
             let file_size = fd.stat().expect("should be able to stat").size;
             match fd.read_via_stream(0) {
                 Err(err) => {
-                    println!("could not open stream to file {}", path);
+                    println!("could not open stream to file {}", file_path);
                     println!("reason: {}", err.message());
                     return None;
                 },

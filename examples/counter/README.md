@@ -2,67 +2,6 @@
 
 A Leptos application running as a WASI Component
 
-## Prerequisites
-
-- Rust with `wasm32-wasip2` target
-- cargo-leptos
-- wasmtime CLI
-
-```bash
-# Install required tools
-rustup target add wasm32-wasip2
-cargo install cargo-leptos
-cargo install wasmtime-cli
-```
-
-## Development
-
-### Building the Project
-
-```bash
-cargo leptos build --release
-```
-
-### Running the Server
-
-```bash
-# Make the script executable (first time only)
-chmod +x serve.sh
-
-# Run the server
-./serve.sh
-```
-
-The server will be available at [http://localhost:8080](http://localhost:8080)
-
-## Project Structure
-
-```
-counter/
-├── Cargo.toml           # Project configuration
-├── input.css           # Tailwind CSS input
-├── serve.sh           # Server launch script
-├── public/            # Static assets
-│   └── favicon.ico
-└── src/
-    ├── main.rs        # Entry point (required for WASI)
-    ├── lib.rs         # Library root
-    ├── server.rs      # WASI server implementation
-    ├── routes.rs      # Application routes
-    └── pages/         # Page components
-        ├── mod.rs
-        └── home.rs    # Home page with counter example
-```
-
-## Features
-
-- **Server-Side Rendering (SSR)** with Leptos
-- **Client-Side Hydration** for interactive components
-- **WASI Component** architecture for WebAssembly deployment
-- **File-based persistence** using WASI filesystem APIs
-- **Static asset serving** integrated with WASI
-- **Tailwind CSS** support (optional)
-
 ## Adding Server Functions
 
 Server functions allow you to run code on the server from client interactions. To add a new server function:
