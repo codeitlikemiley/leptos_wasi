@@ -111,7 +111,7 @@ handler.static_files_handler("/public", serve_static_files)
 
 ## Migration Guide
 
-### Upgrading to v0.1.4+
+### Upgrading to v0.2.0+
 
 If you're using the older syntax with type placeholders, you can easily upgrade:
 
@@ -121,7 +121,7 @@ If you're using the older syntax with type placeholders, you can easily upgrade:
 .with_server_fn::<GetCount>()
 ```
 
-#### After (v0.1.4+)
+#### After (v0.2.0+)
 ```rust
 .with_server_fn::<GetCount,_>() // for custom backend ResponseBody
 .with_server_fn_axum::<UpdateCount>() 
