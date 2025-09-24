@@ -1,0 +1,20 @@
+spin_manifest_version = 2
+
+[application]
+name = "counter"
+version = "0.2.0"
+authors = ["Uriah Galang <codeitlikemiley@gmail.com>"]
+description = "Example project showing off Leptos with Axum, running as a `wasi:http` service."
+
+[[trigger.http]]
+route = "/..."
+component = "counter"
+
+[component.counter]
+source = "target/wasm32-wasip2/release/counter.wasm"
+allowed_outbound_hosts = []
+environment = { LEPTOS_OUTPUT_NAME = "counter", HOST_DIR="target/site", GUEST_DIR="/" }
+
+[component.counter.build]
+command = "cargo leptos build --release && LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr"
+watch = ["src/**/*.rs", "Cargo.toml"]
