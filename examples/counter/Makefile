@@ -15,18 +15,14 @@ run: wasmtime
 spin:
 	@echo "Building for Spin runtime..."
 	@mkdir -p .spin
-	WASI_RUNTIME=spin cargo leptos build --release
-	WASI_RUNTIME=spin LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr
-	@echo "Built: target/wasm32-wasip2/release/counter.wasm (for Spin)"
+	../../build_helper.sh counter spin
 	@echo "Starting Spin..."
 	spin up
 
 # Build and run with Wasmtime
 wasmtime:
 	@echo "Building for Wasmtime runtime..."
-	WASI_RUNTIME=wasmtime cargo leptos build --release
-	WASI_RUNTIME=wasmtime LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr --target-dir target/wasmtime
-	@echo "Built: target/wasmtime/wasm32-wasip2/release/counter.wasm (for Wasmtime)"
+	../../build_helper.sh counter wasmtime
 	@echo "Starting Wasmtime serve..."
 	@echo "Serving at http://127.0.0.1:3000"
 	@mkdir -p ./data

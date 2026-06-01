@@ -59,7 +59,7 @@ lib-features = ["hydrate"]
 
 # == SSR
 bin-profile-release = "wasm-release"
-bin-target-triple = "wasm32-wasip2"
+bin-target-triple = "wasm32-wasip1"
 bin-features = ["ssr"]
 bin-target-dir = "target/server"
 
