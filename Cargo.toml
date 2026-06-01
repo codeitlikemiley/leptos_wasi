@@ -9,18 +9,18 @@ edition = "2024"
 rust-version = "1.93.0"
 
 [dependencies]
-throw_error = { version = "0.3.0" }
-hydration_context = { version = "0.3.0" }
+throw_error = { version = "=0.3.1" }
+hydration_context = { version = "=0.3.0" }
 futures = "0.3.30"
 wasi = { version = "0.14.7", optional = true }
 wasip3 = { version = "0.6.0", features = ["http-compat"], optional = true }
-leptos = { version = "0.8.9", default-features = false, features = ["nonce", "ssr"] }
-leptos_meta = { version = "0.8.5", default-features = false, features = ["ssr"] }
-leptos_router = { version = "0.8.7", default-features = false, features = ["ssr"] }
-leptos_macro = { version = "0.8.8", default-features = false, features = ["generic"] }
-leptos_integration_utils = { version = "0.8.5", default-features = false }
-server_fn = { version = "0.8.7",  features = ["generic","axum-no-default"] , default-features = false}
-any_spawner = { version = "0.3.0", features = ["futures-executor"] }
+leptos = { version = "=0.8.19", default-features = false, features = ["nonce", "ssr"] }
+leptos_meta = { version = "=0.8.6", default-features = false, features = ["ssr"] }
+leptos_router = { version = "=0.8.13", default-features = false, features = ["ssr"] }
+leptos_macro = { version = "=0.8.16", default-features = false, features = ["generic"] }
+leptos_integration_utils = { version = "=0.8.8", default-features = false }
+server_fn = { version = "=0.8.12",  features = ["generic","axum-no-default"] , default-features = false}
+any_spawner = { version = "=0.3.0", features = ["futures-executor"] }
 http = "1.1.0"
 http-body = "1.0.0"
 http-body-util = "0.1.3"
@@ -43,3 +43,14 @@ default = ["wasip2"]
 wasip2 = ["dep:wasi"]
 wasip3 = ["dep:wasip3"]
 islands-router = []
+
+[patch.crates-io]
+throw_error = { path = "../leptos_src/any_error" }
+any_spawner = { path = "../leptos_src/any_spawner" }
+hydration_context = { path = "../leptos_src/hydration_context" }
+leptos = { path = "../leptos_src/leptos" }
+leptos_meta = { path = "../leptos_src/meta" }
+leptos_router = { path = "../leptos_src/router" }
+leptos_macro = { path = "../leptos_src/leptos_macro" }
+leptos_integration_utils = { path = "../leptos_src/integrations/utils" }
+server_fn = { path = "../leptos_src/server_fn" }
