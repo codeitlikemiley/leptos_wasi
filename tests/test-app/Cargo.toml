@@ -8,15 +8,15 @@ rust-version = "1.93.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-any_spawner = { version = "=0.3.0", features = ["futures-executor"] }
+any_spawner = { version = "0.3.0", features = ["futures-executor"] }
 bytes = "1.7.2"
 futures = "0.3.30"
-hydration_context = { version = "=0.3.0" }
-leptos = { version = "=0.8.19", default-features = false, features = ["ssr"] }
-leptos_meta = { version = "=0.8.6", default-features = false, features = ["ssr"] }
-leptos_router = { version = "=0.8.13", default-features = false, features = ["ssr"] }
+hydration_context = { version = "0.3.0" }
+leptos = { version = "0.8.19", default-features = false, features = ["ssr"] }
+leptos_meta = { version = "0.8.6", default-features = false, features = ["ssr"] }
+leptos_router = { version = "0.8.13", default-features = false, features = ["ssr"] }
 leptos_wasi = { path = "../..", default-features = false }
-server_fn = { version = "=0.8.12", default-features = false, features = ["axum-no-default"] }
+server_fn = { version = "0.8.12", default-features = false, features = ["axum-no-default"] }
 wasip3 = { version = "0.6.0", features = ["http-compat"], optional = true }
 wasi = { version = "0.14.7", optional = true }
 axum-core = "0.5.2"
@@ -35,12 +35,12 @@ codegen-units = 1
 panic = "abort"
 
 [patch.crates-io]
-throw_error = { path = "../../../leptos_src/any_error" }
-any_spawner = { path = "../../../leptos_src/any_spawner" }
-hydration_context = { path = "../../../leptos_src/hydration_context" }
-leptos = { path = "../../../leptos_src/leptos" }
-leptos_meta = { path = "../../../leptos_src/meta" }
-leptos_router = { path = "../../../leptos_src/router" }
-leptos_macro = { path = "../../../leptos_src/leptos_macro" }
-leptos_integration_utils = { path = "../../../leptos_src/integrations/utils" }
-server_fn = { path = "../../../leptos_src/server_fn" }
+throw_error = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
+any_spawner = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
+hydration_context = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
+leptos = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
+leptos_meta = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
+leptos_router = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
+leptos_macro = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
+leptos_integration_utils = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
+server_fn = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
