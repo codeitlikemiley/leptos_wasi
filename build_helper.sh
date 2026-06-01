@@ -25,7 +25,7 @@ echo "Building client assets and server for $EXAMPLE_NAME ($RUNTIME_TYPE)..."
 
 if [ "$RUNTIME_TYPE" = "wasmtime" ]; then
     # Counter example for wasmtime uses cargo leptos build --release
-    WASI_RUNTIME=wasmtime cargo leptos build --release
+    WASI_RUNTIME=wasmtime cargo leptos build --release --frontend-only
     WASI_RUNTIME=wasmtime LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip1 --release --no-default-features --features ssr --target-dir target/wasmtime
     
     # Paths
@@ -37,7 +37,7 @@ if [ "$RUNTIME_TYPE" = "wasmtime" ]; then
     
 elif [ "$EXAMPLE_NAME" = "spin-counter" ] || [ "$EXAMPLE_NAME" = "spin_counter" ]; then
     # Spin-counter build
-    cargo leptos build --release
+    cargo leptos build --release --frontend-only
     LEPTOS_OUTPUT_NAME=spin_counter cargo build --lib --target wasm32-wasip1 --release --no-default-features --features ssr
     
     # Paths
@@ -49,7 +49,7 @@ elif [ "$EXAMPLE_NAME" = "spin-counter" ] || [ "$EXAMPLE_NAME" = "spin_counter" 
     
 else
     # Counter example for Spin build
-    WASI_RUNTIME=spin cargo leptos build --release
+    WASI_RUNTIME=spin cargo leptos build --release --frontend-only
     WASI_RUNTIME=spin LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip1 --release --no-default-features --features ssr
     
     # Paths
