@@ -73,3 +73,4 @@ leptos_router = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a3
 leptos_macro = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
 leptos_integration_utils = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
 server_fn = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
+wasm-streams = { git = "https://github.com/codeitlikemiley/wasm-streams", rev = "112d7bce495e9a59efe0e4d874e964acef5d22dd" }
