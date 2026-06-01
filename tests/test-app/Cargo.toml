@@ -35,13 +35,13 @@ codegen-units = 1
 panic = "abort"
 
 [patch.crates-io]
-throw_error = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
-any_spawner = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
-hydration_context = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
-leptos = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
-leptos_meta = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
-leptos_router = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
-leptos_macro = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
-leptos_integration_utils = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
-server_fn = { git = "https://github.com/codeitlikemiley/leptos", rev = "68a38d41bde82db2064a877ee248eeb70c8eeb15" }
-wasm-streams = { git = "https://github.com/codeitlikemiley/wasm-streams", rev = "112d7bce495e9a59efe0e4d874e964acef5d22dd" }
+throw_error = { path = "../../../leptos_src/any_error" }
+any_spawner = { path = "../../../leptos_src/any_spawner" }
+hydration_context = { path = "../../../leptos_src/hydration_context" }
+leptos = { path = "../../../leptos_src/leptos" }
+leptos_meta = { path = "../../../leptos_src/meta" }
+leptos_router = { path = "../../../leptos_src/router" }
+leptos_macro = { path = "../../../leptos_src/leptos_macro" }
+leptos_integration_utils = { path = "../../../leptos_src/integrations/utils" }
+server_fn = { path = "../../../leptos_src/server_fn" }
+wasm-streams = { path = "../../../wasm-streams" }

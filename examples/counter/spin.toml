@@ -16,7 +16,7 @@ source = "target/wasm32-wasip2/release/counter.wasm"
 allowed_outbound_hosts = []
 key_value_stores = ["default"]
 [component.counter.build]
-command = "WASI_RUNTIME=spin cargo leptos build --release && WASI_RUNTIME=spin LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr"
+command = "WASI_RUNTIME=spin cargo leptos build --release --frontend-only && WASI_RUNTIME=spin LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr"
 watch = ["src/**/*.rs", "Cargo.toml"]
 
 [[trigger.http]]

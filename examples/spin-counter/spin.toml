@@ -16,7 +16,7 @@ source = "target/wasm32-wasip2/release/spin_counter.wasm"
 allowed_outbound_hosts = []
 key_value_stores = ["default"]
 [component.spin-counter.build]
-command = "../../build_helper.sh spin-counter spin"
+command = "cargo leptos build --release --frontend-only && LEPTOS_OUTPUT_NAME=spin_counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr"
 watch = ["src/**/*.rs", "Cargo.toml"]
 
 [[trigger.http]]
