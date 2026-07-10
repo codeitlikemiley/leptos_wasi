@@ -24,6 +24,7 @@ WASMTIME_DEPLOYMENT_CONTRACTS = {
     # downgraded to authn-only or swapped for an unrelated guest by editing
     # that document alone.
     "wasmtime-authn": {
+        "authentication_mode": "portable_component",
         "runtime": "wasmtime",
         "support": "experimental",
         "terminal_artifact": "tests/test-app-p3.wasm",
@@ -34,6 +35,7 @@ WASMTIME_DEPLOYMENT_CONTRACTS = {
         "artifact_sets": ["middleware"],
     },
     "wasmtime-authn-authz": {
+        "authentication_mode": "portable_component",
         "runtime": "wasmtime",
         "support": "experimental",
         "terminal_artifact": (
@@ -50,6 +52,7 @@ WASMTIME_DEPLOYMENT_CONTRACTS = {
         "artifact_sets": ["middleware", "authorization"],
     },
     "wasmtime-authn-authz-coarse": {
+        "authentication_mode": "portable_component",
         "runtime": "wasmtime",
         "support": "experimental",
         "terminal_artifact": (
@@ -64,6 +67,25 @@ WASMTIME_DEPLOYMENT_CONTRACTS = {
         "middleware_profile": "authn_authz_coarse",
         "middleware": EXPECTED_AUTHZ_STACK,
         "artifact_sets": ["middleware", "authorization"],
+    },
+    "wasmtime-trusted-ingress-authz": {
+        "authentication_mode": "trusted_ingress",
+        "runtime": "wasmtime",
+        "support": "production",
+        "terminal_artifact": (
+            "tests/authz-fixture/target/wasm32-wasip2/release/"
+            "leptos_wasi_authz_fixture.wasm"
+        ),
+        "output_artifact": (
+            "tests/authz-fixture/target/wasm32-wasip2/release/"
+            "leptos_wasi_authz_fixture.wasm"
+        ),
+        "listener_count": 1,
+        "private_terminal": True,
+        "edge_policy": "managed-private-ingress",
+        "middleware_profile": "trusted_ingress_authz",
+        "middleware": [],
+        "artifact_sets": ["authorization"],
     },
 }
 EXPECTED_DEPENDENCIES = [
@@ -241,8 +263,8 @@ def audit_wasmtime_deployment_contracts(profiles: list[dict]) -> None:
 
 def audit_deployment_policy(lock: dict) -> None:
     policy = load("tests/middleware/deployment-policy.toml")
-    if policy.get("schema") != 1:
-        raise AssertionError("deployment policy schema must be 1")
+    if policy.get("schema") != 2:
+        raise AssertionError("deployment policy schema must be 2")
     profiles = policy.get("profile", [])
     if not isinstance(profiles, list):
         raise AssertionError("deployment profiles must be an array")
@@ -269,6 +291,7 @@ def audit_deployment_policy(lock: dict) -> None:
             "authn": EXPECTED_STACK,
             "authn_authz": EXPECTED_STACK,
             "authn_authz_coarse": EXPECTED_AUTHZ_STACK,
+            "trusted_ingress_authz": [],
         }.get(profile_kind)
         if expected is None or profile.get("middleware") != expected:
             raise AssertionError(f"deployment profile {name} has an invalid stack")
@@ -277,6 +300,7 @@ def audit_deployment_policy(lock: dict) -> None:
             "authn": ["middleware"],
             "authn_authz": ["middleware", "authorization"],
             "authn_authz_coarse": ["middleware", "authorization"],
+            "trusted_ingress_authz": ["authorization"],
         }[profile_kind]
         if profile.get("artifact_sets") != expected_artifact_sets:
             raise AssertionError(
@@ -303,9 +327,25 @@ def audit_deployment_policy(lock: dict) -> None:
             raise AssertionError(
                 f"deployment profile {name} uses a disallowed runtime/support pair"
             )
-        if support == "production" and not expected:
+        authentication_mode = profile.get("authentication_mode")
+        expected_authentication_mode = {
+            "none": "none",
+            "authn": "portable_component",
+            "authn_authz": "portable_component",
+            "authn_authz_coarse": "portable_component",
+            "trusted_ingress_authz": "trusted_ingress",
+        }[profile_kind]
+        if authentication_mode != expected_authentication_mode:
             raise AssertionError(
-                f"production profile {name} exposes a terminal without policy"
+                f"deployment profile {name} has an invalid authentication mode"
+            )
+        if support == "production" and (
+            authentication_mode != "trusted_ingress"
+            or profile.get("private_terminal") is not True
+            or profile.get("edge_policy") != "managed-private-ingress"
+        ):
+            raise AssertionError(
+                f"production profile {name} must require a private trusted ingress"
             )
 
         if runtime == "wasmtime":
@@ -313,7 +353,10 @@ def audit_deployment_policy(lock: dict) -> None:
                 raise AssertionError(
                     f"Wasmtime profile {name} must expose exactly one app listener"
                 )
-            if profile.get("output_artifact") == profile["terminal_artifact"]:
+            if (
+                profile.get("output_artifact") == profile["terminal_artifact"]
+                and authentication_mode != "trusted_ingress"
+            ):
                 raise AssertionError(
                     f"Wasmtime profile {name} must serve only a composed output"
                 )
@@ -636,8 +679,8 @@ def main() -> int:
         resolve_tool("WASMTIME_BIN", "wasmtime", lock["wasmtime_version"])
 
     print(
-        "final-WASI middleware manifests are pinned; optional authn wraps the "
-        "terminal apps; /pkg split assets remain public"
+        "deployment policy is pinned; production uses a private trusted "
+        "ingress; portable component middleware remains experimental"
     )
     return 0
 

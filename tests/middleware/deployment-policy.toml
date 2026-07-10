@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 artifact_set_file = "tests/middleware/artifact-sets.toml"
 artifact_set_sha256 = "b6404e8157fb2224eb7f2929b1cb1f0f18775df9596afd83bedfeb9df32e8b34"
 
@@ -12,6 +12,7 @@ wasmtime = ["experimental", "production"]
 
 [[profile]]
 name = "spin-counter-stable"
+authentication_mode = "none"
 runtime = "spin"
 support = "middleware_unsupported"
 manifest = "examples/counter/spin.toml"
@@ -30,6 +31,7 @@ source_digest = "sha256:96c76d9af86420b39eb6cd7be5550e3cb5d4cc4de572ce0fd1f6a294
 
 [[profile]]
 name = "spin-counter-native-canary"
+authentication_mode = "portable_component"
 runtime = "spin"
 support = "runtime_incompatibility_canary"
 manifest = "examples/counter/spin.middleware-vnext.toml"
@@ -48,6 +50,7 @@ source_digest = "sha256:96c76d9af86420b39eb6cd7be5550e3cb5d4cc4de572ce0fd1f6a294
 
 [[profile]]
 name = "spin-counter-precomposed-canary"
+authentication_mode = "portable_component"
 runtime = "spin"
 support = "runtime_incompatibility_canary"
 manifest = "examples/counter/spin.middleware-composed.toml"
@@ -67,6 +70,7 @@ source_digest = "sha256:96c76d9af86420b39eb6cd7be5550e3cb5d4cc4de572ce0fd1f6a294
 
 [[profile]]
 name = "spin-p2-test-fixture"
+authentication_mode = "none"
 runtime = "spin"
 support = "test_fixture"
 manifest = "tests/spin.toml"
@@ -78,6 +82,7 @@ artifact_sets = []
 
 [[profile]]
 name = "spin-p3-runtime-canary"
+authentication_mode = "none"
 runtime = "spin"
 support = "runtime_incompatibility_canary"
 manifest = "tests/spin-p3.toml"
@@ -89,6 +94,7 @@ artifact_sets = []
 
 [[profile]]
 name = "spin-p3-native-canary"
+authentication_mode = "portable_component"
 runtime = "spin"
 support = "runtime_incompatibility_canary"
 manifest = "tests/spin-p3-middleware-vnext.toml"
@@ -100,6 +106,7 @@ artifact_sets = ["middleware"]
 
 [[profile]]
 name = "spin-p3-precomposed-canary"
+authentication_mode = "portable_component"
 runtime = "spin"
 support = "runtime_incompatibility_canary"
 manifest = "tests/spin-p3-middleware-composed.toml"
@@ -112,6 +119,7 @@ artifact_sets = ["middleware"]
 
 [[profile]]
 name = "wasmtime-authn"
+authentication_mode = "portable_component"
 runtime = "wasmtime"
 support = "experimental"
 terminal_artifact = "tests/test-app-p3.wasm"
@@ -123,6 +131,7 @@ artifact_sets = ["middleware"]
 
 [[profile]]
 name = "wasmtime-authn-authz"
+authentication_mode = "portable_component"
 runtime = "wasmtime"
 support = "experimental"
 terminal_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_authz_fixture.wasm"
@@ -134,6 +143,7 @@ artifact_sets = ["middleware", "authorization"]
 
 [[profile]]
 name = "wasmtime-authn-authz-coarse"
+authentication_mode = "portable_component"
 runtime = "wasmtime"
 support = "experimental"
 terminal_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_authz_fixture.wasm"
@@ -142,3 +152,24 @@ listener_count = 1
 middleware_profile = "authn_authz_coarse"
 middleware = ["request-id", "security-headers", "cors", "authn-policy", "authz-http-pep"]
 artifact_sets = ["middleware", "authorization"]
+
+[[profile]]
+name = "wasmtime-trusted-ingress-authz"
+authentication_mode = "trusted_ingress"
+runtime = "wasmtime"
+support = "production"
+terminal_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_authz_fixture.wasm"
+output_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_authz_fixture.wasm"
+listener_count = 1
+private_terminal = true
+edge_policy = "managed-private-ingress"
+middleware_profile = "trusted_ingress_authz"
+middleware = []
+artifact_sets = ["authorization"]
+
+[[profile.public_exemption]]
+route = "/pkg/..."
+component = "counter-pkg"
+reason = "public split-WASM assets remain edge-covered but authentication-exempt"
+source_url = "https://github.com/fermyon/spin-fileserver/releases/download/v0.1.0/spin_static_fs.wasm"
+source_digest = "sha256:96c76d9af86420b39eb6cd7be5550e3cb5d4cc4de572ce0fd1f6a29471536cb4"

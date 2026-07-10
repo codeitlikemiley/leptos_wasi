@@ -4,9 +4,16 @@
 middleware is composed around that terminal component by the deployment; it is
 not registered through a `leptos_wasi::Handler` builder method.
 
-This keeps reusable authentication, CORS, request-ID, and response-header
-components independent of Leptos. The same middleware artifact can wrap other
-WASIp3 HTTP services, while each HTTP trigger selects its own ordered stack.
+The production default keeps request-ID, CORS, response security headers, and
+authentication at a trusted private ingress. The ingress removes untrusted
+identity headers and forwards one service-bound context to a terminal listener
+that is not publicly reachable. The terminal validates and removes that wire
+envelope, then installs typed identity in `http::Extensions` before constructing
+the `leptos_wasi::Handler`.
+
+Reusable WASIp3 components remain available as a portable experimental mode.
+The same artifact can wrap other WASIp3 HTTP services, while each HTTP trigger
+selects its own ordered stack.
 The companion `wasi-http-middleware` repository implements that reusable chain
 as independently compiled components. Local integration runners verify and
 copy checksum-pinned artifacts from the sibling checkout; `leptos_wasi` does
@@ -24,7 +31,7 @@ There are three distinct policy boundaries:
 3. **Host or ingress policy** owns TLS, WAF rules, trusted client addresses,
    request deadlines, concurrency, memory limits, and distributed rate limits.
 
-A recommended outermost-to-innermost stack is:
+The portable component stack is:
 
 ```text
 request-id -> security-headers -> cors -> authn-policy -> leptos service
@@ -146,13 +153,17 @@ invalid credentials never fall back to anonymous. The final composed artifact
 must be the only externally routable handler, because the terminal service
 cannot prove that an inbound metadata header passed through the chain.
 
-`leptos_wasi` already provides `http::request::Parts` to SSR routes and server
-functions. Install typed identity or policy context through
-`handle_with_context`; that request-context closure runs after the standard
-parts are available. That per-request context is the only application-side
-trust boundary for middleware identity. Route-discovery context is synthetic,
-may be cached, and must never read headers or perform authentication. This does
-not require a middleware-specific public API in this crate.
+In the production profile, `wasi-http-authn::accept_trusted_ingress` validates
+service ID, audience, lifetime, duplicate metadata, and the absence of a
+surviving bearer token. It strips the wire envelope and installs
+`VerifiedAuthContext` in `http::Extensions`. Missing typed context is a bypass,
+not anonymous identity, and maps to 503. The portable component profile must
+perform the same explicit promotion before `Handler::build`.
+
+`leptos_wasi` provides the resulting `http::request::Parts`, including
+extensions, to SSR routes and server functions. `handle_with_context` installs
+the typed Leptos context after those standard parts are available. Route
+discovery remains synthetic and must never perform authentication.
 
 SSR authentication state is presentation-only. It may select navigation,
 render a sign-in prompt, or hide a control, but hidden HTML is not an
@@ -169,9 +180,9 @@ but cannot authorize a resource identifier hidden in a server-function body.
 Keep ownership, RBAC, ABAC, and ReBAC decisions in server-function/domain policy
 through `ServerFn::middlewares()` or an explicit typed authorization call.
 
-The authorization fixture evaluates its independent Cedar and SpiceDB checks
-concurrently. Both decisions remain mandatory; concurrency only removes one
-serial provider round-trip from the request critical path.
+The authorization fixture embeds and initializes Cedar once. RBAC and ABAC are
+evaluated locally; only relationship-sensitive operations call SpiceDB. Hybrid
+operations evaluate Cedar first and never call SpiceDB after a Cedar denial.
 
 The companion `leptos-wasi-authz` bridge provides the typed request-context
 reader and server-function layers used by the integration fixture. It maps a
@@ -242,7 +253,7 @@ The Wasmtime runner also accepts `WASMTIME_MAX_INSTANCE_REUSE_COUNT`,
 are diagnostic knobs, not substitutes for a deployment-level concurrency
 limit or horizontal scaling.
 
-The alpha is not yet promotable. Delayed first-byte delivery, body cancellation,
+The portable component alpha is not yet promotable. Delayed first-byte delivery, body cancellation,
 trailers, and a body that yields one frame before failing now pass through the
 composed chain without buffering. The remaining blocker is performance in the
 current final-WASI runtime. In a five-pair, 30-second, concurrency-100

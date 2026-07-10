@@ -126,6 +126,20 @@ class DeploymentPolicyNegativeTests(unittest.TestCase):
             lambda policy: policy.__setitem__("artifact_set_sha256", "0" * 64)
         )
 
+    def test_production_terminal_must_remain_private(self) -> None:
+        self.assert_policy_rejected(
+            lambda policy: self.profile(
+                policy, "wasmtime-trusted-ingress-authz"
+            ).__setitem__("private_terminal", False)
+        )
+
+    def test_production_authentication_mode_cannot_fall_back_implicitly(self) -> None:
+        self.assert_policy_rejected(
+            lambda policy: self.profile(
+                policy, "wasmtime-trusted-ingress-authz"
+            ).__setitem__("authentication_mode", "portable_component")
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
