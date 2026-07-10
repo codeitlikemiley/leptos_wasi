@@ -69,9 +69,15 @@ case "$HOST" in
     if [[ "$MIDDLEWARE" == "1" ]]; then
       "$ROOT/scripts/audit-middleware-manifests.py" --wasmtime
     fi
-    MIDDLEWARE_ENV=()
+    WASMTIME_ARGS=(
+      serve
+      -W component-model-async=y
+      -S p3=y
+      -S cli=y
+      -S http=y
+    )
     if [[ "$MIDDLEWARE" == "1" ]]; then
-      MIDDLEWARE_ENV=(
+      WASMTIME_ARGS+=(
         -S inherit-network=y
         --env=WASI_MIDDLEWARE_CORS_ORIGINS=http://127.0.0.1:3110,http://127.0.0.1:3111
         --env=WASI_MIDDLEWARE_CORS_METHODS=GET,HEAD,POST
@@ -86,18 +92,15 @@ case "$HOST" in
         --env=WASI_MIDDLEWARE_AUTHN_ALLOW_INSECURE_LOOPBACK=true
       )
     fi
-    "$WASMTIME_BIN" serve \
-      -W component-model-async=y \
-      -S p3=y \
-      -S cli=y \
-      -S http=y \
-      "${MIDDLEWARE_ENV[@]}" \
-      --dir="$PWD/target/site::/site" \
-      --env=LEPTOS_OUTPUT_NAME=counter \
-      --env=LEPTOS_SITE_ROOT=/site \
-      --env=LEPTOS_SITE_PKG_DIR=pkg \
-      --addr "127.0.0.1:$PORT" \
-      "$SERVER_COMPONENT" &
+    WASMTIME_ARGS+=(
+      --dir="$PWD/target/site::/site"
+      --env=LEPTOS_OUTPUT_NAME=counter
+      --env=LEPTOS_SITE_ROOT=/site
+      --env=LEPTOS_SITE_PKG_DIR=pkg
+      --addr "127.0.0.1:$PORT"
+      "$SERVER_COMPONENT"
+    )
+    "$WASMTIME_BIN" "${WASMTIME_ARGS[@]}" &
     ;;
   *)
     echo "unsupported HOST: $HOST" >&2
