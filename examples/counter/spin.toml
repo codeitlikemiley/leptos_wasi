@@ -14,13 +14,12 @@ executor = { type = "http" }
 [component.counter]
 source = "target/wasm32-wasip2/release/counter.wasm"
 allowed_outbound_hosts = []
-key_value_stores = ["default"]
 environment = { LEPTOS_OUTPUT_NAME = "counter", LEPTOS_SITE_ROOT = "/site", LEPTOS_SITE_PKG_DIR = "pkg" }
 files = [
   { source = "target/site", destination = "/site" }
 ]
 [component.counter.build]
-command = "WASI_RUNTIME=spin cargo leptos build --release --split --frontend-only && WASI_RUNTIME=spin LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr"
+command = "cargo leptos build --release --split --frontend-only --lib-cargo-args=--locked && LEPTOS_OUTPUT_NAME=counter cargo build --locked --lib --target wasm32-wasip2 --release --no-default-features --features ssr"
 watch = ["src/**/*.rs", "Cargo.toml"]
 
 [[trigger.http]]

@@ -4,7 +4,7 @@ This example demonstrates running a Leptos application utilizing the native WASI
 
 ## Prerequisites
 
-- **Rust Toolchain:** Version 1.93.0 or later (required by `spin-sdk` v6.0.0).
+- **Rust Toolchain:** Version 1.93.0 or later.
 - **Rust target:** `rustup target add wasm32-wasip2`
 - **Cargo Leptos:** Version 0.3.7 or later (`cargo install --locked cargo-leptos`).
 - **Spin CLI:** Version 4.0.0 or later.
@@ -24,7 +24,7 @@ To compile and run the application under Spin:
 make spin
 ```
 
-To clean up all local build and storage files:
+To clean up all local build files:
 
 ```bash
 make clean
@@ -50,11 +50,9 @@ The Spin file server uses `Cache-Control: no-cache`, and the whole `pkg`
 directory should be deployed atomically so the loader, manifest, main module,
 and lazy chunk always describe the same build.
 
-## Architecture & Storage Backend
+## Architecture
 
-1. **Storage:** The storage mechanism depends on the runtime:
-   - **Spin:** Persists the count using Spin's built-in key-value store (configured as the `"default"` store in `spin.toml`).
-   - **Wasmtime:** Persists the count to `/data/counter.txt` inside the component's sandboxed filesystem, mapped via `--dir=./data::/data` to a local directory on your host.
+1. **Session Counter:** Each hydrated island starts at zero. The browser submits its current value to a server function, which performs a checked increment and returns the next value. No count is persisted or shared between browser sessions.
 2. **Static Files:** Wasmtime maps `./target/site/` to guest `/site`, while Spin serves `./target/site/pkg/` from a dedicated `/pkg/...` file-server component. Both serve every generated split asset.
 3. **Split Manifest:** The server component can read `/site/pkg/__wasm_split_manifest.json`, allowing Leptos SSR to emit preload hints for server-invoked lazy functions and routes. The lazy island itself loads when island hydration runs.
 4. **WASI HTTP:** The server implements `wasip3::exports::http::handler::Guest` and runs as a native WebAssembly component using the Preview 3 async ABI.

@@ -3,24 +3,6 @@ use leptos::prelude::*;
 use leptos_meta::*;
 use leptos_router::*;
 
-#[cfg(feature = "hydrate")]
-use web_sys::window;
-
-#[cfg(feature = "hydrate")]
-fn cached_count() -> Option<u32> {
-    let storage = window()?.local_storage().ok()??;
-    storage.get_item("counter_count").ok()??.parse::<u32>().ok()
-}
-
-#[cfg(feature = "hydrate")]
-fn cache_count(count: u32) {
-    if let Some(window) = window()
-        && let Ok(Some(storage)) = window.local_storage()
-    {
-        let _ = storage.set_item("counter_count", &count.to_string());
-    }
-}
-
 #[cfg(feature = "ssr")]
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
@@ -114,50 +96,27 @@ fn HomePage() -> impl IntoView {
 #[island(lazy)]
 fn CounterIsland() -> impl IntoView {
     let increment_action = ServerAction::<IncrementCount>::new();
-    let (optimistic_count, set_optimistic_count) = signal(None::<u32>);
-    let count = Resource::new(
-        move || increment_action.version().get(),
-        |_| get_count(),
-    );
+    let (count, set_count) = signal(0_u32);
+    let action_value = increment_action.value();
 
     Effect::new(move |_| {
-        if optimistic_count.get().is_none() {
-            #[cfg(feature = "hydrate")]
-            if let Some(cached_count) = cached_count() {
-                set_optimistic_count.set(Some(cached_count));
-                return;
+        action_value.with(|result| {
+            if let Some(Ok(next_count)) = result {
+                set_count.set(*next_count);
             }
-
-            if let Some(Ok(server_count)) = count.get() {
-                set_optimistic_count.set(Some(server_count));
-
-                #[cfg(feature = "hydrate")]
-                cache_count(server_count);
-            }
-        }
+        });
     });
 
-    Effect::new(move |_| {
-        let Some(Ok(server_count)) = count.get() else {
-            return;
-        };
-        if optimistic_count
-            .get()
-            .is_some_and(|current| server_count != current)
-        {
-            set_optimistic_count.set(Some(server_count));
-        }
+    let increment = move |_| {
+        increment_action.dispatch(IncrementCount {
+            current: count.get_untracked(),
+        });
+    };
 
-        #[cfg(feature = "hydrate")]
-        cache_count(server_count);
-    });
-
-    let display_count = move || {
-        if let Some(opt_count) = optimistic_count.get() {
-            opt_count.to_string()
-        } else {
-            "...".to_string()
-        }
+    let action_failed = move || {
+        increment_action
+            .value()
+            .with(|result| matches!(result, Some(Err(_))))
     };
 
     view! {
@@ -165,7 +124,7 @@ fn CounterIsland() -> impl IntoView {
             <div class="relative">
                 <div class="bg-[#1a2332] rounded-lg p-8 border border-[#3a4a5c]">
                     <div class="text-5xl md:text-6xl font-light text-white tabular-nums">
-                        {display_count}
+                        {move || count.get()}
                     </div>
                     <div class="text-[#8b9cb8] text-sm mt-2 uppercase tracking-wider">
                         "COUNT VALUE"
@@ -179,25 +138,25 @@ fn CounterIsland() -> impl IntoView {
                 </Show>
             </div>
 
-            <ActionForm action=increment_action>
-                <button
-                    disabled=move || increment_action.pending().get()
-                    class="w-full rounded-lg bg-[#00d4aa] px-6 py-3 text-[#1a2332] font-medium transition-all duration-200 hover:bg-[#00b894] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#00d4aa]"
-                >
-                    {move || if increment_action.pending().get() {
-                        "Updating..."
-                    } else {
-                        "Increment Counter"
-                    }}
-                </button>
-            </ActionForm>
+            <button
+                type="button"
+                on:click=increment
+                disabled=move || increment_action.pending().get()
+                class="w-full rounded-lg bg-[#00d4aa] px-6 py-3 text-[#1a2332] font-medium transition-all duration-200 hover:bg-[#00b894] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#00d4aa]"
+            >
+                {move || if increment_action.pending().get() {
+                    "Updating..."
+                } else {
+                    "Increment Counter"
+                }}
+            </button>
 
             <div class="flex items-center justify-center gap-2 text-xs">
                 <div class={move || {
-                    if optimistic_count.get().is_none() {
-                        "w-2 h-2 rounded-full bg-yellow-500 animate-pulse"
-                    } else if increment_action.pending().get() {
+                    if increment_action.pending().get() {
                         "w-2 h-2 rounded-full bg-[#00d4aa] animate-pulse"
+                    } else if action_failed() {
+                        "w-2 h-2 rounded-full bg-red-500"
                     } else {
                         "w-2 h-2 rounded-full bg-[#00d4aa]"
                     }
@@ -205,10 +164,10 @@ fn CounterIsland() -> impl IntoView {
                 </div>
                 <span class="text-[#8b9cb8] uppercase tracking-wider">
                     {move || {
-                        if optimistic_count.get().is_none() {
-                            "Loading"
-                        } else if increment_action.pending().get() {
+                        if increment_action.pending().get() {
                             "Syncing"
+                        } else if action_failed() {
+                            "Update failed"
                         } else {
                             "Ready"
                         }
@@ -233,101 +192,11 @@ fn NotFound() -> impl IntoView {
     view! { <h1>"Not Found"</h1> }
 }
 
-#[cfg(feature = "ssr")]
-mod storage {
-    #[cfg(runtime_spin)]
-    pub async fn get(key: &str) -> Result<Option<Vec<u8>>, String> {
-        use spin_sdk::key_value::Store;
-        let store = Store::open_default()
-            .await
-            .map_err(|e| format!("Failed to open Spin KV store: {}", e))?;
-        store
-            .get(key)
-            .await
-            .map_err(|e| format!("Failed to get from Spin KV: {}", e))
-    }
-
-    #[cfg(runtime_spin)]
-    pub async fn set(key: &str, value: &[u8]) -> Result<(), String> {
-        use spin_sdk::key_value::Store;
-        let store = Store::open_default()
-            .await
-            .map_err(|e| format!("Failed to open Spin KV store: {}", e))?;
-        store
-            .set(key, value)
-            .await
-            .map_err(|e| format!("Failed to set in Spin KV: {}", e))
-    }
-
-    #[cfg(not(runtime_spin))]
-    pub async fn get(key: &str) -> Result<Option<Vec<u8>>, String> {
-        use std::fs;
-        use std::path::Path;
-
-        let base_path = std::env::var("STORAGE_PATH")
-            .unwrap_or_else(|_| "./data".to_string());
-        let file_path = format!("{}/{}.txt", base_path, key);
-        let path = Path::new(&file_path);
-
-        if !path.exists() {
-            return Ok(None);
-        }
-
-        fs::read(&file_path)
-            .map(Some)
-            .map_err(|e| format!("Failed to read file: {}", e))
-    }
-
-    #[cfg(not(runtime_spin))]
-    pub async fn set(key: &str, value: &[u8]) -> Result<(), String> {
-        use std::fs;
-        use std::path::Path;
-
-        let base_path = std::env::var("STORAGE_PATH")
-            .unwrap_or_else(|_| "./data".to_string());
-        let dir_path = Path::new(&base_path);
-        if !dir_path.exists() {
-            fs::create_dir_all(dir_path)
-                .map_err(|e| format!("Failed to create directory: {}", e))?;
-        }
-
-        let file_path = format!("{}/{}.txt", base_path, key);
-        fs::write(&file_path, value)
-            .map_err(|e| format!("Failed to write file: {}", e))
-    }
-}
-
-#[server(prefix = "/api")]
-pub async fn get_count() -> Result<u32, ServerFnError<String>> {
-    match storage::get("counter").await {
-        Ok(Some(value)) => {
-            let count_str = String::from_utf8(value).map_err(|e| {
-                ServerFnError::ServerError(format!("Invalid UTF-8: {}", e))
-            })?;
-            let count = count_str.parse::<u32>().unwrap_or(0);
-            println!("Retrieved count: {count}");
-            Ok(count)
-        }
-        Ok(None) => {
-            println!("No count found, returning 0");
-            Ok(0)
-        }
-        Err(e) => {
-            eprintln!("Error reading counter: {}", e);
-            Ok(0)
-        }
-    }
-}
-
-#[server(prefix = "/api")]
-pub async fn increment_count() -> Result<(), ServerFnError<String>> {
-    let current_count = get_count().await?;
-    let new_count = current_count + 1;
-    println!("Incrementing count from {current_count} to {new_count}");
-
-    storage::set("counter", new_count.to_string().as_bytes())
-        .await
-        .map_err(ServerFnError::ServerError)?;
-
-    Ok(())
+#[server(prefix = "/api", endpoint = "increment_count")]
+pub async fn increment_count(
+    current: u32,
+) -> Result<u32, ServerFnError<String>> {
+    current.checked_add(1).ok_or_else(|| {
+        ServerFnError::ServerError("counter reached its maximum value".into())
+    })
 }

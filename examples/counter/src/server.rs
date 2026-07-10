@@ -1,40 +1,34 @@
 use leptos::config::get_configuration;
-use leptos_wasi::executor::init_wasip3_spawner;
-use leptos_wasi::prelude::Handler;
+use leptos_wasi::wasip3::prelude::{Handler, init_wasip3_spawner};
 use wasip3::http::types::{ErrorCode, Request, Response};
 
-use crate::app::{App, GetCount, IncrementCount, shell};
+use crate::app::{App, IncrementCount, shell};
 
 struct LeptosServer;
 
 impl wasip3::exports::http::handler::Guest for LeptosServer {
     async fn handle(request: Request) -> Result<Response, ErrorCode> {
         // 1. Initialize host async task scheduling
-        let _ = init_wasip3_spawner();
+        init_wasip3_spawner().map_err(internal_error)?;
 
-        let conf = get_configuration(None).unwrap();
+        let conf = get_configuration(None).map_err(internal_error)?;
         let leptos_options = conf.leptos_options;
 
         // Convert the WASI request to http::Request
         let req = wasip3::http_compat::http_from_wasi_request(request)?;
 
         // 2. Build and handle request natively
-        let wasi_res = Handler::build(req)
-            .await
-            .map_err(|e| {
-                eprintln!("Error building handler: {:?}", e);
-                ErrorCode::InternalError(None)
-            })?
+        let handler = Handler::build(req).await.map_err(internal_error)?;
+        let handler = handler
             .static_files_handler("/pkg", serve_static_files)
-            .with_server_fn::<GetCount>()
+            .map_err(internal_error)?
             .with_server_fn::<IncrementCount>()
             .generate_routes(App)
+            .map_err(internal_error)?;
+        let wasi_res = handler
             .handle_with_context(move || shell(leptos_options.clone()), || {})
             .await
-            .map_err(|e| {
-                eprintln!("Error handling request: {:?}", e);
-                ErrorCode::InternalError(None)
-            })?;
+            .map_err(internal_error)?;
 
         Ok(wasi_res)
     }
@@ -42,7 +36,6 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
 
 fn serve_static_files(path: String) -> Option<leptos_wasi::response::Body> {
     use std::fs;
-    let path = path.strip_prefix("/").unwrap_or(&path);
     // Keep the guest path aligned with LeptosOptions.site_pkg_dir so the
     // server can also read the WASM-split manifest for preload hints.
     let file_path = format!("/site/pkg/{}", path);
@@ -54,6 +47,11 @@ fn serve_static_files(path: String) -> Option<leptos_wasi::response::Body> {
         println!("Could not read file at {}", file_path);
         None
     }
+}
+
+fn internal_error(error: impl std::fmt::Display) -> ErrorCode {
+    eprintln!("leptos_wasi counter error: {error}");
+    ErrorCode::InternalError(None)
 }
 
 // Export the server for standard WASIp3 http trigger

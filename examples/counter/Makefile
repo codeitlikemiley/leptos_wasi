@@ -16,8 +16,8 @@ run: wasmtime
 spin:
 	@echo "Building for Spin runtime..."
 	@mkdir -p .spin
-	WASI_RUNTIME=spin cargo leptos build --release --split --frontend-only
-	WASI_RUNTIME=spin LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr
+	cargo leptos build --release --split --frontend-only --lib-cargo-args=--locked
+	LEPTOS_OUTPUT_NAME=counter cargo build --locked --lib --target wasm32-wasip2 --release --no-default-features --features ssr
 	@$(MAKE) verify-split
 	@echo "Built: target/wasm32-wasip2/release/counter.wasm (for Spin)"
 	@echo "Starting Spin..."
@@ -26,20 +26,18 @@ spin:
 # Build and run with Wasmtime
 wasmtime:
 	@echo "Building for Wasmtime runtime..."
-	WASI_RUNTIME=wasmtime cargo leptos build --release --split --frontend-only
-	WASI_RUNTIME=wasmtime LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr --target-dir target/wasmtime
+	cargo leptos build --release --split --frontend-only --lib-cargo-args=--locked
+	LEPTOS_OUTPUT_NAME=counter cargo build --locked --lib --target wasm32-wasip2 --release --no-default-features --features ssr --target-dir target/wasmtime
 	@$(MAKE) verify-split
 	@echo "Built: target/wasmtime/wasm32-wasip2/release/counter.wasm (for Wasmtime)"
 	@echo "Starting Wasmtime serve..."
 	@echo "Serving at http://127.0.0.1:3000"
-	@mkdir -p ./data
 	wasmtime serve \
 		-W component-model-async=y \
 		-S p3=y \
 		-S cli=y \
 		-S http=y \
 		--dir=$(CURDIR)/target/site::/site \
-		--dir=$(CURDIR)/data::/data \
 		--env=LEPTOS_OUTPUT_NAME=counter \
 		--env=LEPTOS_SITE_ROOT=/site \
 		--env=LEPTOS_SITE_PKG_DIR=pkg \
@@ -57,5 +55,5 @@ verify-split:
 # Clean target
 clean:
 	cargo clean
-	rm -rf target/site target/wasmtime ./data
+	rm -rf target/site target/wasmtime
 	rm -rf .spin
