@@ -6,6 +6,8 @@ mod app;
 use std::sync::{Arc, OnceLock};
 
 use app::{App, IncrementCount, shell};
+use bytes::Bytes;
+use http_body_util::Full;
 use leptos::{config::get_configuration, prelude::use_context};
 use leptos_wasi::wasip3::prelude::{Handler, init_wasip3_spawner};
 use leptos_wasi_authz::{
@@ -137,7 +139,9 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
             .get_or_init(|| TrustedIngressConfig::new(SERVICE_ID, [EXPECTED_AUDIENCE]))
             .as_ref()
             .map_err(internal_error)?;
-        accept_trusted_ingress(trusted_ingress, &mut request).map_err(internal_error)?;
+        if accept_trusted_ingress(trusted_ingress, &mut request).is_err() {
+            return trusted_boundary_failure();
+        }
 
         Handler::build(request)
             .await
@@ -293,6 +297,20 @@ fn serve_static_files(path: String) -> Option<leptos_wasi::response::Body> {
 
 fn configuration_error(message: &str) -> ServerFnError {
     ServerFnError::ServerError(message.to_string())
+}
+
+fn trusted_boundary_failure() -> Result<Response, ErrorCode> {
+    let mut response = http::Response::new(Full::new(Bytes::new()));
+    *response.status_mut() = http::StatusCode::SERVICE_UNAVAILABLE;
+    response.headers_mut().insert(
+        http::header::CACHE_CONTROL,
+        http::HeaderValue::from_static("no-store"),
+    );
+    response.headers_mut().insert(
+        http::header::CONTENT_LENGTH,
+        http::HeaderValue::from_static("0"),
+    );
+    wasip3::http_compat::http_into_wasi_response(response)
 }
 
 fn internal_error<E>(_error: E) -> ErrorCode {

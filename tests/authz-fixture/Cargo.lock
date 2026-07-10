@@ -1278,8 +1278,10 @@ name = "leptos-wasi-authz-fixture"
 version = "0.0.0"
 dependencies = [
  "axum-core",
+ "bytes",
  "futures",
  "http",
+ "http-body-util",
  "leptos",
  "leptos-wasi-authz",
  "leptos_meta",
