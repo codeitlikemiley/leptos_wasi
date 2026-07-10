@@ -6,6 +6,22 @@ All notable changes to this project will be documented in this file.
 
 No changes yet.
 
+## [0.5.0-alpha.2] — 2026-07-11
+
+### Changed
+
+- Made private trusted ingress the production authentication profile and kept
+  guest component middleware as an experimental portability fallback.
+- Promoted validated authentication into typed request extensions before
+  `Handler::build` without changing the public handler API.
+- Embedded Cedar for local RBAC/ABAC evaluation and retained SpiceDB only for
+  relationship-sensitive authorization.
+
+### Security
+
+- Added deployment-policy checks for private terminal exposure, explicit
+  authentication mode, direct bypass, and public split-asset exemptions.
+
 ## [0.5.0-alpha.1] — 2026-07-10
 
 ### Breaking
