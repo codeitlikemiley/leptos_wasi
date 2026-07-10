@@ -1,0 +1,16 @@
+schema = 1
+wasi_http = "0.3.0-rc-2026-03-15"
+spin_runtime_repository = "https://github.com/spinframework/spin"
+spin_runtime_revision = "27451471b8ba0faeffa01c5a4ddd6daee9a9d526"
+spin_runtime_default_features = false
+spin_sdk_repository = "https://github.com/spinframework/spin-rust-sdk"
+spin_sdk_revision = "14e675aa877c2dd4040c631421dfdaf5d526fb40"
+wasmtime_version = "45.0.0"
+wac_cli_version = "0.10.1"
+wasm_tools_version = "1.248.0"
+
+[fixture]
+name = "leptos-wasi-middleware-fixture"
+manifest = "tests/middleware-fixture/Cargo.toml"
+artifact = "tests/middleware-fixture.wasm"
+production = false

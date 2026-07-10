@@ -151,6 +151,12 @@ script = [
     "cargo check --locked --manifest-path tests/api-fixtures/dual-runtime-consumer/Cargo.toml",
 ]
 
+[tasks.middleware-manifest-audit]
+command = "./scripts/audit-middleware-manifests.py"
+
+[tasks.middleware-vnext]
+command = "./scripts/run-middleware-tests.sh"
+
 [tasks.ci]
 dependencies = ["ci-wasip2", "ci-wasip3", "ci-dual", "api-fixtures"]
 

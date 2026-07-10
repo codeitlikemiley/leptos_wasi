@@ -159,6 +159,24 @@ pub async fn get_test() -> Result<String, ServerFnError> {
     Ok("GET response".to_string())
 }
 
+#[server(
+    input = GetUrl,
+    prefix = "/api",
+    endpoint = "middleware_request_header"
+)]
+pub async fn middleware_request_header() -> Result<String, ServerFnError> {
+    let value = use_context::<http::request::Parts>()
+        .and_then(|parts| {
+            parts
+                .headers
+                .get("x-leptos-wasi-middleware-request")
+                .cloned()
+        })
+        .and_then(|value| value.to_str().ok().map(str::to_owned))
+        .unwrap_or_else(|| "missing".to_string());
+    Ok(value)
+}
+
 #[server(input = GetUrl, prefix = "/api", endpoint = "pollable_depth")]
 pub async fn pollable_depth() -> Result<usize, ServerFnError> {
     #[cfg(feature = "wasip2")]

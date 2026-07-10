@@ -989,6 +989,91 @@ async fn run_e2e_tests(wasm_path: &str, is_p3: bool) {
         .expect("Assertions failed");
 }
 
+async fn run_middleware_assertions(port: u16) -> anyhow::Result<()> {
+    let client = reqwest::Client::new();
+    let base_url = format!("http://127.0.0.1:{port}");
+
+    let rejected = client
+        .get(format!("{base_url}/api/middleware_request_header"))
+        .send()
+        .await?;
+    assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        rejected
+            .headers()
+            .get("x-leptos-wasi-middleware")
+            .and_then(|value| value.to_str().ok()),
+        Some("wasip3-vnext")
+    );
+
+    let context = client
+        .get(format!("{base_url}/api/middleware_request_header"))
+        .bearer_auth("allow")
+        .send()
+        .await?;
+    assert_eq!(context.status(), StatusCode::OK);
+    assert_eq!(
+        context
+            .headers()
+            .get("x-leptos-wasi-middleware")
+            .and_then(|value| value.to_str().ok()),
+        Some("wasip3-vnext")
+    );
+    assert_eq!(context.json::<String>().await?, "wasip3-vnext");
+
+    let ssr = client.get(format!("{base_url}/ssr/async")).send().await?;
+    assert_eq!(ssr.status(), StatusCode::OK);
+    assert_eq!(
+        ssr.headers()
+            .get("x-leptos-wasi-middleware")
+            .and_then(|value| value.to_str().ok()),
+        Some("wasip3-vnext")
+    );
+    assert!(ssr.text().await?.contains("Async resource resolved"));
+
+    let static_asset = client
+        .get(format!("{base_url}/static/app.js"))
+        .send()
+        .await?;
+    assert_eq!(static_asset.status(), StatusCode::OK);
+    assert_eq!(
+        static_asset
+            .headers()
+            .get("x-leptos-wasi-middleware")
+            .and_then(|value| value.to_str().ok()),
+        Some("wasip3-vnext")
+    );
+
+    let started = Instant::now();
+    let delayed = client
+        .get(format!("{base_url}/static/delayed.stream"))
+        .send()
+        .await?;
+    assert_eq!(delayed.status(), StatusCode::OK);
+    let mut body = delayed.bytes_stream();
+    let first = tokio::time::timeout(Duration::from_millis(350), body.next())
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("middleware stream ended early"))??;
+    assert_eq!(first.as_ref(), b"first-frame\n");
+    assert!(started.elapsed() < Duration::from_millis(350));
+
+    let mut remaining = Vec::new();
+    while let Some(frame) = body.next().await {
+        remaining.extend_from_slice(&frame?);
+    }
+    assert_eq!(remaining, b"second-frame\n");
+
+    Ok(())
+}
+
+async fn run_e2e_tests_with_middleware(wasm_path: &str) {
+    let server = start_server(wasm_path, true)
+        .expect("Failed to start composed Wasmtime middleware server");
+    run_middleware_assertions(server.port)
+        .await
+        .expect("Middleware assertions failed");
+}
+
 #[tokio::test]
 #[ignore] // Run via ./run_tests.sh (requires wasmtime + pre-built WASM guests)
 async fn test_e2e_wasip2() {
@@ -999,6 +1084,12 @@ async fn test_e2e_wasip2() {
 #[ignore] // Run via ./run_tests.sh (requires wasmtime + pre-built WASM guests)
 async fn test_e2e_wasip3() {
     run_e2e_tests("tests/test-app-p3.wasm", true).await;
+}
+
+#[tokio::test]
+#[ignore] // Run via ./scripts/run-middleware-tests.sh (requires Wasmtime + composed guests)
+async fn experimental_middleware_wasmtime_wasip3() {
+    run_e2e_tests_with_middleware("tests/test-app-p3-middleware.wasm").await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1122,6 +1213,14 @@ async fn run_spin_e2e_tests(manifest_path: &str) {
         .expect("Assertions failed");
 }
 
+async fn run_spin_e2e_tests_with_middleware(manifest_path: &str) {
+    let server = start_spin_server(manifest_path)
+        .expect("Failed to start Spin middleware server");
+    run_middleware_assertions(server.port)
+        .await
+        .expect("Middleware assertions failed");
+}
+
 #[tokio::test]
 #[ignore] // Run via ./run_tests.sh (requires spin + pre-built WASM guests)
 async fn test_e2e_spin_wasip2() {
@@ -1132,4 +1231,11 @@ async fn test_e2e_spin_wasip2() {
 #[ignore] // Run via ./run_tests.sh (requires spin + pre-built WASM guests)
 async fn test_e2e_spin_wasip3() {
     run_spin_e2e_tests("tests/spin-p3.toml").await;
+}
+
+#[tokio::test]
+#[ignore] // Run via ./scripts/run-middleware-tests.sh (requires Spin vNext + pre-built guests)
+async fn experimental_middleware_spin_wasip3() {
+    run_spin_e2e_tests_with_middleware("tests/spin-p3-middleware-vnext.toml")
+        .await;
 }

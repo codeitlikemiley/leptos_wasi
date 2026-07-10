@@ -1,7 +1,8 @@
 use crate::app::{
     App, AuthTest, CustomTest, FormSubmitTest, GetTest, LargeBodyTest,
     MalformedRedirectTest, MiddlewareErrorTest, MiddlewareHeaderTest,
-    PanicTest, PollableDepth, PostTest, StandardContextsVisible, shell,
+    MiddlewareRequestHeader, PanicTest, PollableDepth, PostTest,
+    StandardContextsVisible, shell,
 };
 use leptos::{config::get_configuration, prelude::*};
 use leptos_router::location::RequestUrl;
@@ -107,6 +108,7 @@ mod preview3 {
                 .static_files_handler("/static", serve_static_files)
                 .map_err(internal_error)?
                 .with_server_fn::<GetTest>()
+                .with_server_fn::<MiddlewareRequestHeader>()
                 .with_server_fn::<PollableDepth>()
                 .with_server_fn::<PostTest>()
                 .with_server_fn::<CustomTest>()
@@ -190,6 +192,7 @@ mod preview2 {
                     )?
                     .static_files_handler("/static", serve_static_files)?
                     .with_server_fn::<GetTest>()
+                    .with_server_fn::<MiddlewareRequestHeader>()
                     .with_server_fn::<PollableDepth>()
                     .with_server_fn::<PostTest>()
                     .with_server_fn::<CustomTest>()
