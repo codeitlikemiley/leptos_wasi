@@ -1,3 +1,5 @@
+//! Platform-neutral response bodies and Leptos response options.
+
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
@@ -5,9 +7,9 @@ use leptos_integration_utils::ExtendResponse;
 use parking_lot::RwLock;
 use server_fn::response::generic::Body as ServerFnBody;
 use std::{pin::Pin, sync::Arc};
-#[cfg(all(feature = "wasip2", not(feature = "wasip3")))]
+#[cfg(feature = "wasip2")]
 use thiserror::Error;
-#[cfg(all(feature = "wasip2", not(feature = "wasip3")))]
+#[cfg(feature = "wasip2")]
 use wasi::http::types::{HeaderError, Headers};
 
 /// Represents a platform-agnostic HTTP response wrapped with a WASI-compatible [`Body`].
@@ -29,13 +31,13 @@ use wasi::http::types::{HeaderError, Headers};
 /// ```
 pub struct Response(pub http::Response<Body>);
 
-#[cfg(all(feature = "wasip2", not(feature = "wasip3")))]
+#[cfg(feature = "wasip2")]
 impl Response {
     /// Converts the response headers to the WASI Preview 2 native `Headers` type.
     pub fn headers(&self) -> Result<Headers, ResponseError> {
         let headers = Headers::new();
         for (name, value) in self.0.headers() {
-            headers.append(&name.to_string(), &Vec::from(value.as_bytes()))?;
+            headers.append(name.as_ref(), &Vec::from(value.as_bytes()))?;
         }
         Ok(headers)
     }
@@ -171,11 +173,52 @@ impl From<axum_core::body::Body> for Body {
 
 /// This struct lets you define headers and override the status of the Response from an Element or a Server Function
 /// Typically contained inside of a ResponseOptions. Setting this is useful for cookies and custom responses.
-#[derive(Debug, Clone, Default)]
 /// Extracted HTTP parts (headers and status code) for configuring response options.
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct ResponseParts {
-    pub headers: HeaderMap,
-    pub status: Option<StatusCode>,
+    headers: HeaderMap,
+    status: Option<StatusCode>,
+}
+
+impl ResponseParts {
+    /// Returns response headers collected so far.
+    #[must_use]
+    pub const fn headers(&self) -> &HeaderMap {
+        &self.headers
+    }
+
+    /// Returns mutable access to the response headers.
+    #[must_use]
+    pub fn headers_mut(&mut self) -> &mut HeaderMap {
+        &mut self.headers
+    }
+
+    /// Returns the configured status override, if present.
+    #[must_use]
+    pub const fn status(&self) -> Option<StatusCode> {
+        self.status
+    }
+
+    /// Sets the response status override.
+    pub fn set_status(&mut self, status: StatusCode) {
+        self.status = Some(status);
+    }
+
+    /// Clears the response status override.
+    pub fn clear_status(&mut self) {
+        self.status = None;
+    }
+
+    /// Inserts a header, replacing an existing value with the same name.
+    pub fn insert_header(&mut self, key: HeaderName, value: HeaderValue) {
+        self.headers.insert(key, value);
+    }
+
+    /// Appends a header without removing existing values with the same name.
+    pub fn append_header(&mut self, key: HeaderName, value: HeaderValue) {
+        self.headers.append(key, value);
+    }
 }
 
 /// Allows you to override details of the HTTP response like the status code and add Headers/Cookies.
@@ -230,20 +273,20 @@ impl ExtendResponse for Response {
 
     fn set_default_content_type(&mut self, content_type: &str) {
         let headers = self.0.headers_mut();
-        if !headers.contains_key(http::header::CONTENT_TYPE) {
-            headers.insert(
-                http::header::CONTENT_TYPE,
-                HeaderValue::from_str(content_type).unwrap(),
-            );
+        if !headers.contains_key(http::header::CONTENT_TYPE)
+            && let Ok(content_type) = HeaderValue::from_str(content_type)
+        {
+            headers.insert(http::header::CONTENT_TYPE, content_type);
         }
     }
 }
 
-#[cfg(all(feature = "wasip2", not(feature = "wasip3")))]
+#[cfg(feature = "wasip2")]
 /// Errors that can occur when converting HTTP headers to WASI Preview 2 headers.
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum ResponseError {
+    /// A header name or value was rejected by the WASI host bindings.
     #[error("failed to parse http::Response's headers")]
     WasiHeaders(#[from] HeaderError),
 }
@@ -277,6 +320,37 @@ impl http_body::Body for Body {
                 std::task::Poll::Ready(None) => std::task::Poll::Ready(None),
                 std::task::Poll::Pending => std::task::Poll::Pending,
             },
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        matches!(self, Body::Sync(bytes) if bytes.is_empty())
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        match self {
+            Body::Sync(bytes) => {
+                http_body::SizeHint::with_exact(bytes.len() as u64)
+            }
+            Body::Async(_) => http_body::SizeHint::default(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generic_server_fn_response_body_converts() {
+        let response = http::Response::new(ServerFnBody::Sync(
+            Bytes::from_static(b"generic response"),
+        ));
+        let response: Response = response.into();
+
+        match response.0.into_body() {
+            Body::Sync(bytes) => assert_eq!(bytes, "generic response"),
+            Body::Async(_) => panic!("synchronous generic body became async"),
         }
     }
 }
