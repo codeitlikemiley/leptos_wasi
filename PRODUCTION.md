@@ -8,13 +8,13 @@ Spin host security model.
 
 | Capability | Wasmtime WASIp2 | Spin WASIp2 | Wasmtime WASIp3 | Spin WASIp3 |
 |---|---:|---:|---:|---:|
-| Leptos SSR routes | Yes | Yes | Yes | Yes |
-| Typed server functions | Yes | Yes | Yes | Yes |
-| Server-function middleware | Yes | Yes | Yes | Yes |
-| Standard component middleware | No | No | Experimental | Experimental |
-| Streaming response bodies | Yes | Yes | Yes | Yes |
-| GET/HEAD static callback | Yes | Yes | Yes | Yes |
-| Islands and split browser WASM | Server compatible | Server compatible | Browser E2E | Browser E2E |
+| Leptos SSR routes | Yes | Yes | Yes | Blocked by host linker |
+| Typed server functions | Yes | Yes | Yes | Blocked by host linker |
+| Server-function middleware | Yes | Yes | Yes | Blocked by host linker |
+| Standard component middleware | No | No | Blocked by stream regression | Canary only |
+| Streaming response bodies | Yes | Yes | Yes | Blocked by host linker |
+| GET/HEAD static callback | Yes | Yes | Yes | Blocked by host linker |
+| Islands and split browser WASM | Server compatible | Server compatible | Browser E2E | Canary only |
 | Incoming request streaming | No | No | No | No |
 | WebSockets | No | No | No | No |
 | HTTP response trailers | No | No | No | No |
@@ -89,6 +89,12 @@ Configure these controls outside the crate:
 - TLS, forwarded-header trust, and client IP policy;
 - log retention, metrics collection, and alerts.
 
+The stock `wasmtime serve` CLI needs inherited networking for the precomposed
+authentication client and does not provide a per-host HTTP allowlist. Enforce
+the exact broker destination in a custom Wasmtime embedding or an outbound
+network sandbox before production. The local loopback runner validates the
+protocol and fail-closed behavior, not network egress isolation.
+
 WASIp2 uses a single-threaded cooperative executor. Initialize it through
 `init_wasip2_executor`, which caches the thread-local executor and rejects a
 mode mismatch. Treat `ExecutorError::Stalled` as an operational failure and
@@ -98,14 +104,18 @@ WASIp3 delegates tasks to the host. Call `init_wasip3_spawner()` before serving
 the first request and propagate a persistent initialization conflict. Do not
 discard its result.
 
-The experimental WASIp3 component-middleware tuple is pinned in
-`tests/middleware/components.lock.toml`. Do not deploy a floating Spin or SDK
-branch. Promote component middleware into this support matrix only after a
-stable Spin release and the application bindings use the same WIT revision.
-The independently versioned `wasi-http-middleware 0.1.0-alpha.1` companion owns
-the reusable request-ID, security-header, CORS, and external-auth policy chain;
-the local fixture is intentionally limited to ABI, request-context, streaming,
-browser-auth, and split-WASM compatibility.
+The final `wasi:http@0.3.0` component tuple is pinned in
+`tests/middleware/components.lock.toml`. Wasmtime 46.0.1 runs the deterministic
+WAC-precomposed chain. Stable Spin 4 cannot link the final
+`wasi:http/types@0.3.0` resources, while Spin's native middleware commit still
+imports the March RC handler world. The precomposed runtime lane and native
+`dependencies.middleware` lane therefore remain expected-incompatibility
+canaries. Promote Spin only after a tagged release provides final handler,
+types, and client host support plus native middleware composition against the
+final WIT. Do not downgrade production components to the RC or deploy floating
+tool/runtime revisions. The independently versioned middleware companion owns
+the request-ID, security-header, CORS, authentication, spoof stripping, and
+credential-removal components; `wasi-authz` owns typed application policy.
 
 ## Observability and sensitive data
 
@@ -169,11 +179,21 @@ A production release requires all of the following:
 - Formatting, Clippy, tests, and rustdoc pass for WASIp2, WASIp3, and both
   features together.
 - Rust 1.93.0 and current stable pass the feature matrix.
-- Wasmtime and Spin E2E pass for both previews.
+- Wasmtime E2E passes for both previews; Spin E2E passes for Preview 2, and the
+  Preview 3 expected-failure canary still matches the pinned linker failure.
 - Raw encoded-path security cases, middleware, SSR query context, body limits,
   cancellation, disconnect, delayed stream, and mid-stream failure are tested.
 - Preview 3 browser E2E proves SSR output, an initially unhydrated island, lazy
-  split-WASM fetch, hydration, and interaction on Wasmtime and Spin.
+  split-WASM fetch, hydration, and interaction on Wasmtime.
+- The checksum-pinned sibling middleware checkout is clean at the exact source
+  revision, its full Wasmtime chain and browser runner pass locally, and a
+  remote or release-artifact source exists before CI promotion. Until remote or
+  artifact distribution is authorized, this cross-repository gate is a release
+  blocker rather than a skipped CI success.
+- A stacked response-header profile preserves a committed first body frame
+  before an intentional terminal stream error across repeated runs. The alpha
+  currently fails this regression intermittently and cannot be promoted until
+  the companion implementation fixes it.
 - A ten-minute steady-load soak reaches a memory plateau, leaves no orphaned
   WASIp2 pollables, and produces no unexpected 5xx.
 - Release-mode p99 latency regresses no more than 5% from the recorded baseline.
@@ -181,8 +201,8 @@ A production release requires all of the following:
   `cargo audit` pass.
 - Every breaking API change appears in [MIGRATION.md](./MIGRATION.md).
 
-The non-blocking vNext middleware lane is additional compatibility evidence; it
-does not replace any stable-runtime gate above. See [WASIp3 HTTP
+The two non-blocking Spin Preview 3 canaries are compatibility evidence; they
+do not replace the Wasmtime final-WASI gate above. See [WASIp3 HTTP
 Middleware](./MIDDLEWARE.md).
 
 Run the local compile/test/documentation matrix with:

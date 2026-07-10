@@ -1,6 +1,9 @@
 # counter
 
-This example demonstrates running a Leptos application utilizing the native WASI Preview 3 (WASIp3) task scheduling and standard HTTP triggers. It supports both raw Wasmtime and Spin as runtimes.
+This example demonstrates running a Leptos application using native WASI
+Preview 3 task scheduling and standard HTTP triggers. Wasmtime 46 is the
+blocking final-WASI runtime. The Spin manifests are retained as compatibility
+canaries until a tagged Spin release links final `wasi:http@0.3.0`.
 
 ## Prerequisites
 
@@ -18,7 +21,7 @@ To compile and run the application under Wasmtime:
 make wasmtime
 ```
 
-To compile and run the application under Spin:
+To compile the application and confirm Spin's pinned expected linker failure:
 
 ```bash
 make spin
@@ -57,20 +60,22 @@ and lazy chunk always describe the same build.
 3. **Split Manifest:** The server component can read `/site/pkg/__wasm_split_manifest.json`, allowing Leptos SSR to emit preload hints for server-invoked lazy functions and routes. The lazy island itself loads when island hydration runs.
 4. **WASI HTTP:** The server implements `wasip3::exports::http::handler::Guest` and runs as a native WebAssembly component using the Preview 3 async ABI.
 
-## Experimental component middleware
+## Component middleware
 
-`spin.middleware-vnext.toml` demonstrates Spin's vNext
-`dependencies.middleware` composition using the protocol-only fixture from
-this repository. The middleware is composed in-process around the `counter`
-service; it is not a separately deployed proxy and it does not change the
-`leptos_wasi::Handler` API.
+The local middleware runner verifies the sibling `wasi-http-middleware`
+artifacts and deterministically composes request ID, security headers, CORS,
+and optional authentication around the counter. Wasmtime runs the precomposed
+final `wasi:http@0.3.0` component. Stable Spin 4 cannot link the final HTTP
+resource types, while `spin.middleware-vnext.toml` is a second incompatibility
+canary because Spin's native middleware implementation still hard-codes the
+March RC handler world.
 
 The `/pkg/...` file-server trigger deliberately has no authentication
 middleware. It must remain public so the browser can load `counter.js`,
 `counter.wasm`, and lazy `split_*.wasm` chunks. Middleware attached to the
 `counter` trigger does not apply to this separate asset trigger.
 
-Run the example against the pinned experimental toolchain with:
+Run the browser-verified example on Wasmtime, or confirm the Spin canary, with:
 
 ```bash
 make middleware-wasmtime
@@ -79,6 +84,6 @@ make middleware-spin
 ```
 
 The exact SDK, Spin runtime, WIT, Wasmtime, and `wac` versions are recorded in
-`../../tests/middleware/components.lock.toml`. This remains experimental until
-Spin publishes stable middleware composition using a WIT revision compatible
-with the application.
+`../../tests/middleware/components.lock.toml`. Spin is promoted only after a
+tagged release provides final handler, types, and client host support and
+native middleware composition against the final WIT.

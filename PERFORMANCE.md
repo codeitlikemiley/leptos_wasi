@@ -5,7 +5,7 @@ regression baseline, not a universal service-level objective: host hardware,
 component pooling, ingress, and the application route tree materially affect
 the absolute numbers.
 
-## 0.3.2 versus 0.4.0 candidate
+## Historical 0.3.2 versus 0.4.0 candidate
 
 Measured on 2026-07-10 on Apple Silicon with Wasmtime 45.0.0, Spin 4.0.0,
 20 concurrent clients, a warm server-function route, and a 30-second paired
@@ -33,10 +33,31 @@ these probes. Absolute Wasmtime RSS varied substantially when two JIT
 processes were measured concurrently, so plateau, not cross-process absolute
 RSS, is the release criterion.
 
+## Final WASI HTTP 0.3 baseline
+
+Final-WASI measurements use Wasmtime 46.0.1 and the exact `wasip3` 0.7.0
+bindings. A ten-second, 20-concurrency quick canary against the ordinary
+`/api/get_test` route produced:
+
+| Host | requests | requests/s | first-byte p99 ms | total p99 ms | failures | RSS start/end KiB | final-quarter growth KiB |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Wasmtime 46.0.1 | 54,136 | 5,379.892 | 8.597 | 9.009 | 0 | 109,456 / 50,240 | -4,640 |
+
+This quick probe is not the ten-minute release soak. It establishes that the
+final component serves successfully and provides a concrete point for the
+longer paired evidence.
+
+Spin 4.0.0 produced no final-WASI measurement: it rejects the component because
+the `wasi:http/types@0.3.0` resource implementation is missing. Its native
+middleware commit also hard-codes the March RC handler world. Both Spin paths
+are expected-failure canaries; only Wasmtime 46 is a blocking final-WASI
+runtime. Release evidence must include generated comparison JSON rather than
+reusing the historical RC-era table above.
+
 ## Reproducing release evidence
 
 Pull-request CI runs paired ten-minute, 100-concurrency baseline and candidate
-probes for Wasmtime/Spin and P2/P3. It uploads baseline, candidate, and
+probes for Wasmtime P2/P3 and Spin P2. It uploads baseline, candidate, and
 comparison JSON in one artifact per combination. Run the same probe locally
 with, for example:
 

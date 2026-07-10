@@ -14,14 +14,19 @@ All notable changes to this project will be documented in this file.
   `generate_routes_with_exclusions_and_discovery_context`. Discovery context
   is deterministic and request-independent; `handle_with_context` remains the
   per-request context hook.
+- Replace the protocol-only middleware probe with checksum-pinned artifacts
+  from the independently versioned `wasi-http-middleware` workspace. Wasmtime
+  46 is the blocking final-WASI middleware/browser runtime; stable Spin 4 and
+  the pinned native middleware commit are explicit incompatibility canaries
+  until a tagged Spin release implements final HTTP host resources and WIT.
 
 ## [0.4.1] — 2026-07-10
 
 ### Added
 
 - Framework-neutral WASIp3 HTTP component-middleware documentation, a pinned
-  experimental Spin vNext manifest, Wasmtime precomposition runner, protocol
-  fixture, E2E/browser coverage, deterministic unauthenticated/authorized
+  experimental Spin vNext manifest, Wasmtime precomposition runner,
+  E2E/browser coverage, deterministic unauthenticated/authorized
   server-action checks, and an explicit public `/pkg` split-asset boundary.
   This adds no `leptos_wasi::Handler` API or Spin runtime dependency.
 

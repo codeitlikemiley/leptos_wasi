@@ -8,9 +8,9 @@ This keeps reusable authentication, CORS, request-ID, and response-header
 components independent of Leptos. The same middleware artifact can wrap other
 WASIp3 HTTP services, while each HTTP trigger selects its own ordered stack.
 The companion `wasi-http-middleware` repository implements that reusable chain
-as independently compiled `0.1.0-alpha.1` components. This repository keeps a
-smaller protocol fixture so its compatibility lane does not depend on an
-unpublished sibling checkout.
+as independently compiled components. Local integration runners verify and
+copy checksum-pinned artifacts from the sibling checkout; `leptos_wasi` does
+not carry a second protocol-only implementation.
 
 ## Scope and ordering
 
@@ -27,7 +27,7 @@ There are three distinct policy boundaries:
 A recommended outermost-to-innermost stack is:
 
 ```text
-request-id -> security-headers -> cors -> auth-policy -> leptos service
+request-id -> security-headers -> cors -> authn-policy -> leptos service
 ```
 
 Requests travel from left to right and responses travel from right to left.
@@ -40,32 +40,44 @@ add a network hop.
 
 ## Spin composition
 
-Spin's middleware manifest support is currently a vNext feature. The
-experimental manifest in
+The application and middleware artifacts use final `wasi:http@0.3.0` bindings.
+Spin's native middleware implementation at the pinned commit still hard-codes
+`wasi:http/handler@0.3.0-rc-2026-03-15`; current upstream cannot compose the
+final components. The experimental manifest in
 [`tests/spin-p3-middleware-vnext.toml`](tests/spin-p3-middleware-vnext.toml)
-uses the following shape:
+therefore remains an expected-incompatibility canary for this shape:
 
 ```toml
 [[trigger.http]]
 route = "/..."
 component = "leptos-app"
 dependencies.middleware = [
-  { component = "request-policy" },
+  { component = "request-id" },
+  { component = "security-headers" },
+  { component = "cors", inherit_configuration = ["environment"] },
+  { component = "authn-policy", inherit_configuration = ["environment", "allowed_outbound_hosts"] },
 ]
 ```
 
-The dependency list is ordered outermost to innermost. Production deployments
-should consume versioned registry packages or URL artifacts pinned by digest.
-The checked-in fixture uses a local component only because it is a protocol
-compatibility test.
+The dependency list is ordered outermost to innermost. It is not a production
+path until a tagged Spin release supports final WASI HTTP. A second canary uses
+the deterministic WAC-precomposed component through
+[`tests/spin-p3-middleware-composed.toml`](tests/spin-p3-middleware-composed.toml).
+Stable Spin 4 also rejects that component because its host linker does not
+provide the final `wasi:http/types@0.3.0` resource implementation. Wasmtime 46
+is therefore the only blocking final-WASI behavioral runtime in this release.
+Production deployments must consume versioned artifacts pinned by digest. The
+local runner accepts a sibling checkout only after checking the declared
+compatibility tuple, artifact checksums, and component WIT.
 
 The exact experimental runtime, SDK, WIT, and composition-tool revisions are
 recorded in
 [`tests/middleware/components.lock.toml`](tests/middleware/components.lock.toml).
-Do not replace those revisions with a floating branch. This integration does
-not become supported until a stable Spin release uses a WIT revision compatible
-with the application's `wasip3` bindings. The local runners reject a Spin,
-Wasmtime, `wac`, or `wasm-tools` version that does not match this lock.
+Do not replace those revisions with a floating branch. The local runners reject
+a Spin middleware commit, stable Spin, Wasmtime, `wac`, or `wasm-tools` version
+that does not match this lock. Spin support is promoted only after a tagged
+release contains final handler, types, and client host support and composes
+native middleware against final-WASI WIT.
 
 ## Wasmtime composition
 
@@ -78,7 +90,10 @@ the terminal service before running `wasmtime serve`:
 ./scripts/compose-middleware.sh \
   tests/test-app-p3.wasm \
   tests/test-app-p3-middleware.wasm \
-  tests/middleware-fixture.wasm
+  tests/middleware-artifacts/request-id.wasm \
+  tests/middleware-artifacts/security-headers.wasm \
+  tests/middleware-artifacts/cors.wasm \
+  tests/middleware-artifacts/authn-policy.wasm
 ./scripts/run-middleware-wasmtime.sh
 ```
 
@@ -86,13 +101,23 @@ Arguments to `compose-middleware.sh` are ordered outermost to innermost after
 the application and output paths. The script composes from the application
 outward and validates the result.
 
+The local `wasmtime serve` runner enables inherited networking so the authn
+component can reach its loopback broker. The stock CLI does not expose a
+per-destination HTTP allowlist for a precomposed component. A production
+Wasmtime deployment must enforce the exact broker destination in its custom
+embedding or an outbound network sandbox; the local CLI runner is not evidence
+of that isolation. Native Spin manifests express the narrower broker origin in
+`allowed_outbound_hosts`, but remain canaries until Spin supports final WIT.
+
 ## Identity propagation
 
-An authentication component should remove every inbound copy of its trusted
-identity headers before validating credentials. It may add trusted identity
-metadata only after successful validation. The final composed artifact must be
-the only externally routable handler; exposing the unwrapped terminal service
-would let callers forge those headers.
+`authn-policy` removes Authorization and every inbound `x-wasi-auth-*` header
+before forwarding. It injects one bounded, versioned `x-wasi-auth-context`
+value after validating the broker result. In optional mode, missing credentials
+produce an explicit anonymous context without calling the broker; supplied but
+invalid credentials never fall back to anonymous. The final composed artifact
+must be the only externally routable handler, because the terminal service
+cannot prove that an inbound metadata header passed through the chain.
 
 `leptos_wasi` already provides `http::request::Parts` to SSR routes and server
 functions. Install typed identity or policy context through
@@ -100,6 +125,19 @@ functions. Install typed identity or policy context through
 parts are available. Route-discovery context is synthetic and must never be
 used for authentication. This does not require a middleware-specific public API
 in this crate.
+
+The counter and test applications use optional authentication so public SSR and
+split-WASM hydration remain available. Protected server functions must require
+an authenticated context and authorize their typed action/resource after
+deserialization. Whole-service middleware can make coarse method/path decisions
+but cannot authorize a resource identifier hidden in a server-function body.
+Keep ownership, RBAC, ABAC, and ReBAC decisions in server-function/domain policy
+through `ServerFn::middlewares()` or an explicit typed authorization call.
+
+Status ownership is deliberate: missing or invalid authentication returns 401;
+an authenticated denial returns 403; broker/PDP transport, malformed data, or
+indeterminate policy returns a generic 503. Only an explicit allow reaches the
+protected operation.
 
 Do not confuse CORS with CSRF protection. Cookie-authenticated applications
 need a separate CSRF design and origin policy.
@@ -136,26 +174,30 @@ by a separate component.
 
 ## Experimental verification
 
-The local fixture adds one request header before forwarding and one response
-header after the Leptos service returns. For browser-contract coverage it also
-rejects unauthenticated `/api/...` requests and accepts the deterministic
-`Bearer allow` test credential. It is intentionally not a production identity
-component. The companion repository owns the external-policy implementation,
-strict path normalization, spoof stripping, fail-closed errors, concurrency,
-disconnect, slow-provider cancellation, and log-secrecy tests.
+The integration uses the companion's real request-ID, security, CORS, and
+authentication components plus its deterministic mock authentication broker.
+The tests cover spoof stripping, anonymous/authenticated context, bearer
+removal, fail-closed broker responses, SSR, server functions, delayed
+streaming, islands, and lazy split WASM. Authorization-provider conformance
+remains owned by the independently versioned `wasi-authz` workspace.
 
-The current RC SDK adapter rebuilds forwarded requests, so this fixture removes
-`host` and hop-by-hop fields that a new WASI fields resource forbids. Its smoke
-test covers successful delayed streaming. Deliberate stream-failure and upload
-disconnect behavior remains authoritative in the direct `wit-bindgen`
-companion chain until the Spin SDK bridge reaches a matching stable release.
+The alpha is not yet promotable. The transport profile test currently exposes
+an intermittent composition bug when two response-header components wrap a
+body that yields one frame and then fails: the client can observe the terminal
+error before that committed frame. The identical unwrapped service passes the
+same contract. `experimental_middleware_transport_profile_wasip3` is the
+blocking regression gate; do not treat a delayed-success stream alone as
+sufficient streaming evidence.
 
 ```bash
 ./scripts/audit-middleware-manifests.py
+WASI_HTTP_MIDDLEWARE_BUILD=1 ./scripts/sync-middleware-components.sh
 ./scripts/run-middleware-tests.sh
 MIDDLEWARE=1 HOST=wasmtime ./tests/browser/run.sh
-MIDDLEWARE=1 HOST=spin ./tests/browser/run.sh
+HOST=spin ./scripts/run-middleware-tests.sh
 ```
 
-The ordinary stable-runtime test and browser jobs remain the production gates.
-The vNext middleware CI job is non-blocking until Spin publishes stable support.
+Wasmtime 46 runs the final precomposed chain as the behavioral gate. Stable
+Spin's precomposed lane and the exact-commit native middleware lane are
+non-blocking incompatibility canaries until Spin publishes tagged final-WASI
+host and middleware support.
