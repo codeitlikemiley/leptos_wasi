@@ -17,18 +17,29 @@ use wasi_authz_client::{
     AuthzenClient, AuthzenEndpoint, BearerAuthTransport,
     wasip3::Wasip3Transport,
 };
+use wasi_authz_cedar::CedarProvider;
 use wasi_authz_contract::{
     Action, AttributeNameV1, AttributeProvenanceV1, AttributeStringV1,
     AttributeV1, AttributeValueV1, AttributesV1, Resource,
+};
+use wasi_http_authn::{
+    AuthenticationConfigError, TrustedIngressConfig, accept_trusted_ingress,
 };
 use wasip3::http::types::{ErrorCode, Request, Response};
 
 const SERVICE_ID: &str = "leptos-wasi-counter";
 const EXPECTED_AUDIENCE: &str = "api://leptos-wasi-counter";
-const CEDAR_ENDPOINT_ENV: &str = "WASI_AUTHZ_CEDAR_ENDPOINT";
-const CEDAR_BEARER_ENV: &str = "WASI_AUTHZ_PDP_BEARER_TOKEN";
 const SPICEDB_ENDPOINT_ENV: &str = "WASI_AUTHZ_SPICEDB_ENDPOINT";
 const SPICEDB_BEARER_ENV: &str = "WASI_AUTHZ_SPICEDB_PDP_BEARER_TOKEN";
+const CEDAR_POLICY: &str = include_str!(
+    "../../../../wasi-authz/fixtures/cedar/http_policy.cedar"
+);
+const CEDAR_SCHEMA: &str = include_str!(
+    "../../../../wasi-authz/fixtures/cedar/http_schema.json"
+);
+const CEDAR_ENTITIES: &str = include_str!(
+    "../../../../wasi-authz/fixtures/cedar/http_entities.json"
+);
 
 type AxumRequest = http::Request<axum_core::body::Body>;
 type AxumResponse = http::Response<axum_core::body::Body>;
@@ -38,11 +49,14 @@ static AUTHORIZATION_LAYER: OnceLock<AuthorizationLayer> = OnceLock::new();
 static AUTHORIZATION_PROVIDER: OnceLock<
     Result<AuthorizationProviders, AuthorizationInitializationError>,
 > = OnceLock::new();
+static TRUSTED_INGRESS_CONFIG: OnceLock<
+    Result<TrustedIngressConfig, AuthenticationConfigError>,
+> = OnceLock::new();
 
 type AuthorizationClient = AuthzenClient<BearerAuthTransport<Wasip3Transport>>;
 
 struct AuthorizationProviders {
-    cedar: AuthorizationClient,
+    cedar: CedarProvider,
     spicedb: AuthorizationClient,
 }
 
@@ -91,20 +105,16 @@ impl ServerFn for ProtectedIncrementCount {
             .ok_or_else(|| {
                 configuration_error("authorization provider is unavailable")
             })?;
-        // Cedar and SpiceDB are independent policy checks. Running them
-        // concurrently removes one serial provider round-trip while keeping
-        // both decisions mandatory before the mutation.
-        let cedar = authorize_current(&provider.cedar, action.clone(), resource.clone());
-        let spicedb = authorize_current(&provider.spicedb, action, resource);
-        let (cedar, spicedb) = futures::join!(cedar, spicedb);
-        if cedar.is_err() {
+        if let Err(error) =
+            authorize_current(&provider.cedar, action.clone(), resource.clone()).await
+        {
             diagnostic_stage("terminal_cedar");
+            return Err(error);
         }
-        if spicedb.is_err() {
+        if let Err(error) = authorize_current(&provider.spicedb, action, resource).await {
             diagnostic_stage("terminal_spicedb");
+            return Err(error);
         }
-        cedar?;
-        spicedb?;
         self.current.checked_add(1).ok_or_else(|| {
             ServerFnError::ServerError(
                 "counter reached its maximum value".to_string(),
@@ -122,7 +132,12 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
 
         let conf = get_configuration(None).map_err(internal_error)?;
         let leptos_options = conf.leptos_options;
-        let request = wasip3::http_compat::http_from_wasi_request(request)?;
+        let mut request = wasip3::http_compat::http_from_wasi_request(request)?;
+        let trusted_ingress = TRUSTED_INGRESS_CONFIG
+            .get_or_init(|| TrustedIngressConfig::new(SERVICE_ID, [EXPECTED_AUDIENCE]))
+            .as_ref()
+            .map_err(internal_error)?;
+        accept_trusted_ingress(trusted_ingress, &mut request).map_err(internal_error)?;
 
         Handler::build(request)
             .await
@@ -167,8 +182,14 @@ fn initialize_authorization() -> Result<(), AuthorizationInitializationError> {
 fn load_authorization_provider()
 -> Result<AuthorizationProviders, AuthorizationInitializationError> {
     let environment = wasip3::cli::environment::get_environment();
-    let cedar =
-        load_client(&environment, CEDAR_ENDPOINT_ENV, CEDAR_BEARER_ENV)?;
+    let cedar = CedarProvider::new_validated(
+        CEDAR_POLICY,
+        CEDAR_SCHEMA,
+        CEDAR_ENTITIES,
+        "http-policy-1",
+        "cedar-4.11.2",
+    )
+    .map_err(|_| AuthorizationInitializationError)?;
     let spicedb =
         load_client(&environment, SPICEDB_ENDPOINT_ENV, SPICEDB_BEARER_ENV)?;
     Ok(AuthorizationProviders { cedar, spicedb })

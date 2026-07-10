@@ -6,14 +6,14 @@ unpublished sibling dependency cannot break standalone `leptos_wasi` builds.
 
 The fixture reuses the counter's SSR/islands application and browser wire type,
 but registers a protected server implementation at the same
-`/api/increment_count` path. The outer component middleware authenticates the
-request; `RequireAuthLayer` rejects an anonymous caller before invocation, and
-the deserialized operation calls environment-configured Cedar and SpiceDB
-AuthZEN PDPs over final-WASIp3 HTTP clients with a typed `counter.increment`
-action and `counter/session-counter` resource. Cedar enforces RBAC/ABAC first;
-SpiceDB enforces the relationship immediately before mutation. Provider denial
-maps to 403, provider failure maps to 503, and only two explicit allows
-increment the counter.
+`/api/increment_count` path. The trusted ingress authenticates the request and
+the terminal explicitly promotes its validated wire envelope into a typed
+request extension before `Handler::build`. `RequireAuthLayer` rejects an
+anonymous caller before invocation. The deserialized operation evaluates an
+embedded Cedar provider for RBAC/ABAC and calls the environment-configured
+SpiceDB AuthZEN PDP only for the relationship check immediately before
+mutation. Provider denial maps to 403, provider failure maps to 503, and only
+explicit allows increment the counter.
 
 Run it only through `scripts/check-authz-companion.sh` and the local composed
 browser runner. Both sibling repositories must match the full revisions in
