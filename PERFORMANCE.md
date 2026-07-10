@@ -147,7 +147,9 @@ HTTP-PEP profile measured 14.301 ms first-byte p99, 14.303 ms total p99, and
 not replacements for the failing 100-active-request and ten-minute gates.
 
 The short five-pair diagnostic for the fused `secure-defaults` component also
-continues to exceed the promotion budget (30.06% first-byte p99, 39.25% total
-p99, and -30.27% throughput at 20 clients). The remaining cost is therefore
-not an artifact-pin or high-concurrency-only failure; it is the immutable
-WASIp3 request/response header reconstruction boundary documented above.
+continues to exceed the promotion budget (28.23% first-byte p99, 35.54% total
+p99, and -28.82% throughput at 20 clients). Reusing the response header handle
+removed one redundant host lookup and improved all three measurements, but the
+remaining cost is not an artifact-pin or high-concurrency-only failure; it is
+the immutable WASIp3 request/response header reconstruction boundary documented
+above.
