@@ -2,6 +2,76 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] — 2026-07-10
+
+### Added
+
+- Additive `leptos_wasi::wasip2` and `leptos_wasi::wasip3` runtime namespaces,
+  each with a runtime-specific prelude and handler.
+- `HandlerConfig` and `build_with_config` with a configurable buffered request
+  limit. The default remains 16 MiB.
+- Non-exhaustive `RegistrationError` values for invalid static prefixes,
+  repeated or colliding generated routes, invalid route patterns, and
+  unsupported static SSR.
+- Optional `tracing` instrumentation for request lifecycle spans and completion
+  events without installing a subscriber.
+- Preview 2 pollable registration IDs, cancellation cleanup, stalled-executor
+  detection, and native cancellation unit tests.
+- `init_wasip2_executor`, which installs and reuses one thread-local executor
+  while persistently reporting task-spawner or mode conflicts.
+- A migration guide, production support contract, explicit MSRV/current-stable
+  CI, and independent WASIp2, WASIp3, and dual-feature verification lanes.
+- A recorded 0.3.2 performance baseline and ten-minute CI soak matrix for
+  Wasmtime/Spin and Preview 2/Preview 3.
+
+### Changed
+
+- The root prelude now exports only shared response, configuration, status, and
+  redirect types. Import `Handler` and executor types from a runtime namespace.
+- `static_files_handler` and all route-generation builders now return
+  `Result<Self, RegistrationError>` instead of panicking on invalid input.
+- Preview 2 `Executor::new` and `run_until` are fallible, and
+  `init_wasip3_spawner` persistently returns the first initialization outcome.
+- `Mode::Premptive` is corrected to `Mode::Preemptive`.
+- `ResponseParts` is non-exhaustive with private fields and supported accessor
+  and `ResponseOptions` mutation methods.
+- The counter example is session-scoped and focuses on SSR, lazy islands,
+  split browser WASM, typed server functions, Wasmtime, and Spin.
+- WASIp2 and WASIp3 features are additive. Enabling both exposes both adapters
+  rather than silently selecting Preview 3.
+
+### Fixed
+
+- Server-function middleware now executes in Leptos layer order, including
+  authentication rejection, response mutation, and middleware error encoding.
+- Static asset paths are decoded once and confined to normalized relative
+  paths. Encoded separators, absolute paths, dot segments, NUL, malformed
+  escapes, and double-encoded control sequences are rejected.
+- Static routes now implement GET/HEAD semantics, return 405 for other methods,
+  and add `X-Content-Type-Options: nosniff`.
+- SSR `RequestUrl` preserves the query string and standard Leptos contexts are
+  installed before application-provided context.
+- Request and host failures that can be handled before response commitment no
+  longer trap through request-reachable `expect`/`panic` paths.
+- Preview 3 response frames no longer require `Vec::drain`, and Preview 2 no
+  longer flushes after every 8 KiB write.
+
+### Removed
+
+- `with_server_fn_axum` and `with_server_fn_generic`; use the canonical
+  `with_server_fn::<T>()` method.
+- The ambiguous root `prelude::Handler`, public `WasiBuf`, and unused Preview 3
+  request wrapper.
+- The obsolete `examples/spin-counter` application.
+
+### Known limitations
+
+- Incoming request bodies remain buffered. WebSockets, request-body streaming,
+  HTTP trailers, static SSR generation, byte ranges, and automatic
+  precompressed asset negotiation are not supported. A native Axum-free
+  server-function backend also remains post-0.4 experimental. See
+  `PRODUCTION.md`.
+
 ## [0.3.2] — 2026-07-10
 
 ### Added
