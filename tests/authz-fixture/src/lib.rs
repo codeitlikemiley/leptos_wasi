@@ -12,7 +12,8 @@ use leptos::{config::get_configuration, prelude::use_context};
 use leptos_wasi::wasip3::prelude::{Handler, init_wasip3_spawner};
 use leptos_wasi_authz::{
     RequireAuthLayer, ResponseStatusSink, authorize_current,
-    provide_auth_context, provide_response_status_sink,
+    authorize_current_hybrid, provide_auth_context,
+    provide_response_status_sink,
 };
 use server_fn::{ServerFn, ServerFnError};
 use wasi_authz_client::{
@@ -67,6 +68,25 @@ struct ProtectedIncrementCount {
     current: u32,
 }
 
+fn authorization_middlewares()
+-> Vec<Arc<dyn server_fn::middleware::Layer<AxumRequest, AxumResponse>>>
+{
+    AUTHORIZATION_LAYER
+        .get()
+        .cloned()
+        .map(|layer| {
+            Arc::new(layer)
+                as Arc<
+                    dyn server_fn::middleware::Layer<
+                            AxumRequest,
+                            AxumResponse,
+                        >,
+                >
+        })
+        .into_iter()
+        .collect()
+}
+
 impl ServerFn for ProtectedIncrementCount {
     const PATH: &'static str = <IncrementCount as ServerFn>::PATH;
     type Client = <IncrementCount as ServerFn>::Client;
@@ -80,20 +100,7 @@ impl ServerFn for ProtectedIncrementCount {
     fn middlewares()
     -> Vec<Arc<dyn server_fn::middleware::Layer<AxumRequest, AxumResponse>>>
     {
-        AUTHORIZATION_LAYER
-            .get()
-            .cloned()
-            .map(|layer| {
-                Arc::new(layer)
-                    as Arc<
-                        dyn server_fn::middleware::Layer<
-                                AxumRequest,
-                                AxumResponse,
-                            >,
-                    >
-            })
-            .into_iter()
-            .collect()
+        authorization_middlewares()
     }
 
     async fn run_body(self) -> Result<Self::Output, Self::Error> {
@@ -107,22 +114,110 @@ impl ServerFn for ProtectedIncrementCount {
             .ok_or_else(|| {
                 configuration_error("authorization provider is unavailable")
             })?;
-        if let Err(error) =
-            authorize_current(&provider.cedar, action.clone(), resource.clone()).await
-        {
-            diagnostic_stage("terminal_cedar");
-            return Err(error);
-        }
-        if let Err(error) = authorize_current(&provider.spicedb, action, resource).await {
-            diagnostic_stage("terminal_spicedb");
-            return Err(error);
-        }
+        authorize_current_hybrid(
+            &provider.cedar,
+            &provider.spicedb,
+            action,
+            resource,
+        )
+        .await?;
         self.current.checked_add(1).ok_or_else(|| {
             ServerFnError::ServerError(
                 "counter reached its maximum value".to_string(),
             )
         })
     }
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+struct CedarIncrementCount {
+    current: u32,
+}
+
+impl ServerFn for CedarIncrementCount {
+    const PATH: &'static str = "/api/authorize_cedar";
+    type Client = <IncrementCount as ServerFn>::Client;
+    type Server = <IncrementCount as ServerFn>::Server;
+    type Protocol = <IncrementCount as ServerFn>::Protocol;
+    type Output = u32;
+    type Error = ServerFnError;
+    type InputStreamError = ServerFnError;
+    type OutputStreamError = ServerFnError;
+
+    fn middlewares()
+    -> Vec<Arc<dyn server_fn::middleware::Layer<AxumRequest, AxumResponse>>>
+    {
+        authorization_middlewares()
+    }
+
+    async fn run_body(self) -> Result<Self::Output, Self::Error> {
+        let provider = authorization_provider()?;
+        authorize_current(
+            &provider.cedar,
+            increment_action()?,
+            counter_resource()?,
+        )
+        .await?;
+        checked_increment(self.current)
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+struct RelationshipIncrementCount {
+    current: u32,
+}
+
+impl ServerFn for RelationshipIncrementCount {
+    const PATH: &'static str = "/api/authorize_relationship";
+    type Client = <IncrementCount as ServerFn>::Client;
+    type Server = <IncrementCount as ServerFn>::Server;
+    type Protocol = <IncrementCount as ServerFn>::Protocol;
+    type Output = u32;
+    type Error = ServerFnError;
+    type InputStreamError = ServerFnError;
+    type OutputStreamError = ServerFnError;
+
+    fn middlewares()
+    -> Vec<Arc<dyn server_fn::middleware::Layer<AxumRequest, AxumResponse>>>
+    {
+        authorization_middlewares()
+    }
+
+    async fn run_body(self) -> Result<Self::Output, Self::Error> {
+        let provider = authorization_provider()?;
+        authorize_current(
+            &provider.spicedb,
+            increment_action()?,
+            counter_resource()?,
+        )
+        .await?;
+        checked_increment(self.current)
+    }
+}
+
+fn authorization_provider()
+-> Result<&'static AuthorizationProviders, ServerFnError>
+{
+    AUTHORIZATION_PROVIDER
+        .get()
+        .and_then(|provider| provider.as_ref().ok())
+        .ok_or_else(|| {
+            configuration_error("authorization provider is unavailable")
+        })
+}
+
+fn increment_action() -> Result<Action, ServerFnError> {
+    Action::new("counter.increment").map_err(|_| {
+        configuration_error("invalid authorization action configuration")
+    })
+}
+
+fn checked_increment(current: u32) -> Result<u32, ServerFnError> {
+    current.checked_add(1).ok_or_else(|| {
+        ServerFnError::ServerError(
+            "counter reached its maximum value".to_string(),
+        )
+    })
 }
 
 struct LeptosServer;
@@ -149,6 +244,8 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
             .static_files_handler("/pkg", serve_static_files)
             .map_err(internal_error)?
             .with_server_fn::<ProtectedIncrementCount>()
+            .with_server_fn::<CedarIncrementCount>()
+            .with_server_fn::<RelationshipIncrementCount>()
             .generate_routes(App)
             .map_err(internal_error)?
             .handle_with_context(
@@ -226,12 +323,6 @@ fn unique_environment_value<'a>(
         return Err(AuthorizationInitializationError);
     }
     Ok(value)
-}
-
-fn diagnostic_stage(stage: &'static str) {
-    if std::env::var("WASI_MIDDLEWARE_DIAGNOSTICS").as_deref() == Ok("true") {
-        eprintln!("wasi.middleware stage={stage}");
-    }
 }
 
 fn counter_resource() -> Result<Resource, ServerFnError> {
