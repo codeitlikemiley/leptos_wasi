@@ -10,10 +10,28 @@ CONCURRENCY="${AUTHZ_CAPACITY_MATRIX_CONCURRENCY:-100}"
 
 # These are offered rates, not active concurrency. The report records both so
 # a capacity knee is not confused with the 100-active-request gate.
-RATES=(25 50 75 100 125 150 200)
+read -r -a RATES <<<"${AUTHZ_CAPACITY_MATRIX_RATES:-25 50 75 100 125 150 200}"
+read -r -a PROFILES <<<"${AUTHZ_CAPACITY_MATRIX_PROFILES:-domain coarse}"
+
+if ((${#RATES[@]} == 0)) || ((${#PROFILES[@]} == 0)); then
+  echo "capacity matrix requires at least one rate and profile" >&2
+  exit 2
+fi
+for rate in "${RATES[@]}"; do
+  [[ "${rate}" =~ ^[0-9]+$ ]] || {
+    echo "capacity matrix rate must be a non-negative integer: ${rate}" >&2
+    exit 2
+  }
+done
+for profile in "${PROFILES[@]}"; do
+  [[ "${profile}" == "domain" || "${profile}" == "coarse" ]] || {
+    echo "capacity matrix profile must be domain or coarse: ${profile}" >&2
+    exit 2
+  }
+done
 mkdir -p "${OUTPUT_ROOT}"
 
-for profile in domain coarse; do
+for profile in "${PROFILES[@]}"; do
   coarse_flag=0
   if [[ "${profile}" == "coarse" ]]; then
     coarse_flag=1

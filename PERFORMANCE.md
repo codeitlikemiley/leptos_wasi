@@ -137,3 +137,17 @@ steps. The rate-limited diagnostic is an offered-load measurement, not a
 replacement for the 100-active-request release gate. Set
 `MIDDLEWARE_DIAGNOSTICS=1` to correlate controlled failures with fixed stage
 labels in the broker, PDP, and terminal logs.
+
+After the exact middleware (`7dbef2c`) and authorization (`5cad17f`) revisions
+were pinned, a 100-request Wasmtime canary at 20 active clients passed both
+profiles with no failures. The default typed domain profile measured 11.492 ms
+first-byte p99, 11.495 ms total p99, and 2,381 requests/s; the optional coarse
+HTTP-PEP profile measured 14.301 ms first-byte p99, 14.303 ms total p99, and
+1,925 requests/s. These are correctness and low-load localization canaries,
+not replacements for the failing 100-active-request and ten-minute gates.
+
+The short five-pair diagnostic for the fused `secure-defaults` component also
+continues to exceed the promotion budget (30.06% first-byte p99, 39.25% total
+p99, and -30.27% throughput at 20 clients). The remaining cost is therefore
+not an artifact-pin or high-concurrency-only failure; it is the immutable
+WASIp3 request/response header reconstruction boundary documented above.
