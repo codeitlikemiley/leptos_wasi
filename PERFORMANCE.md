@@ -130,6 +130,15 @@ not offset the severe latency and request-failure regression. The retained
 result is `target/authz-full-chain-soak/result.json`; it is diagnostic alpha
 evidence, not a passing production-soak claim.
 
+With the current exact artifacts and authentication admission default at 128,
+a fresh 1,000-request, 100-concurrency domain-only run returned zero failures
+but measured 73.841 ms first-byte p99 and 74.258 ms total p99. Raising
+Wasmtime's instance reuse limits to 512 total and 128 concurrent improved the
+same run to 67.650 ms and 68.921 ms respectively, still above the fixed 25 ms
+target. The earlier controlled-503 saturation is therefore no longer the
+dominant symptom in this configuration; sustained final-WASI request/PDP
+latency under active concurrency remains the blocker.
+
 The capacity-localization harness is configurable through
 `scripts/benchmark-authz-capacity-matrix.sh`. It compares the default typed
 authorization path with the optional coarse HTTP PEP across offered-rate
@@ -138,12 +147,12 @@ replacement for the 100-active-request release gate. Set
 `MIDDLEWARE_DIAGNOSTICS=1` to correlate controlled failures with fixed stage
 labels in the broker, PDP, and terminal logs.
 
-After the exact middleware (`7dbef2c`) and authorization (`5cad17f`) revisions
+After the exact middleware (`27660a3`) and authorization (`f788740d`) revisions
 were pinned, a 100-request Wasmtime canary at 20 active clients passed both
-profiles with no failures. The default typed domain profile measured 11.492 ms
-first-byte p99, 11.495 ms total p99, and 2,381 requests/s; the optional coarse
-HTTP-PEP profile measured 14.301 ms first-byte p99, 14.303 ms total p99, and
-1,925 requests/s. These are correctness and low-load localization canaries,
+profiles with no failures. The default typed domain profile measured 11.367 ms
+first-byte p99, 11.372 ms total p99, and 2,378 requests/s; the optional coarse
+HTTP-PEP profile measured 16.284 ms first-byte p99, 16.289 ms total p99, and
+1,598 requests/s. These are correctness and low-load localization canaries,
 not replacements for the failing 100-active-request and ten-minute gates.
 
 The short five-pair diagnostic for the fused `secure-defaults` component also

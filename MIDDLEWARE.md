@@ -265,6 +265,13 @@ endpoints or arbitrary secrets because Wasmtime CLI `--env` values are visible
 to local process inspection. See [PERFORMANCE.md](./PERFORMANCE.md) for the
 retained evidence.
 
+The current pinned artifact set removes that earlier admission failure at the
+tested configuration: a fresh 1,000-request, 100-concurrency domain-only probe
+returned zero failures, but first-byte and total p99 remained 73.841 ms and
+74.258 ms. The documented Wasmtime reuse tuning lowered those to 67.650 ms and
+68.921 ms, still above the 25 ms promotion target. Treat this as an active
+capacity blocker, not as evidence that the full chain is production-ready.
+
 ```bash
 ./scripts/audit-middleware-manifests.py
 python3 scripts/test_audit_middleware_manifests.py
