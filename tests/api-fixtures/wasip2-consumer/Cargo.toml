@@ -1,0 +1,9 @@
+[package]
+name = "leptos-wasi-wasip2-consumer"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.93.0"
+publish = false
+
+[dependencies]
+leptos_wasi = { path = "../../..", default-features = false, features = ["wasip2"] }

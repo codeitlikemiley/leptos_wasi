@@ -8,7 +8,6 @@ rust-version = "1.93.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-any_spawner = { version = "0.3.0", features = ["futures-executor"] }
 bytes = "1.7.2"
 futures = "0.3.30"
 hydration_context = { version = "0.3.0" }
@@ -22,6 +21,7 @@ wasi = { version = "0.14.7", optional = true }
 axum-core = "0.5.6"
 serde = { version = "1", features = ["derive"] }
 http = "1"
+throw_error = "0.3.1"
 
 [features]
 default = ["wasip2"]
