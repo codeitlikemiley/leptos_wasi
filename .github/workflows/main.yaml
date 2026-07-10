@@ -1,55 +1,350 @@
 name: CI
 
-env:
-  CARGO_TERM_COLOR: always
-
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_NET_RETRY: "10"
+  CARGO_TERM_COLOR: always
 
 jobs:
-  make:
+  quality:
+    name: Stable / ${{ matrix.runtime }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: WASIp2
+            task: ci-wasip2
+          - runtime: WASIp3 + islands router
+            task: ci-wasip3
+          - runtime: WASIp2 + WASIp3 + optional features
+            task: ci-dual
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Install cargo-make 0.37.24
+        run: cargo install cargo-make --version 0.37.24 --locked
+
+      - name: Run ${{ matrix.runtime }} checks
+        run: cargo make ${{ matrix.task }}
+
+  msrv:
+    name: Rust 1.93.0 / ${{ matrix.runtime }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: WASIp2
+            features: wasip2,islands-router
+          - runtime: WASIp3 + islands router
+            features: wasip3,islands-router
+          - runtime: WASIp2 + WASIp3 + optional features
+            features: wasip2,wasip3,islands-router
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install Rust 1.93.0
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: 1.93.0
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Test the declared MSRV
+        run: >-
+          cargo test --locked --no-default-features
+          --features "${{ matrix.features }}"
+
+  api-fixtures:
+    name: Public API / ${{ matrix.runtime }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: WASIp2
+            manifest: tests/api-fixtures/wasip2-consumer/Cargo.toml
+          - runtime: WASIp3
+            manifest: tests/api-fixtures/wasip3-consumer/Cargo.toml
+          - runtime: dual runtime
+            manifest: tests/api-fixtures/dual-runtime-consumer/Cargo.toml
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Compile external-consumer imports
+        run: cargo check --locked --manifest-path "${{ matrix.manifest }}"
+
+  dependency-policy:
+    name: Dependency policy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Install cargo-make
-        uses: actions-rs/cargo@v1
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          command: install
-          args: --debug cargo-make
+          toolchain: stable
 
-      - name: Run CI (fmt, clippy, build)
-        uses: actions-rs/cargo@v1
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Install cargo-audit 0.22.2
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Reject known vulnerabilities
+        run: >-
+          cargo audit --deny warnings
+          --ignore RUSTSEC-2024-0436
+          --ignore RUSTSEC-2026-0173
+
+  semver:
+    name: SemVer against 0.3.2
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          command: make
-          args: ci-flow
+          fetch-depth: 0
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Install cargo-semver-checks 0.48.0
+        run: cargo install cargo-semver-checks --version 0.48.0 --locked
+
+      - name: Check intentional 0.4 API breaks
+        run: cargo semver-checks check-release --baseline-rev 9689c68
+
+  package:
+    name: Package and publish dry run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Verify crate contents
+        run: cargo package --locked
+
+      - name: Verify crates.io publication
+        run: cargo publish --dry-run --locked
 
   e2e:
+    name: Wasmtime and Spin E2E
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install stable Rust and WASI target
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
+          toolchain: stable
           targets: wasm32-wasip2
 
-      - name: Install cargo-binstall
-        run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: |
+            . -> target
+            tests/test-app -> tests/test-app/target
 
-      - name: Install wasmtime-cli
-        run: cargo binstall wasmtime-cli@45.0.0 --no-confirm
+      - name: Install Wasmtime 45.0.0
+        uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
+        with:
+          version: "45.0.0"
 
-      - name: Install spin
-        run: curl -fsSL https://spinframework.dev/downloads/install.sh | bash -s -- -v v4.0.0 && sudo mv spin /usr/local/bin/
+      - name: Install Spin 4.0.0
+        uses: fermyon/actions/spin/setup@8849a6c41270af8e9f60f371982eddf33b8e35c9 # v1
+        with:
+          version: "v4.0.0"
 
       - name: Build guest test apps and run E2E tests
         run: ./run_tests.sh
+
+  browser:
+    name: Split WASM browser / ${{ matrix.host }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: wasmtime
+            port: 3100
+          - host: spin
+            port: 3101
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install stable Rust and browser/WASI targets
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown, wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: |
+            . -> target
+            examples/counter -> examples/counter/target
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/browser/package-lock.json
+
+      - name: Install Cargo Leptos 0.3.7
+        run: cargo install cargo-leptos --version 0.3.7 --locked
+
+      - name: Install Wasmtime 45.0.0
+        if: matrix.host == 'wasmtime'
+        uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
+        with:
+          version: "45.0.0"
+
+      - name: Install Spin 4.0.0
+        if: matrix.host == 'spin'
+        uses: fermyon/actions/spin/setup@8849a6c41270af8e9f60f371982eddf33b8e35c9 # v1
+        with:
+          version: "v4.0.0"
+
+      - name: Install browser test dependencies
+        working-directory: tests/browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run lazy-island browser E2E
+        env:
+          HOST: ${{ matrix.host }}
+          PORT: ${{ matrix.port }}
+        run: ./tests/browser/run.sh
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-traces-${{ matrix.host }}
+          path: tests/browser/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  soak:
+    name: Ten-minute soak / ${{ matrix.host }} / ${{ matrix.preview }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [wasmtime, spin]
+        preview: [p2, p3]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Install stable Rust and WASI target
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+          targets: wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: |
+            . -> target
+            tests/test-app -> tests/test-app/target
+
+      - name: Install Wasmtime 45.0.0
+        if: matrix.host == 'wasmtime'
+        uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
+        with:
+          version: "45.0.0"
+
+      - name: Install Spin 4.0.0
+        if: matrix.host == 'spin'
+        uses: fermyon/actions/spin/setup@8849a6c41270af8e9f60f371982eddf33b8e35c9 # v1
+        with:
+          version: "v4.0.0"
+
+      - name: Create immutable 0.3.2 comparison worktree
+        run: >-
+          git worktree add --detach
+          "${RUNNER_TEMP}/leptos-wasi-v0.3.2" 9689c68
+
+      - name: Run 0.3.2 sustained baseline
+        env:
+          PROJECT_ROOT: ${{ runner.temp }}/leptos-wasi-v0.3.2
+          CHECK_POLLABLES: "0"
+          HOST: ${{ matrix.host }}
+          PREVIEW: ${{ matrix.preview }}
+          PORT: 3200
+          DURATION: 600
+          CONCURRENCY: 100
+          OUTPUT: soak-${{ matrix.host }}-${{ matrix.preview }}-baseline.json
+        run: ./scripts/soak-test-app.sh
+
+      - name: Run 0.4 sustained candidate
+        env:
+          CHECK_POLLABLES: "1"
+          HOST: ${{ matrix.host }}
+          PREVIEW: ${{ matrix.preview }}
+          PORT: 3200
+          DURATION: 600
+          CONCURRENCY: 100
+          OUTPUT: soak-${{ matrix.host }}-${{ matrix.preview }}-candidate.json
+        run: ./scripts/soak-test-app.sh
+
+      - name: Enforce latency and memory gates
+        run: >-
+          python3 scripts/compare_performance.py
+          soak-${{ matrix.host }}-${{ matrix.preview }}-baseline.json
+          soak-${{ matrix.host }}-${{ matrix.preview }}-candidate.json
+          | tee soak-${{ matrix.host }}-${{ matrix.preview }}-comparison.json
+
+      - name: Retain soak evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: soak-${{ matrix.host }}-${{ matrix.preview }}
+          path: soak-${{ matrix.host }}-${{ matrix.preview }}-*.json
+          if-no-files-found: error
+          retention-days: 14
