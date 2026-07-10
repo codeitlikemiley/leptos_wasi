@@ -8,4 +8,4 @@ publish = false
 [dependencies]
 leptos_wasi = { path = "../../..", default-features = false, features = ["wasip3"] }
 http = "1.4.1"
-wasip3 = { version = "0.6.0", features = ["http-compat"] }
+wasip3 = { version = "=0.7.0", features = ["http-compat"] }

@@ -23,7 +23,7 @@ throw_error = "0.3.1"
 hydration_context = "0.3.0"
 futures = "0.3.32"
 wasi = { version = "0.14.7", optional = true }
-wasip3 = { version = "0.6.0", features = ["http-compat"], optional = true }
+wasip3 = { version = "=0.7.0", features = ["http-compat"], optional = true }
 leptos = { version = "0.8.19", default-features = false, features = ["nonce", "ssr"] }
 leptos_meta = { version = "0.8.6", default-features = false, features = ["ssr"] }
 leptos_router = { version = "0.8.13", default-features = false, features = ["ssr"] }

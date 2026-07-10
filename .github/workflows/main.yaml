@@ -184,10 +184,10 @@ jobs:
             . -> target
             tests/test-app -> tests/test-app/target
 
-      - name: Install Wasmtime 45.0.0
+      - name: Install Wasmtime 46.0.1
         uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
         with:
-          version: "45.0.0"
+          version: "46.0.1"
 
       - name: Install Spin 4.0.0
         uses: fermyon/actions/spin/setup@8849a6c41270af8e9f60f371982eddf33b8e35c9 # v1
@@ -234,11 +234,11 @@ jobs:
       - name: Install Cargo Leptos 0.3.7
         run: cargo install cargo-leptos --version 0.3.7 --locked
 
-      - name: Install Wasmtime 45.0.0
+      - name: Install Wasmtime 46.0.1
         if: matrix.host == 'wasmtime'
         uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
         with:
-          version: "45.0.0"
+          version: "46.0.1"
 
       - name: Install Spin 4.0.0
         if: matrix.host == 'spin'
@@ -300,13 +300,13 @@ jobs:
       - name: Install pinned component tools
         run: |
           cargo install wac-cli --version 0.10.1 --locked
-          cargo install wasm-tools --version 1.248.0 --locked
+          cargo install wasm-tools --version 1.253.0 --locked
 
-      - name: Install Wasmtime 45.0.0
+      - name: Install Wasmtime 46.0.1
         if: matrix.host == 'wasmtime'
         uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
         with:
-          version: "45.0.0"
+          version: "46.0.1"
 
       - name: Install pinned Spin middleware runtime
         if: matrix.host == 'spin'
@@ -379,11 +379,11 @@ jobs:
             . -> target
             tests/test-app -> tests/test-app/target
 
-      - name: Install Wasmtime 45.0.0
+      - name: Install Wasmtime 46.0.1
         if: matrix.host == 'wasmtime'
         uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
         with:
-          version: "45.0.0"
+          version: "46.0.1"
 
       - name: Install Spin 4.0.0
         if: matrix.host == 'spin'

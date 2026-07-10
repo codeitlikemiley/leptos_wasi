@@ -16,7 +16,7 @@ leptos_meta = { version = "0.8.6", default-features = false, features = ["ssr"] 
 leptos_router = { version = "0.8.14", default-features = false, features = ["ssr"] }
 leptos_wasi = { path = "../..", default-features = false }
 server_fn = { version = "0.8.12", default-features = false, features = ["axum-no-default"] }
-wasip3 = { version = "0.6.0", features = ["http-compat"], optional = true }
+wasip3 = { version = "=0.7.0", features = ["http-compat"], optional = true }
 wasi = { version = "0.14.7", optional = true }
 axum-core = "0.5.6"
 serde = { version = "1", features = ["derive"] }

@@ -8,7 +8,7 @@ This example demonstrates running a Leptos application utilizing the native WASI
 - **Rust target:** `rustup target add wasm32-wasip2`
 - **Cargo Leptos:** Version 0.3.7 or later (`cargo install --locked cargo-leptos`).
 - **Spin CLI:** Version 4.0.0 or later.
-- **Wasmtime CLI:** Version 45.0.0 or later.
+- **Wasmtime CLI:** Version 46.0.1 or later.
 
 ## Build and Run
 

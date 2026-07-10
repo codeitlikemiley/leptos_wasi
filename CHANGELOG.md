@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Upgrade Preview 3 bindings to final `wasi:http@0.3.0` through exact
+  `wasip3` 0.7.0 bindings, and validate the service component with Wasmtime
+  46.0.1.
 - Rename route-generation context methods to
   `generate_routes_with_discovery_context` and
   `generate_routes_with_exclusions_and_discovery_context`. Discovery context

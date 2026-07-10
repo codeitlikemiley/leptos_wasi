@@ -1000,11 +1000,11 @@ mod p3 {
 
     impl CustomExecutor for Wasip3Executor {
         fn spawn(&self, future: any_spawner::PinnedFuture<()>) {
-            wasip3::wit_bindgen::spawn(future);
+            wasip3::spawn(future);
         }
 
         fn spawn_local(&self, future: any_spawner::PinnedLocalFuture<()>) {
-            wasip3::wit_bindgen::spawn(future);
+            wasip3::spawn(future);
         }
 
         fn poll_local(&self) {

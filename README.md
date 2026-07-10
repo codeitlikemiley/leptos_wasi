@@ -19,7 +19,7 @@ https://github.com/user-attachments/assets/6596e0f3-80c0-4258-a4e3-f85c41b328b4
 - Rust 1.93.0 or newer
 - `wasm32-wasip2` (`rustup target add wasm32-wasip2`)
 - Cargo Leptos 0.3.7 or newer for the included islands example
-- Wasmtime 45.0.0 or Spin 4.0.0 for the tested host configurations
+- Wasmtime 46.0.1 or Spin 4.0.0 for the tested host configurations
 
 The Rust target name is `wasm32-wasip2` for both component models. The
 `wasip2` and `wasip3` crate features select the host bindings and executor, not
