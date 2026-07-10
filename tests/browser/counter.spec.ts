@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+const middlewareEnabled = process.env.MIDDLEWARE === "1";
+
 test("SSR shell contains the unhydrated counter island", async ({ request }) => {
   const response = await request.get("/");
   expect(response.ok()).toBeTruthy();
@@ -9,6 +11,20 @@ test("SSR shell contains the unhydrated counter island", async ({ request }) => 
   expect(html).toContain("data-component=");
   expect(html).toContain("Increment Counter");
   expect(html).toContain("COUNT VALUE");
+});
+
+test("experimental component middleware preserves public split assets", async ({ request }) => {
+  test.skip(!middlewareEnabled, "requires the experimental middleware composition");
+
+  const pageResponse = await request.get("/");
+  expect(pageResponse.ok()).toBeTruthy();
+  expect(pageResponse.headers()["x-leptos-wasi-middleware"]).toBe("wasip3-vnext");
+
+  // Spin serves this through a separate public file-service trigger, whereas
+  // Wasmtime reaches the Leptos static callback inside the composed service.
+  // Both paths must remain available without authentication for hydration.
+  const loaderResponse = await request.get("/pkg/counter.js");
+  expect(loaderResponse.ok()).toBeTruthy();
 });
 
 test("lazy split island loads and handles a server action", async ({ page }) => {
@@ -48,25 +64,29 @@ test("lazy split island loads and handles a server action", async ({ page }) => 
   await splitFinished;
   await expect.poll(() => splitModules.size).toBeGreaterThan(0);
 
-  let actionRequested = false;
-  let releaseAction!: () => void;
-  const actionGate = new Promise<void>((resolve) => {
-    releaseAction = resolve;
-  });
-  await page.route(/\/api\/increment_count(?:\?|$)/, async (route) => {
-    actionRequested = true;
-    await actionGate;
-    await route.continue();
-  });
-
   const button = page.locator('button[type="button"]');
+  if (middlewareEnabled) {
+    const rejectedAction = page.waitForResponse(/\/api\/increment_count(?:\?|$)/);
+    await button.click();
+    await expect(button).toBeDisabled();
+    const rejectedResponse = await rejectedAction;
+    expect(rejectedResponse.status()).toBe(401);
+    expect(rejectedResponse.headers()["x-leptos-wasi-middleware"]).toBe("wasip3-vnext");
+    await expect(count).toHaveText("0");
+    await expect(button).toBeEnabled();
+    await page.setExtraHTTPHeaders({ Authorization: "Bearer allow" });
+  }
+
+  const acceptedAction = page.waitForResponse(/\/api\/increment_count(?:\?|$)/);
   await button.click();
-  await expect.poll(() => actionRequested).toBe(true);
   await expect(button).toBeDisabled();
   await expect(button).toHaveText("Updating...");
-
-  releaseAction();
+  const acceptedResponse = await acceptedAction;
+  expect(acceptedResponse.status()).toBe(200);
   await expect(count).toHaveText("1");
   await expect(button).toBeEnabled();
   await expect(button).toHaveText("Increment Counter");
+  if (middlewareEnabled) {
+    expect(acceptedResponse.headers()["x-leptos-wasi-middleware"]).toBe("wasip3-vnext");
+  }
 });
