@@ -3,6 +3,11 @@ set -euo pipefail
 
 # Ensure we are in the script's directory (project root)
 cd "$(dirname "$0")"
+source "scripts/middleware-common.sh"
+
+WASMTIME_BIN="$(resolve_middleware_tool WASMTIME_BIN wasmtime "$(middleware_lock_value wasmtime_version)")"
+SPIN_BIN="$(resolve_middleware_tool SPIN_BIN spin "$(middleware_lock_value spin_stable_version)")"
+export WASMTIME_BIN SPIN_BIN
 
 echo "=== Building Guest App for WASIp2 ==="
 LEPTOS_OUTPUT_NAME=test-app cargo build --locked --manifest-path tests/test-app/Cargo.toml --target wasm32-wasip2 --release --features islands-router
