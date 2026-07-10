@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-07-10
+
 ### Added
 
 - Framework-neutral WASIp3 HTTP component-middleware documentation, a pinned
