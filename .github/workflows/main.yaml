@@ -125,8 +125,14 @@ jobs:
           --ignore RUSTSEC-2024-0436
           --ignore RUSTSEC-2026-0173
 
+      - name: Install cargo-deny 0.20.2
+        run: cargo install cargo-deny --version 0.20.2 --locked
+
+      - name: Enforce dependency licenses, sources, and duplicate policy
+        run: cargo deny check
+
   semver:
-    name: SemVer against 0.3.2
+    name: SemVer against 0.4.1
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -143,8 +149,8 @@ jobs:
       - name: Install cargo-semver-checks 0.48.0
         run: cargo install cargo-semver-checks --version 0.48.0 --locked
 
-      - name: Check intentional 0.4 API breaks
-        run: cargo semver-checks check-release --baseline-rev 9689c68
+      - name: Check intentional 0.5 API breaks
+        run: cargo semver-checks check-release --baseline-rev fa5a983
 
   package:
     name: Package and publish dry run
@@ -289,6 +295,11 @@ jobs:
       - name: Audit final-WASI middleware manifests
         run: ./scripts/audit-middleware-manifests.py --composition-tools
 
+      - name: Reject deployment-policy and artifact-set bypasses
+        run: |
+          python3 scripts/test_audit_middleware_manifests.py
+          python3 scripts/test_verify_artifact_set.py
+
       - name: Build and inspect final-WASI terminal component
         env:
           LEPTOS_OUTPUT_NAME: test-app
@@ -310,16 +321,17 @@ jobs:
 
       - name: Report cross-repository middleware promotion gate
         run: |
-          echo "::warning title=Middleware promotion unavailable::The real full-chain and browser gates require the exact local wasi-http-middleware source revision. No remote or release artifact is authorized yet, so this workflow does not claim that production gate."
+          echo "::warning title=Companion promotion unavailable::The real full-chain, authorization, and browser gates require exact local wasi-http-middleware and wasi-authz source revisions. No remote or release artifact is authorized yet, so this workflow does not claim those production gates."
           cat >> "${GITHUB_STEP_SUMMARY}" <<'EOF'
-          ## Middleware promotion status
+          ## Companion promotion status
 
           Terminal final-WIT checks and both Spin incompatibility canaries ran.
-          The checksum-pinned Wasmtime full-chain and browser gates remain a
-          release blocker until the companion repository has an authorized
-          remote or immutable release artifact. Run them locally from sibling
-          checkouts with `./scripts/run-middleware-tests.sh` and
-          `MIDDLEWARE=1 HOST=wasmtime ./tests/browser/run.sh`.
+          The checksum-pinned Wasmtime full-chain, typed authorization, and
+          browser gates remain a release blocker until both companion
+          repositories have authorized remotes or immutable release artifacts.
+          Run them locally from sibling checkouts with
+          `./scripts/run-middleware-tests.sh` and
+          `AUTHZ=1 MIDDLEWARE=1 HOST=wasmtime ./tests/browser/run.sh`.
           EOF
 
   soak:
