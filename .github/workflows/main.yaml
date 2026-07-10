@@ -267,6 +267,92 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  middleware-vnext:
+    name: Experimental middleware vNext / ${{ matrix.host }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: wasmtime
+            port: 3110
+          - host: spin
+            port: 3111
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install stable Rust and browser/WASI targets
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown, wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: |
+            . -> target
+            examples/counter -> examples/counter/target
+            tests/middleware-fixture -> tests/middleware-fixture/target
+            tests/test-app -> tests/test-app/target
+
+      - name: Install pinned component tools
+        run: |
+          cargo install wac-cli --version 0.10.1 --locked
+          cargo install wasm-tools --version 1.248.0 --locked
+
+      - name: Install Wasmtime 45.0.0
+        if: matrix.host == 'wasmtime'
+        uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
+        with:
+          version: "45.0.0"
+
+      - name: Install pinned Spin middleware runtime
+        if: matrix.host == 'spin'
+        run: >-
+          cargo install
+          --git https://github.com/spinframework/spin
+          --rev 27451471b8ba0faeffa01c5a4ddd6daee9a9d526
+          --locked --no-default-features spin-cli
+
+      - name: Audit and run middleware protocol E2E
+        env:
+          HOST: ${{ matrix.host }}
+        run: ./scripts/run-middleware-tests.sh
+
+      - name: Install Cargo Leptos 0.3.7
+        run: cargo install cargo-leptos --version 0.3.7 --locked
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/browser/package-lock.json
+
+      - name: Install experimental browser test dependencies
+        working-directory: tests/browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run middleware split-WASM browser E2E
+        env:
+          HOST: ${{ matrix.host }}
+          MIDDLEWARE: "1"
+          PORT: ${{ matrix.port }}
+        run: ./tests/browser/run.sh
+
+      - name: Upload experimental Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-traces-middleware-vnext-${{ matrix.host }}
+          path: tests/browser/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
   soak:
     name: Ten-minute soak / ${{ matrix.host }} / ${{ matrix.preview }}
     runs-on: ubuntu-latest
