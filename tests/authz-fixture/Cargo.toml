@@ -13,16 +13,16 @@ axum-core = "0.5.6"
 futures = "0.3.31"
 http = "1.4.1"
 leptos = { version = "0.8.20", default-features = false, features = ["islands", "ssr"] }
-leptos-wasi-authz = { path = "../../../wasi-authz/crates/leptos-wasi-authz", version = "=0.1.0-alpha.1" }
+leptos-wasi-authz = { path = "../../../wasi-authz/crates/leptos-wasi-authz", version = "=0.1.0-alpha.2" }
 leptos_meta = { version = "0.8.6", default-features = false, features = ["ssr"] }
 leptos_router = { version = "0.8.14", default-features = false, features = ["ssr"] }
 leptos_wasi = { path = "../..", default-features = false, features = ["wasip3"] }
 serde = { version = "1", features = ["derive"] }
 server_fn = { version = "0.8.12", default-features = false, features = ["axum-no-default"] }
-wasi-authz-client = { path = "../../../wasi-authz/crates/wasi-authz-client", version = "=0.1.0-alpha.1", features = ["wasip3"] }
-wasi-authz-cedar = { path = "../../../wasi-authz/crates/wasi-authz-cedar", version = "=0.1.0-alpha.1" }
-wasi-authz-contract = { path = "../../../wasi-authz/crates/wasi-authz-contract", version = "=0.1.0-alpha.1" }
-wasi-http-authn = { path = "../../../wasi-http-middleware/crates/authn", version = "=0.2.0-alpha.1" }
+wasi-authz-client = { path = "../../../wasi-authz/crates/wasi-authz-client", version = "=0.1.0-alpha.2", features = ["wasip3"] }
+wasi-authz-cedar = { path = "../../../wasi-authz/crates/wasi-authz-cedar", version = "=0.1.0-alpha.2" }
+wasi-authz-contract = { path = "../../../wasi-authz/crates/wasi-authz-contract", version = "=0.1.0-alpha.2" }
+wasi-http-authn = { path = "../../../wasi-http-middleware/crates/authn", version = "=0.2.0-alpha.2" }
 wasip3 = { version = "=0.7.0", features = ["http-compat"] }
 
 [features]

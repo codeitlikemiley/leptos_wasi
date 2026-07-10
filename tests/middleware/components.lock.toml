@@ -18,10 +18,10 @@ cosign_version = "3.1.1"
 
 [middleware]
 name = "wasi-http-middleware"
-version = "0.2.0-alpha.1"
+version = "0.2.0-alpha.2"
 relative_path = "../wasi-http-middleware"
 baseline_revision = "6977a75c4d2cb1558158341c109e419189dc2c52"
-source_revision = "27660a354d762b2047723c15ff25c1542b9c9153"
+source_revision = "bfa0f36766e1d38654233c3fb3d6182841b375c7"
 components = [
   "request-id",
   "security-headers",
@@ -32,14 +32,14 @@ components = [
 
 [authorization]
 name = "wasi-authz"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 relative_path = "../wasi-authz"
 leptos_package = "leptos-wasi-authz"
 leptos_crate_path = "crates/leptos-wasi-authz"
 client_package = "wasi-authz-client"
 client_crate_path = "crates/wasi-authz-client"
 baseline_revision = "043f5b66073bb8e941a29410029a8b9ba26d6c5f"
-source_revision = "f788740d0d686ac1bd201acc53b8a3a86a494322"
+source_revision = "364b2eea4ce479baa2e5061156c0361684c9a7c9"
 fixture_manifest = "tests/authz-fixture/Cargo.toml"
 components = [
   "authz-http-pep",
