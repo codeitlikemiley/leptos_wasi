@@ -100,7 +100,8 @@ fn start_server(
             "--env".to_string(),
             "WASI_MIDDLEWARE_SERVICE_ID=leptos-wasi-test-app".to_string(),
             "--env".to_string(),
-            "WASI_MIDDLEWARE_AUTHN_AUDIENCES=leptos-wasi-test-app".to_string(),
+            "WASI_MIDDLEWARE_AUTHN_AUDIENCES=api://leptos-wasi-test-app"
+                .to_string(),
             "--env".to_string(),
             "WASI_MIDDLEWARE_AUTHN_MAX_IN_FLIGHT=64".to_string(),
             "--env".to_string(),
@@ -817,8 +818,10 @@ async fn run_assertions(
         assert_eq!(remaining, b"second-frame\n");
     }
 
-    // A producer failure after commitment must end that body and leave the
-    // runtime able to serve the next request.
+    // A producer failure after a client-observable first frame must end that
+    // body and leave the runtime able to serve the next request. The fixture
+    // delays the terminal error so this is genuinely a mid-stream failure,
+    // not an immediate frame/error race before socket delivery.
     {
         let response = client
             .get(format!("{}/static/failing.stream", base_url))

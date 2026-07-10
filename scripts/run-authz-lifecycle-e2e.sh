@@ -8,9 +8,14 @@ LOCK="${ROOT}/tests/middleware/components.lock.toml"
 MIDDLEWARE_REPOSITORY="${WASI_HTTP_MIDDLEWARE_DIR:-$(dirname "${ROOT}")/wasi-http-middleware}"
 AUTHZ_REPOSITORY="${WASI_AUTHZ_DIR:-$(dirname "${ROOT}")/wasi-authz}"
 ALLOW_DIRTY="${AUTHZ_LIFECYCLE_ALLOW_DIRTY_COMPANIONS:-0}"
-APP_PORT="${AUTHZ_LIFECYCLE_APP_PORT:-19580}"
-BROKER_PORT="${AUTHZ_LIFECYCLE_BROKER_PORT:-19581}"
-PDP_PORT="${AUTHZ_LIFECYCLE_PDP_PORT:-19582}"
+
+available_port() {
+    python3 -c 'import socket; stream=socket.socket(); stream.bind(("127.0.0.1", 0)); print(stream.getsockname()[1]); stream.close()'
+}
+
+APP_PORT="${AUTHZ_LIFECYCLE_APP_PORT:-$(available_port)}"
+BROKER_PORT="${AUTHZ_LIFECYCLE_BROKER_PORT:-$(available_port)}"
+PDP_PORT="${AUTHZ_LIFECYCLE_PDP_PORT:-$(available_port)}"
 APP_ADDRESS="127.0.0.1:${APP_PORT}"
 BROKER_ADDRESS="127.0.0.1:${BROKER_PORT}"
 PDP_ADDRESS="127.0.0.1:${PDP_PORT}"
@@ -316,6 +321,11 @@ app_pid=$!
 
 app_ready=false
 for _ in $(seq 1 120); do
+    if ! kill -0 "${app_pid}" 2>/dev/null; then
+        cat "${TEMPORARY}/app.log" >&2 || true
+        echo "error: composed lifecycle service exited before readiness" >&2
+        exit 1
+    fi
     status="$(curl --silent --max-time 1 \
         --header 'authorization: Bearer deny' \
         --output /dev/null \

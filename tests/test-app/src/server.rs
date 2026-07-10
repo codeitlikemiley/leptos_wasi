@@ -19,13 +19,7 @@ fn serve_static_files(path: String) -> Option<leptos_wasi::response::Body> {
         return Some(delayed_stream());
     }
     if path == "failing.stream" {
-        let stream = futures::stream::iter([
-            Ok(bytes::Bytes::from_static(b"first-frame\n")),
-            Err(throw_error::Error::from(std::io::Error::other(
-                "intentional response stream failure",
-            ))),
-        ]);
-        return Some(leptos_wasi::response::Body::Async(Box::pin(stream)));
+        return Some(failing_stream());
     }
 
     let file_path = format!("/static/{path}");
@@ -58,6 +52,30 @@ fn delayed_stream() -> leptos_wasi::response::Body {
     leptos_wasi::response::Body::Async(Box::pin(first.chain(second)))
 }
 
+#[cfg(all(feature = "wasip2", not(feature = "wasip3")))]
+fn failing_stream() -> leptos_wasi::response::Body {
+    use futures::StreamExt;
+
+    let first = futures::stream::once(async {
+        Ok::<_, throw_error::Error>(bytes::Bytes::from_static(
+            b"first-frame\n",
+        ))
+    });
+    let failure = futures::stream::once(async {
+        leptos_wasi::wasip2::sleep(150_000_000)
+            .await
+            .map_err(|error| {
+                throw_error::Error::from(std::io::Error::other(
+                    error.to_string(),
+                ))
+            })?;
+        Err(throw_error::Error::from(std::io::Error::other(
+            "intentional response stream failure",
+        )))
+    });
+    leptos_wasi::response::Body::Async(Box::pin(first.chain(failure)))
+}
+
 #[cfg(feature = "wasip3")]
 fn delayed_stream() -> leptos_wasi::response::Body {
     use futures::StreamExt;
@@ -74,6 +92,24 @@ fn delayed_stream() -> leptos_wasi::response::Body {
         ))
     });
     leptos_wasi::response::Body::Async(Box::pin(first.chain(second)))
+}
+
+#[cfg(feature = "wasip3")]
+fn failing_stream() -> leptos_wasi::response::Body {
+    use futures::StreamExt;
+
+    let first = futures::stream::once(async {
+        Ok::<_, throw_error::Error>(bytes::Bytes::from_static(
+            b"first-frame\n",
+        ))
+    });
+    let failure = futures::stream::once(async {
+        wasip3::clocks::monotonic_clock::wait_for(150_000_000).await;
+        Err(throw_error::Error::from(std::io::Error::other(
+            "intentional response stream failure",
+        )))
+    });
+    leptos_wasi::response::Body::Async(Box::pin(first.chain(failure)))
 }
 
 fn provide_test_context() {

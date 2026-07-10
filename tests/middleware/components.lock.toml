@@ -13,21 +13,36 @@ spin_sdk_version = "6.0.0"
 wasmtime_version = "46.0.1"
 wac_cli_version = "0.10.1"
 wasm_tools_version = "1.253.0"
+oha_version = "1.14.0"
+cosign_version = "3.1.1"
 
 [middleware]
 name = "wasi-http-middleware"
 version = "0.2.0-alpha.1"
 relative_path = "../wasi-http-middleware"
 baseline_revision = "6977a75c4d2cb1558158341c109e419189dc2c52"
-source_revision = "3f238b17d396526e5cd22d489bc0a4e5c4ecad86"
+source_revision = "c5a72d3da0c451e1b807e11b801361a91673efd0"
 components = [
   "request-id",
   "security-headers",
   "cors",
   "authn-policy",
+  "secure-defaults",
 ]
 
 [authorization]
 name = "wasi-authz"
+version = "0.1.0-alpha.1"
 relative_path = "../wasi-authz"
 leptos_package = "leptos-wasi-authz"
+leptos_crate_path = "crates/leptos-wasi-authz"
+client_package = "wasi-authz-client"
+client_crate_path = "crates/wasi-authz-client"
+baseline_revision = "043f5b66073bb8e941a29410029a8b9ba26d6c5f"
+source_revision = "544602acebd2053a926b9e778aeae40e6f88ae71"
+fixture_manifest = "tests/authz-fixture/Cargo.toml"
+components = [
+  "authz-http-pep",
+  "cedar-pdp",
+  "spicedb-pdp",
+]

@@ -1,0 +1,124 @@
+schema = 1
+
+[[bundle]]
+id = "middleware"
+name = "wasi-http-middleware"
+version = "0.2.0-alpha.1"
+source_revision = "c5a72d3da0c451e1b807e11b801361a91673efd0"
+checksum_manifest = "artifacts/SHA256SUMS"
+checksum_manifest_sha256 = "1d3a3ca290b44ac63e9ceb830f3d80dac9080b8c14a5df1ed48b8f7492ff2b27"
+provenance = "artifacts/provenance.intoto.json"
+provenance_sha256 = "74334aec70b10050b48fc9cf12c42e1c965c44fdb06d694c6afdfea287e2721d"
+oci_manifest = "reports/supply-chain/manifest.json"
+oci_manifest_sha256 = "b95844934724b46a374863947753b720488b6ee25e576b418d5bc62b09afba3e"
+provenance_signature = "reports/supply-chain/provenance.sigstore.json"
+provenance_signature_sha256 = "178faf6fc73053277aaf718332ac55e81a730101b34a9b447fd2ea4ab1197ef6"
+manifest_signature = "reports/supply-chain/manifest.sigstore.json"
+manifest_signature_sha256 = "33c33a965f5f46a3c4cd8c029b4620f1a968c8cd1b2bf344049ef30b7b4b4261"
+signing_key = "reports/supply-chain/cosign.pub"
+signing_key_sha256 = "6cd9a0f21ee5c016b0b46b930c1c231fb8d9e4c6c0c6b1831d38f82416ffeebd"
+
+[[bundle.artifact]]
+component = "request-id"
+path = "components/request-id.wasm"
+sha256 = "5e901daccfdc0366913b88d2dc461d40863a32f25a0b942a42ed2fe4a501e9e1"
+sbom = "artifacts/sbom/wasi-http-middleware-request-id.cdx.json"
+sbom_sha256 = "aa1857ab711cf280873aa4509021db67c715c514b034f90803287ce190815752"
+wit = "reports/wit/request-id.wit"
+wit_sha256 = "c08385b201e3416fddc88b63368384b994cb2c4b0d7ab206f025bd1e16e67965"
+
+[[bundle.artifact]]
+component = "security-headers"
+path = "components/security-headers.wasm"
+sha256 = "86e0b74a678fecc5b2a4bc383a35c56c9513607c8c4328bdeef5f71ab0c747ab"
+sbom = "artifacts/sbom/wasi-http-middleware-security-headers.cdx.json"
+sbom_sha256 = "66e56b1c45f851cfc80a8d0658fb6bf75599358cba4d7bb817cf42a0ca590740"
+wit = "reports/wit/security-headers.wit"
+wit_sha256 = "dca4834f679cf6626db2c90e6acafa00ee63c1a012d0853c0f37ef5a1d850768"
+
+[[bundle.artifact]]
+component = "cors"
+path = "components/cors.wasm"
+sha256 = "1683710e29c0e9738c61a342675ec793d9a5f88bba9cccb36f2bffbd9cdb11b0"
+sbom = "artifacts/sbom/wasi-http-middleware-cors.cdx.json"
+sbom_sha256 = "89e110610a7ae29a8a24933fe9102153c88f0025bfdd262dd2d6f60c3c2d5f02"
+wit = "reports/wit/cors.wit"
+wit_sha256 = "715c610b0fcb24631cb277361496179a4517d28c3c00da22c3427a1965033aaf"
+
+[[bundle.artifact]]
+component = "authn-policy"
+path = "components/authn-policy.wasm"
+sha256 = "79fb798d8d4f3fcce6aac03e240e478cd9c1676edd48b97173d3a67ea8b36e32"
+sbom = "artifacts/sbom/wasi-http-middleware-authn-policy.cdx.json"
+sbom_sha256 = "99baf803c3f39bd271e0f1512ef5282d9ed15de48fe574674102e005a9db3bbb"
+wit = "reports/wit/authn-policy.wit"
+wit_sha256 = "cbeb9e5b3c4fe668c29344a32e2b3ababb75caf0e82ee49eaec88301119f521c"
+
+[[bundle.artifact]]
+component = "secure-defaults"
+path = "components/secure-defaults.wasm"
+sha256 = "403391c82645b33491f88aa8f3f4fc2bb3a25b60a7f7a79268f15915fee2d12a"
+sbom = "artifacts/sbom/wasi-http-middleware-secure-defaults.cdx.json"
+sbom_sha256 = "1c650398979b961df790b0108a4d8a1a01f7dedb2227a6039a17ed247463d5ec"
+wit = "reports/wit/secure-defaults.wit"
+wit_sha256 = "6907a1a8738866e9402eda194075d9eaa39cfa436d9226047831a453e395807a"
+
+[[bundle]]
+id = "authorization"
+name = "wasi-authz"
+version = "0.1.0-alpha.1"
+source_revision = "544602acebd2053a926b9e778aeae40e6f88ae71"
+checksum_manifest = "artifacts/RELEASE-SHA256SUMS"
+checksum_manifest_sha256 = "7c0b5407e0504959d029de23780555c33605c96fe901c84bda74ea3bc5d1afb1"
+provenance = "artifacts/provenance.intoto.json"
+provenance_sha256 = "71b8d779025c0544d1ac51c0ddf5dad569872cb31d9eb0cde36a259bdcbe9fd8"
+oci_manifest = "reports/supply-chain/manifest.json"
+oci_manifest_sha256 = "4db9567833b2579eb4ea6ad28209b95acbed65b3324f2e8cdb4acb76188058ff"
+provenance_signature = "reports/supply-chain/provenance.intoto.json.sigstore.json"
+provenance_signature_sha256 = "e4405ecd42c3dca983d0c13aac4fb77ff5aebe5e7d369095d79de51225f6ede0"
+manifest_signature = "reports/supply-chain/manifest.json.sigstore.json"
+manifest_signature_sha256 = "aecf5a7f25babe0187faeedea2c78c3683d611d70d9c239159c5d471631056fc"
+signing_key = "reports/supply-chain/cosign.pub"
+signing_key_sha256 = "8cfbe78c5365143a9673a593f8612de430c17daaac1a4ef122d03d6c20ea6ea8"
+
+[[bundle.attested_input]]
+path = "reports/wit/cedar-pdp.wit"
+source = "reports/wit/cedar-pdp.wit"
+sha256 = "7394503ecdd7acbcf9581c83dc29fe8959e572b9bdccfe47d48dba6aaf75629e"
+
+[[bundle.attested_input]]
+path = "reports/wit/http-pep.wit"
+source = "reports/wit/http-pep.wit"
+sha256 = "de6325caf43fc271b87215eb7cb5b61999201d954b220a3278da556f55912d93"
+
+[[bundle.attested_input]]
+path = "reports/wit/spicedb-pdp.wit"
+source = "reports/wit/spicedb-pdp.wit"
+sha256 = "7d602957d91bb3d164fe37a06a6505caed0842d800007bad4f8f81f87855a2c0"
+
+[[bundle.artifact]]
+component = "authz-http-pep"
+path = "components/authz-http-pep.wasm"
+sha256 = "cd5e9b1dcae494a31229f851d8ce4f8781b9a03a37407d3ee9641cc73db1d32c"
+sbom = "artifacts/sbom/wasi-authz-http-pep.cdx.json"
+sbom_sha256 = "e572111c4592577a0056cf19b8d946c7d912ff18027fd191c2b1f756ae209394"
+wit = "reports/wit/http-pep.wit"
+wit_sha256 = "de6325caf43fc271b87215eb7cb5b61999201d954b220a3278da556f55912d93"
+
+[[bundle.artifact]]
+component = "cedar-pdp"
+path = "components/cedar-pdp.wasm"
+sha256 = "2f1ff2d0bfe20392204cd7c808bf3119cd3e713cdc289cf18df6c407a7b081dc"
+sbom = "artifacts/sbom/wasi-authz-cedar-pdp-component.cdx.json"
+sbom_sha256 = "8c199b238056c34a5bd72e64c4c05e184265d008b49a566e2f5ce65ef2acea88"
+wit = "reports/wit/cedar-pdp.wit"
+wit_sha256 = "7394503ecdd7acbcf9581c83dc29fe8959e572b9bdccfe47d48dba6aaf75629e"
+
+[[bundle.artifact]]
+component = "spicedb-pdp"
+path = "components/spicedb-pdp.wasm"
+sha256 = "0a7de2db16422c52f80f4dc44c46f402cb1f3130be4259e678f5f09f6a8629f7"
+sbom = "artifacts/sbom/wasi-authz-spicedb-pdp-component.cdx.json"
+sbom_sha256 = "fec39eef93c9c32d41ea3d32fb5c9572089198bfb5b81ee39b85001ab94a2a66"
+wit = "reports/wit/spicedb-pdp.wit"
+wit_sha256 = "7d602957d91bb3d164fe37a06a6505caed0842d800007bad4f8f81f87855a2c0"

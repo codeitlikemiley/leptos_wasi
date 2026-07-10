@@ -7,13 +7,18 @@ PORT="${PORT:-3000}"
 
 "$ROOT/scripts/audit-middleware-manifests.py" --wasmtime --composition-tools
 "$ROOT/scripts/build-middleware-test-components.sh"
+MIDDLEWARE_COMPONENTS=()
+while IFS= read -r component; do
+  MIDDLEWARE_COMPONENTS+=(
+    "$ROOT/tests/middleware-artifacts/$component.wasm"
+  )
+done < <(
+  "$ROOT/scripts/deployment-profile-components.py" wasmtime-authn
+)
 "$ROOT/scripts/compose-middleware.sh" \
   "$ROOT/tests/test-app-p3.wasm" \
   "$ROOT/tests/test-app-p3-middleware.wasm" \
-  "$ROOT/tests/middleware-artifacts/request-id.wasm" \
-  "$ROOT/tests/middleware-artifacts/security-headers.wasm" \
-  "$ROOT/tests/middleware-artifacts/cors.wasm" \
-  "$ROOT/tests/middleware-artifacts/authn-policy.wasm"
+  "${MIDDLEWARE_COMPONENTS[@]}"
 
 WASMTIME_BIN="$(resolve_middleware_tool WASMTIME_BIN wasmtime "$(middleware_lock_value wasmtime_version)")"
 exec "$WASMTIME_BIN" serve \
@@ -30,7 +35,7 @@ exec "$WASMTIME_BIN" serve \
   --env=WASI_MIDDLEWARE_AUTHN_TIMEOUT_MS=2000 \
   --env=WASI_MIDDLEWARE_AUTHN_MODE=optional \
   --env=WASI_MIDDLEWARE_SERVICE_ID=leptos-wasi-test-app \
-  --env=WASI_MIDDLEWARE_AUTHN_AUDIENCES=leptos-wasi-test-app \
+  --env=WASI_MIDDLEWARE_AUTHN_AUDIENCES=api://leptos-wasi-test-app \
   --env=WASI_MIDDLEWARE_AUTHN_MAX_IN_FLIGHT=64 \
   --env=WASI_MIDDLEWARE_AUTHN_ALLOW_INSECURE_LOOPBACK=true \
   --dir="$ROOT/tests/test-app/static::/static" \

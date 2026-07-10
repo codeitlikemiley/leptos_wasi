@@ -1,10 +1,25 @@
 import { expect, test } from "@playwright/test";
 
 const middlewareEnabled = process.env.MIDDLEWARE === "1";
+const authzEnabled = process.env.AUTHZ === "1";
+const cookieSentinel = "browser-cookie-secret-sentinel";
+const rawQuerySentinel = "browser_raw_query_secret_sentinel";
+
+function expectTrustedHeadersStripped(headers: Record<string, string>): void {
+  expect(headers.authorization).toBeUndefined();
+  for (const name of Object.keys(headers)) {
+    expect(name.toLowerCase().startsWith("x-wasi-auth-")).toBe(false);
+  }
+}
 
 test("SSR shell contains the unhydrated counter island", async ({ request }) => {
-  const response = await request.get("/");
+  const response = await request.get(`/?probe=${rawQuerySentinel}`, {
+    headers: { Cookie: `session=${cookieSentinel}` },
+  });
   expect(response.ok()).toBeTruthy();
+  if (middlewareEnabled) {
+    expectTrustedHeadersStripped(response.headers());
+  }
 
   const html = await response.text();
   expect(html).toContain("<leptos-island");
@@ -23,12 +38,32 @@ test("component middleware preserves public split assets", async ({ request }) =
   expect(pageResponse.headers()["referrer-policy"]).toBe(
     "strict-origin-when-cross-origin",
   );
+  expectTrustedHeadersStripped(pageResponse.headers());
+  if (authzEnabled) {
+    expect(pageResponse.headers()["x-leptos-auth-context-state"]).toBe(
+      "anonymous",
+    );
+
+    const authenticatedPage = await request.get(`/?probe=${rawQuerySentinel}`, {
+      headers: {
+        Authorization: "Bearer allow",
+        Cookie: `session=${cookieSentinel}`,
+        "x-wasi-auth-context": "spoofed-browser-context-sentinel",
+      },
+    });
+    expect(authenticatedPage.ok()).toBeTruthy();
+    expect(
+      authenticatedPage.headers()["x-leptos-auth-context-state"],
+    ).toBe("authenticated");
+    expectTrustedHeadersStripped(authenticatedPage.headers());
+  }
 
   // Spin serves this through a separate public file-service trigger, whereas
   // Wasmtime reaches the Leptos static callback inside the composed service.
   // Both paths must remain available without authentication for hydration.
   const loaderResponse = await request.get("/pkg/counter.js");
   expect(loaderResponse.ok()).toBeTruthy();
+  expectTrustedHeadersStripped(loaderResponse.headers());
 });
 
 test("lazy split island loads and handles a server action", async ({ page }) => {
@@ -50,7 +85,10 @@ test("lazy split island loads and handles a server action", async ({ page }) => 
     }
   });
 
-  await page.goto("/");
+  await page.setExtraHTTPHeaders({
+    Cookie: `session=${cookieSentinel}`,
+  });
+  await page.goto(`/?probe=${rawQuerySentinel}`);
   const count = page.locator(".tabular-nums");
   await expect(count).toHaveText("0");
   await expect.poll(() => splitRequested).toBe(true);
@@ -69,6 +107,40 @@ test("lazy split island loads and handles a server action", async ({ page }) => 
   await expect.poll(() => splitModules.size).toBeGreaterThan(0);
 
   const button = page.locator('button[type="button"]');
+  if (authzEnabled) {
+    const rejectedAction = page.waitForResponse(/\/api\/increment_count(?:\?|$)/);
+    await button.click();
+    const rejectedResponse = await rejectedAction;
+    expect(rejectedResponse.status()).toBe(401);
+    expect(rejectedResponse.headers()["x-request-id"]).toBeTruthy();
+    expectTrustedHeadersStripped(rejectedResponse.headers());
+    await expect(count).toHaveText("0");
+    await expect(button).toBeEnabled();
+
+    for (const credential of ["readonly", "lowacr", "no-relation"]) {
+      await page.setExtraHTTPHeaders({
+        Authorization: `Bearer ${credential}`,
+        Cookie: `session=${cookieSentinel}`,
+        "x-wasi-auth-context": "spoofed-browser-context-sentinel",
+      });
+      const deniedAction = page.waitForResponse(
+        /\/api\/increment_count(?:\?|$)/,
+      );
+      await button.click();
+      const deniedResponse = await deniedAction;
+      expect(deniedResponse.status()).toBe(403);
+      expectTrustedHeadersStripped(deniedResponse.headers());
+      await expect(count).toHaveText("0");
+      await expect(button).toBeEnabled();
+    }
+
+    await page.setExtraHTTPHeaders({
+      Authorization: "Bearer allow",
+      Cookie: `session=${cookieSentinel}`,
+      "x-wasi-auth-context": "spoofed-browser-context-sentinel",
+    });
+  }
+
   const acceptedAction = page.waitForResponse(/\/api\/increment_count(?:\?|$)/);
   await button.click();
   await expect(button).toBeDisabled();
@@ -81,5 +153,6 @@ test("lazy split island loads and handles a server action", async ({ page }) => 
   if (middlewareEnabled) {
     expect(acceptedResponse.headers()["x-request-id"]).toBeTruthy();
     expect(acceptedResponse.headers()["x-content-type-options"]).toBe("nosniff");
+    expectTrustedHeadersStripped(acceptedResponse.headers());
   }
 });

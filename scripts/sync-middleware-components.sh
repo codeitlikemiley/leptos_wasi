@@ -8,6 +8,7 @@ repository="$(middleware_repository)"
 artifact_root="${repository}/artifacts"
 destination="${MIDDLEWARE_ROOT}/tests/middleware-artifacts"
 wasm_tools_bin="$(resolve_middleware_tool WASM_TOOLS_BIN wasm-tools "$(middleware_lock_value wasm_tools_version)")"
+cosign_bin="$(resolve_middleware_tool COSIGN_BIN cosign "$(middleware_lock_value cosign_version)")"
 
 [[ -f "${repository}/compatibility.toml" ]] || {
   echo "wasi-http-middleware checkout is unavailable: ${repository}" >&2
@@ -27,7 +28,9 @@ from pathlib import Path
 with open(sys.argv[1], "rb") as source:
     integration = tomllib.load(source)
 with open(sys.argv[2], "rb") as source:
-    middleware = tomllib.load(source)["compatibility"]
+    middleware_document = tomllib.load(source)
+middleware = middleware_document["compatibility"]
+middleware_release = middleware_document["release"]
 with (Path(sys.argv[2]).parent / "Cargo.toml").open("rb") as source:
     workspace = tomllib.load(source)["workspace"]["package"]
 
@@ -37,6 +40,7 @@ expected = {
     "wasmtime": integration["wasmtime_version"],
     "wasm_tools": integration["wasm_tools_version"],
     "wac": integration["wac_cli_version"],
+    "oha": integration["oha_version"],
 }
 for key, value in expected.items():
     if middleware.get(key) != value:
@@ -45,10 +49,10 @@ for key, value in expected.items():
             f"expected {value}, found {middleware.get(key)}"
         )
 target_version = integration["middleware"]["version"]
-if middleware.get("version") != target_version or workspace.get("version") != target_version:
+if middleware_release.get("version") != target_version or workspace.get("version") != target_version:
     raise SystemExit(
         "middleware release target mismatch: "
-        f"expected {target_version}, found compatibility={middleware.get('version')} "
+        f"expected {target_version}, found release={middleware_release.get('version')} "
         f"workspace={workspace.get('version')}"
     )
 PY
@@ -69,8 +73,12 @@ if [[ -n "$(git -C "${repository}" status --porcelain)" ]]; then
   exit 1
 fi
 
+python3 "${MIDDLEWARE_ROOT}/scripts/verify-artifact-set.py" middleware \
+  --repository "${repository}" \
+  --cosign "${cosign_bin}"
+
 mkdir -p "${destination}"
-components=(request-id security-headers cors authn-policy)
+components=(request-id security-headers cors authn-policy secure-defaults)
 for component in "${components[@]}"; do
   source_path="${artifact_root}/components/${component}.wasm"
   [[ -f "${source_path}" ]] || {

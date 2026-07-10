@@ -23,10 +23,22 @@ def percentile(values: list[float], quantile: float) -> float:
     return ordered[index]
 
 
-def request_once(url: str, timeout: float) -> tuple[float, float, int]:
+def request_once(
+    url: str,
+    timeout: float,
+    method: str,
+    headers: dict[str, str],
+    body: bytes | None,
+) -> tuple[float, float, int]:
     started = time.perf_counter()
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers=headers,
+        method=method,
+    )
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             first = response.read(1)
             first_byte_ms = (time.perf_counter() - started) * 1000.0
             response.read()
@@ -65,7 +77,20 @@ def main() -> int:
     parser.add_argument("--concurrency", type=int, default=100)
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--pid", type=int, default=None)
+    parser.add_argument("--method", default="GET")
+    parser.add_argument("--header", action="append", default=[])
+    parser.add_argument("--body", default=None)
     args = parser.parse_args()
+
+    headers: dict[str, str] = {}
+    for header in args.header:
+        name, separator, value = header.partition(":")
+        if not separator or not name.strip():
+            parser.error(f"invalid header: {header}")
+        if name.strip().lower() in headers:
+            parser.error(f"duplicate header: {name.strip()}")
+        headers[name.strip().lower()] = value.strip()
+    body = args.body.encode() if args.body is not None else None
 
     deadline = time.monotonic() + args.duration
     latencies: list[float] = []
@@ -81,7 +106,11 @@ def main() -> int:
         while time.monotonic() < deadline:
             try:
                 latency, first_byte, status = request_once(
-                    args.url, args.timeout
+                    args.url,
+                    args.timeout,
+                    args.method,
+                    headers,
+                    body,
                 )
                 with lock:
                     latencies.append(latency)

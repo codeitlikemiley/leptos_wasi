@@ -50,7 +50,11 @@ resolve_middleware_tool() {
 
   require_middleware_command "${selected}"
   local actual
-  actual="$("${selected}" --version 2>&1)"
+  if [[ "${command_name}" == "cosign" ]]; then
+    actual="$("${selected}" version 2>&1)"
+  else
+    actual="$("${selected}" --version 2>&1)"
+  fi
   if [[ "${actual}" != *"${expected_version}"* ]]; then
     echo "${command_name} version mismatch; expected ${expected_version}, found: ${actual}" >&2
     return 1
