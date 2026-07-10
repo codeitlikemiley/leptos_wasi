@@ -33,7 +33,7 @@ https://github.com/user-attachments/assets/6596e0f3-80c0-4258-a4e3-f85c41b328b4
 
 - **Rust:** ≥ 1.93.0 (required by `spin-sdk` v6.0.0)
 - **Target:** `rustup target add wasm32-wasip2`
-- **Cargo Leptos:** `cargo install --locked cargo-leptos`
+- **Cargo Leptos:** ≥ 0.3.7 (`cargo install --locked cargo-leptos`)
 - **Wasmtime:** ≥ 45.0.0 *(if serving under Wasmtime)*
 - **Spin:** ≥ 4.0.0 *(if serving under Spin)*
 
@@ -41,7 +41,7 @@ https://github.com/user-attachments/assets/6596e0f3-80c0-4258-a4e3-f85c41b328b4
 
 | Dependency | Version | Notes |
 |------------|---------|-------|
-| Leptos | `0.8.9` | Fully tested |
+| Leptos | `0.8.20` | Fully tested |
 | Spin SDK | `6.0.0` | WASIp3 native HTTP triggers |
 | `wasi` | `0.14.7` | WASIp2 types and polling interfaces |
 | `wasip3` | `0.6.0` | WASIp3 core types, host spawner, HTTP compatibility |
@@ -49,18 +49,125 @@ https://github.com/user-attachments/assets/6596e0f3-80c0-4258-a4e3-f85c41b328b4
 
 ## Feature Flags
 
+Choose one dependency declaration for the server runtime.
+
+WASI Preview 2 (default cooperative polling executor):
+
 ```toml
 [dependencies]
-# WASI Preview 2 (default) — cooperative polling executor:
-leptos_wasi = "0.3.1"
+leptos_wasi = "0.3.2"
+```
 
-# WASI Preview 3 — native host-level task spawning:
-leptos_wasi = { version = "0.3.1", default-features = false, features = ["wasip3"] }
+WASI Preview 3 (native host-level task spawning):
+
+```toml
+[dependencies]
+leptos_wasi = { version = "0.3.2", default-features = false, features = ["wasip3"] }
+```
+
+WASI Preview 3 plus the server half of optional islands-router navigation:
+
+```toml
+[dependencies]
+leptos_wasi = { version = "0.3.2", default-features = false, features = ["wasip3", "islands-router"] }
 ```
 
 > [!NOTE]
 > Both features can be enabled simultaneously (`--all-features`). When both
 > `wasip2` and `wasip3` are active, the `wasip3` pipeline takes precedence.
+
+## Islands and Lazy Browser WASM
+
+Leptos islands and browser WASM splitting work with the same `Handler` on
+Wasmtime and Spin. They split the browser target (`wasm32-unknown-unknown`),
+not the WASI server component.
+
+Enable islands in both client and server feature sets:
+
+```toml
+[features]
+hydrate = ["leptos/hydrate", "leptos/islands"]
+ssr = ["leptos/ssr", "leptos/islands", "dep:leptos_wasi"]
+```
+
+Use the islands browser entrypoint and shell script:
+
+```rust
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn hydrate() {
+    leptos::mount::hydrate_islands();
+}
+
+// In the server-rendered document shell:
+view! { <HydrationScripts options islands=true /> }
+```
+
+Keep layouts and pages as server components, then opt only interactive widgets
+into browser code. Adding `lazy` gives that island its own WASM chunk:
+
+```rust
+#[island(lazy)]
+fn InteractiveWidget() -> impl IntoView {
+    // Browser-side signals, events, and server-function calls.
+}
+```
+
+Build the browser assets with splitting enabled, then build the WASI server as
+usual:
+
+```bash
+cargo leptos build --release --split --frontend-only
+LEPTOS_OUTPUT_NAME=my_app cargo build --lib --target wasm32-wasip2 \
+  --release --no-default-features --features ssr
+```
+
+Deploy the entire `target/site/pkg` directory. It contains the main browser
+module, split chunks, loader JavaScript, and split manifest. The asset server
+must return `.wasm` files as `application/wasm`; `Handler::static_files_handler`
+does this automatically. Mount `target/site` into the server guest at the path
+described by `LEPTOS_SITE_ROOT` so Leptos can read the split manifest and emit
+preload hints.
+
+> [!WARNING]
+> Keep Cargo Leptos `hash-files` disabled for WASI in this initial rollout.
+> Leptos currently locates the hash manifest through `current_exe()`, which is
+> unsupported by Rust's WASI standard library. Enabling hash mode without also
+> packaging `hash.txt` at an explicit guest path can panic during SSR. Deploy
+> the unhashed package atomically and disable long-lived asset caching instead.
+
+The optional `islands-router` feature adds request-aware rendering for Leptos's
+client-side islands navigation. The handler detects the `Islands-Router`
+request header, provides `IslandsRouterNavigation`, and switches navigation
+responses to in-order branching. Enable the matching Leptos feature in both app
+targets and install the browser routing script in the document shell:
+
+```toml
+[features]
+hydrate = [
+  "leptos/hydrate",
+  "leptos/islands",
+  "leptos/islands-router",
+]
+ssr = [
+  "leptos/ssr",
+  "leptos/islands",
+  "leptos/islands-router",
+  "dep:leptos_wasi",
+  "leptos_wasi/islands-router",
+]
+```
+
+```rust
+view! {
+    <HydrationScripts
+        options
+        islands=true
+        islands_router=true
+    />
+}
+```
+
+Ordinary multi-page islands do not need this feature.
 
 ## Quick Start
 
@@ -197,6 +304,7 @@ handler.static_files_handler("/pkg", serve_static_files)
   - **WASIp3**: Native host-level task spawning via `wasip3::wit_bindgen::spawn` — zero guest-side event loop overhead.
 * :zap: **Short-circuiting**: Avoids rendering work entirely when serving static files or server functions.
 * :truck: **Custom Static Asset Serving**: Plug your own serving logic (e.g., [`wasi:blobstore`][wasi-blobstore] for object storage).
+* :desert_island: **Islands and Split WASM**: Server-only page shells, lazy browser islands, and request-aware islands-router rendering across Wasmtime and Spin.
 * :gear: **Multiple Server Backends**: Axum, generic, and custom server function backends.
 
 ## Troubleshooting

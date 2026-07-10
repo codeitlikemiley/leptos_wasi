@@ -1,9 +1,9 @@
 use leptos::config::get_configuration;
 use leptos_wasi::executor::init_wasip3_spawner;
 use leptos_wasi::prelude::Handler;
-use wasip3::http::types::{Request, Response, ErrorCode};
+use wasip3::http::types::{ErrorCode, Request, Response};
 
-use crate::app::{shell, App, GetCount, IncrementCount};
+use crate::app::{App, GetCount, IncrementCount, shell};
 
 struct LeptosServer;
 
@@ -19,7 +19,8 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
         let req = wasip3::http_compat::http_from_wasi_request(request)?;
 
         // 2. Build and handle request natively
-        let wasi_res = Handler::build(req).await
+        let wasi_res = Handler::build(req)
+            .await
             .map_err(|e| {
                 eprintln!("Error building handler: {:?}", e);
                 ErrorCode::InternalError(None)
@@ -42,8 +43,9 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
 fn serve_static_files(path: String) -> Option<leptos_wasi::response::Body> {
     use std::fs;
     let path = path.strip_prefix("/").unwrap_or(&path);
-    // Wasmtime mounts site directory at root, so look at /path directly
-    let file_path = format!("/{}", path);
+    // Keep the guest path aligned with LeptosOptions.site_pkg_dir so the
+    // server can also read the WASM-split manifest for preload hints.
+    let file_path = format!("/site/pkg/{}", path);
     println!("serving static file: {}", file_path);
 
     if let Ok(bytes) = fs::read(&file_path) {

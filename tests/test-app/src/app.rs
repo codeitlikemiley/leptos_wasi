@@ -8,6 +8,9 @@ use leptos_router::{
 use server_fn::codec::{GetUrl, Json};
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
+    let is_islands_router_navigation =
+        use_context::<IslandsRouterNavigation>().is_some();
+
     view! {
         <!DOCTYPE html>
         <html lang="en">
@@ -17,7 +20,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <HydrationScripts options=options.clone() root="" />
                 <MetaTags />
             </head>
-            <body>
+            <body data-islands-router-navigation=is_islands_router_navigation.to_string()>
                 <App />
             </body>
         </html>

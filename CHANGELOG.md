@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] — 2026-07-10
+
+### Added
+
+- A dual-runtime `examples/counter` implementation of Leptos islands with a
+  lazy `#[island(lazy)]` browser chunk and `cargo leptos --split` build flow.
+- Split-asset verification and runtime mounts that make the browser package and
+  split manifest available under both Wasmtime and Spin.
+
+### Fixed
+
+- The `islands-router` integration now mirrors Leptos's request contract under
+  WASIp2 and WASIp3: it detects the `Islands-Router` header, provides
+  `IslandsRouterNavigation`, and disables out-of-order rendering for navigation
+  responses.
+
+---
+
 ## [0.3.1] — 2026-05-29
 
 ### Changed
@@ -76,4 +94,3 @@ All notable changes to this project will be documented in this file.
 - Initial server function registration with single type parameter API: `.with_server_fn::<T>()`.
 - WASIp2 cooperative polling executor.
 - Basic static file serving and SSR support.
-

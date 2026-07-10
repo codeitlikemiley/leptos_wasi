@@ -1,11 +1,12 @@
 # Makefile for building counter app for different WASI runtimes
-.PHONY: help spin wasmtime clean run
+.PHONY: help spin wasmtime verify-split clean run
 
 # Default target
 help:
 	@echo "Available targets:"
 	@echo "  make spin     - Build and run with Spin"
 	@echo "  make wasmtime - Build and run with Wasmtime"
+	@echo "  make verify-split - Verify lazy WASM split artifacts"
 	@echo "  make clean    - Clean build artifacts"
 
 # Run target alias
@@ -15,8 +16,9 @@ run: wasmtime
 spin:
 	@echo "Building for Spin runtime..."
 	@mkdir -p .spin
-	WASI_RUNTIME=spin cargo leptos build --release
+	WASI_RUNTIME=spin cargo leptos build --release --split --frontend-only
 	WASI_RUNTIME=spin LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr
+	@$(MAKE) verify-split
 	@echo "Built: target/wasm32-wasip2/release/counter.wasm (for Spin)"
 	@echo "Starting Spin..."
 	spin up
@@ -24,8 +26,9 @@ spin:
 # Build and run with Wasmtime
 wasmtime:
 	@echo "Building for Wasmtime runtime..."
-	WASI_RUNTIME=wasmtime cargo leptos build --release
+	WASI_RUNTIME=wasmtime cargo leptos build --release --split --frontend-only
 	WASI_RUNTIME=wasmtime LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr --target-dir target/wasmtime
+	@$(MAKE) verify-split
 	@echo "Built: target/wasmtime/wasm32-wasip2/release/counter.wasm (for Wasmtime)"
 	@echo "Starting Wasmtime serve..."
 	@echo "Serving at http://127.0.0.1:3000"
@@ -35,13 +38,21 @@ wasmtime:
 		-S p3=y \
 		-S cli=y \
 		-S http=y \
-		--dir=./target/site/pkg::/ \
-		--dir=./data::/data \
+		--dir=$(CURDIR)/target/site::/site \
+		--dir=$(CURDIR)/data::/data \
 		--env=LEPTOS_OUTPUT_NAME=counter \
-		--env=LEPTOS_SITE_ROOT=/ \
+		--env=LEPTOS_SITE_ROOT=/site \
 		--env=LEPTOS_SITE_PKG_DIR=pkg \
 		--addr 127.0.0.1:3000 \
 		target/wasmtime/wasm32-wasip2/release/counter.wasm
+
+verify-split:
+	@test -f target/site/pkg/counter.js
+	@test -f target/site/pkg/counter.wasm
+	@test -f target/site/pkg/__wasm_split_manifest.json
+	@test -f target/site/pkg/__wasm_split.______________________.js
+	@test -n "$$(find target/site/pkg -maxdepth 1 -name 'split_*.wasm' -print -quit)"
+	@echo "Verified islands entrypoint and lazy WASM split artifacts in target/site/pkg."
 
 # Clean target
 clean:

@@ -4,7 +4,7 @@ authors = ["Enzo Nocera","Uriah Galang"]
 license = "MIT"
 repository = "https://github.com/leptos-rs/leptos_wasi"
 description = "WASI integrations for the Leptos web framework."
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 rust-version = "1.93.0"
 
@@ -19,6 +19,7 @@ leptos_meta = { version = "0.8.6", default-features = false, features = ["ssr"] 
 leptos_router = { version = "0.8.13", default-features = false, features = ["ssr"] }
 leptos_macro = { version = "0.8.16", default-features = false, features = ["generic"] }
 leptos_integration_utils = { version = "0.8.8", default-features = false }
+tachys = { version = "0.2.15", default-features = false }
 server_fn = { version = "0.8.12",  features = ["generic","axum-no-default"] , default-features = false}
 any_spawner = { version = "0.3.0", features = ["futures-executor"] }
 http = "1.4.1"
@@ -42,4 +43,4 @@ serde_json = "1.0"
 default = ["wasip2"]
 wasip2 = ["dep:wasi"]
 wasip3 = ["dep:wasip3"]
-islands-router = []
+islands-router = ["tachys/islands"]

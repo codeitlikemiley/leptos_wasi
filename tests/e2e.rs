@@ -364,6 +364,33 @@ async fn run_assertions(
         assert_eq!(text.trim(), "body { background: blue; }");
     }
 
+    // Islands router requests receive navigation context while normal SSR does not.
+    {
+        let res = client.get(format!("{}/ssr/async", base_url)).send().await?;
+        assert_eq!(res.status(), StatusCode::OK);
+        let text = res.text().await?;
+        assert!(
+            text.contains("data-islands-router-navigation=\"false\""),
+            "Expected a normal SSR response, got: {}",
+            text
+        );
+    }
+
+    {
+        let res = client
+            .get(format!("{}/ssr/async", base_url))
+            .header("Islands-Router", "1")
+            .send()
+            .await?;
+        assert_eq!(res.status(), StatusCode::OK);
+        let text = res.text().await?;
+        assert!(
+            text.contains("data-islands-router-navigation=\"true\""),
+            "Expected islands-router navigation context, got: {}",
+            text
+        );
+    }
+
     // 8. Static Files Content-Types, 404, zero-byte file, path traversal
     if test_static_files {
         // js
@@ -534,13 +561,13 @@ async fn run_assertions(
 
     // 10. Request Body size limit check (Wasmtime only — Spin has its own limits)
     if test_static_files {
-        // 15MB: should get HTTP 200 OK
-        println!("Testing 15MB payload upload...");
-        let payload_15mb = vec![b'a'; 15 * 1024 * 1024];
-        let payload_str = String::from_utf8(payload_15mb).unwrap();
-        let body_json = serde_json::json!({
-            "data": payload_str
-        });
+        // A 1MB request proves the success path without coupling this test to
+        // a runtime's guest-memory allowance. The 17MB case below verifies
+        // the handler's explicit 16MB rejection boundary.
+        println!("Testing 1MB payload upload...");
+        let payload_1mb = vec![b'a'; 1024 * 1024];
+        let payload_str = String::from_utf8(payload_1mb).unwrap();
+        let body_json = serde_json::json!({ "data": payload_str });
         let res = client
             .post(format!("{}/api/large_body_test", base_url))
             .header("Content-Type", "application/json")
@@ -550,8 +577,8 @@ async fn run_assertions(
         assert_eq!(res.status(), StatusCode::OK);
         let text = res.text().await?;
         assert!(
-            text.contains("15728640"),
-            "Expected 15MB string length returned, got: {}",
+            text.contains("1048576"),
+            "Expected 1MB string length returned, got: {}",
             text
         );
 
@@ -718,6 +745,12 @@ async fn run_spin_e2e_tests(manifest_path: &str) {
 
 #[tokio::test]
 #[ignore] // Run via ./run_tests.sh (requires spin + pre-built WASM guests)
-async fn test_e2e_spin() {
+async fn test_e2e_spin_wasip2() {
     run_spin_e2e_tests("tests/spin.toml").await;
+}
+
+#[tokio::test]
+#[ignore] // Run via ./run_tests.sh (requires spin + pre-built WASM guests)
+async fn test_e2e_spin_wasip3() {
+    run_spin_e2e_tests("tests/spin-p3.toml").await;
 }

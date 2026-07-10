@@ -22,6 +22,7 @@ use http::{
 use hydration_context::SsrSharedContext;
 use leptos::{
     IntoView,
+    hydration::IslandsRouterNavigation,
     prelude::{Owner, ScopedFuture, provide_context},
 };
 use leptos_integration_utils::{ExtendResponse, PinnedStream};
@@ -50,6 +51,13 @@ type ServerFnHandler = Box<
             -> Pin<Box<dyn Future<Output = http::Response<Body>> + Send>>
         + Send,
 >;
+
+const ISLANDS_ROUTER_HEADER: &str = "Islands-Router";
+
+fn is_islands_router_navigation<B>(request: &Request<B>) -> bool {
+    cfg!(feature = "islands-router")
+        && request.headers().contains_key(ISLANDS_ROUTER_HEADER)
+}
 
 /// Handle routing, static file serving and response tx using the low-level
 /// `wasi:http` APIs.
@@ -560,6 +568,8 @@ impl Handler {
     {
         let path = self.req.uri().path().to_string();
         let best_match = self.ssr_router.best_match(&path);
+        let is_islands_router_navigation =
+            is_islands_router_navigation(&self.req);
         let (parts, body) = self.req.into_parts();
         let context_parts = parts.clone();
         let req = Request::from_parts(parts, body);
@@ -632,6 +642,9 @@ impl Handler {
                             move || {
                                 provide_contexts(add_ctx, context_parts, res_opts);
                                 provide_context(meta_ctx);
+                                if is_islands_router_navigation {
+                                    provide_context(IslandsRouterNavigation);
+                                }
                             }
                         };
 
@@ -666,12 +679,18 @@ impl Handler {
                                         })
                                     },
                                     SsrMode::PartiallyBlocked | SsrMode::OutOfOrder => {
-                                        |app, chunks, _| {
+                                        |app, chunks, supports_ooo| {
                                             Box::pin(async move {
                                                 let app = if cfg!(feature = "islands-router") {
-                                                    app.to_html_stream_out_of_order_branching()
-                                                } else {
+                                                    if supports_ooo {
+                                                        app.to_html_stream_out_of_order_branching()
+                                                    } else {
+                                                        app.to_html_stream_in_order_branching()
+                                                    }
+                                                } else if supports_ooo {
                                                     app.to_html_stream_out_of_order()
+                                                } else {
+                                                    app.to_html_stream_in_order()
                                                 };
                                                 Box::pin(app.chain(chunks()))
                                                     as PinnedStream<String>
@@ -682,8 +701,7 @@ impl Handler {
                                         panic!("SsrMode::Static routes are not supported yet!")
                                     }
                                 },
-                                // Add the 6th parameter for out-of-order streaming support
-                                cfg!(feature = "islands-router"),
+                                !is_islands_router_navigation,
                             )
                             .await,
                         )
@@ -1327,6 +1345,8 @@ impl Handler {
     {
         let path = self.req.uri().path().to_string();
         let best_match = self.ssr_router.best_match(&path);
+        let is_islands_router_navigation =
+            is_islands_router_navigation(&self.req);
         let (parts, body) = self.req.into_parts();
         let context_parts = parts.clone();
         let req = Request::from_parts(parts, body);
@@ -1398,6 +1418,9 @@ impl Handler {
                             move || {
                                 provide_contexts(add_ctx, context_parts, res_opts);
                                 provide_context(meta_ctx);
+                                if is_islands_router_navigation {
+                                    provide_context(IslandsRouterNavigation);
+                                }
                             }
                         };
 
@@ -1432,12 +1455,18 @@ impl Handler {
                                         })
                                     },
                                     SsrMode::PartiallyBlocked | SsrMode::OutOfOrder => {
-                                        |app, chunks, _| {
+                                        |app, chunks, supports_ooo| {
                                             Box::pin(async move {
                                                 let app = if cfg!(feature = "islands-router") {
-                                                    app.to_html_stream_out_of_order_branching()
-                                                } else {
+                                                    if supports_ooo {
+                                                        app.to_html_stream_out_of_order_branching()
+                                                    } else {
+                                                        app.to_html_stream_in_order_branching()
+                                                    }
+                                                } else if supports_ooo {
                                                     app.to_html_stream_out_of_order()
+                                                } else {
+                                                    app.to_html_stream_in_order()
                                                 };
                                                 Box::pin(app.chain(chunks()))
                                                     as PinnedStream<String>
@@ -1448,7 +1477,7 @@ impl Handler {
                                         panic!("SsrMode::Static routes are not supported yet!")
                                     }
                                 },
-                                cfg!(feature = "islands-router"),
+                                !is_islands_router_navigation,
                             )
                             .await,
                         )
@@ -1569,5 +1598,67 @@ fn sanitize_referrer(referrer: &HeaderValue) -> Option<HeaderValue> {
         HeaderValue::from_str(pq_str).ok()
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn request_body_limit_accepts_the_exact_sixteen_mib_boundary() {
+        use http_body_util::{BodyExt, Full, Limited};
+
+        assert_eq!(MAX_REQUEST_BODY_SIZE, 16 * 1024 * 1024);
+
+        let body = Full::new(Bytes::from(vec![0; MAX_REQUEST_BODY_SIZE]));
+        let collected = Limited::new(body, MAX_REQUEST_BODY_SIZE)
+            .collect()
+            .await
+            .expect("the exact request-body limit should be accepted");
+
+        assert_eq!(collected.to_bytes().len(), MAX_REQUEST_BODY_SIZE);
+    }
+
+    #[tokio::test]
+    async fn request_body_limit_rejects_one_byte_over_the_boundary() {
+        use http_body_util::{BodyExt, Full, Limited};
+
+        let body = Full::new(Bytes::from(vec![0; MAX_REQUEST_BODY_SIZE + 1]));
+        let error = Limited::new(body, MAX_REQUEST_BODY_SIZE)
+            .collect()
+            .await
+            .expect_err("a request above the limit should be rejected");
+
+        assert!(error.is::<http_body_util::LengthLimitError>());
+    }
+
+    #[test]
+    fn request_without_islands_router_header_is_not_navigation() {
+        let request = Request::new(());
+
+        assert!(!is_islands_router_navigation(&request));
+    }
+
+    #[cfg(feature = "islands-router")]
+    #[test]
+    fn request_with_islands_router_header_is_navigation_when_enabled() {
+        let request = Request::builder()
+            .header(ISLANDS_ROUTER_HEADER, "1")
+            .body(())
+            .unwrap();
+
+        assert!(is_islands_router_navigation(&request));
+    }
+
+    #[cfg(not(feature = "islands-router"))]
+    #[test]
+    fn request_with_islands_router_header_is_not_navigation_when_disabled() {
+        let request = Request::builder()
+            .header(ISLANDS_ROUTER_HEADER, "1")
+            .body(())
+            .unwrap();
+
+        assert!(!is_islands_router_navigation(&request));
     }
 }
