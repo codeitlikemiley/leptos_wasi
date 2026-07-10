@@ -95,9 +95,11 @@ the only externally routable handler; exposing the unwrapped terminal service
 would let callers forge those headers.
 
 `leptos_wasi` already provides `http::request::Parts` to SSR routes and server
-functions, so applications can read middleware-injected headers from that
-standard request context. This does not require a middleware-specific public
-API in this crate.
+functions. Install typed identity or policy context through
+`handle_with_context`; that request-context closure runs after the standard
+parts are available. Route-discovery context is synthetic and must never be
+used for authentication. This does not require a middleware-specific public API
+in this crate.
 
 Do not confuse CORS with CSRF protection. Cookie-authenticated applications
 need a separate CSRF design and origin policy.

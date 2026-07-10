@@ -670,11 +670,15 @@ impl HandlerCore {
         Ok(self)
     }
 
-    fn generate_routes_with_exclusions_and_context<IV, AppFn, ContextFn>(
+    fn generate_routes_with_exclusions_and_discovery_context<
+        IV,
+        AppFn,
+        ContextFn,
+    >(
         mut self,
         app_fn: AppFn,
         excluded_routes: Option<Vec<String>>,
-        additional_context: ContextFn,
+        discovery_context: ContextFn,
     ) -> Result<Self, RegistrationError>
     where
         IV: IntoView + 'static,
@@ -685,7 +689,7 @@ impl HandlerCore {
             return Err(RegistrationError::RoutesAlreadyGenerated);
         }
 
-        let routes = registered_routes(&app_fn, &additional_context)?;
+        let routes = registered_routes(&app_fn, &discovery_context)?;
         let routes = routes.into_iter().filter(|route| {
             excluded_routes
                 .as_ref()
@@ -836,7 +840,7 @@ fn route_collision_key(route: &RouteSpec) -> Vec<RouteCollisionSegment> {
 
 fn registered_routes<IV, AppFn, ContextFn>(
     app_fn: &AppFn,
-    additional_context: &ContextFn,
+    discovery_context: &ContextFn,
 ) -> CachedRoutes
 where
     IV: IntoView + 'static,
@@ -861,7 +865,7 @@ where
                 let (parts, _) = Request::new("").into_parts();
                 provide_context(meta);
                 provide_standard_contexts(parts, ResponseOptions::default());
-                additional_context();
+                discovery_context();
                 RouteList::generate(app_fn)
             })
             .unwrap_or_default()
@@ -1124,11 +1128,23 @@ macro_rules! common_handler_methods {
         where
             IV: IntoView + 'static,
         {
-            self.generate_routes_with_exclusions_and_context(app, None, || {})
+            self.generate_routes_with_exclusions_and_discovery_context(
+                app,
+                None,
+                || {},
+            )
         }
 
-        /// Generates routes and installs application context.
-        pub fn generate_routes_with_context<IV>(
+        /// Generates routes with deterministic route-discovery context.
+        ///
+        /// The context closure runs only while discovering the application's
+        /// route list. It receives synthetic standard contexts and may be
+        /// skipped when an identical application/context closure type is
+        /// already cached. It must not inspect authentication, headers, or any
+        /// other request-dependent state.
+        ///
+        /// Use [`Self::handle_with_context`] for per-request context.
+        pub fn generate_routes_with_discovery_context<IV>(
             self,
             app: impl Fn() -> IV + 'static + Send + Clone,
             context: impl Fn() + 'static + Send + Clone,
@@ -1136,16 +1152,21 @@ macro_rules! common_handler_methods {
         where
             IV: IntoView + 'static,
         {
-            self.generate_routes_with_exclusions_and_context(app, None, context)
+            self.generate_routes_with_exclusions_and_discovery_context(
+                app, None, context,
+            )
         }
 
-        /// Generates routes with exclusions and application context.
+        /// Generates routes with exclusions and deterministic discovery context.
         ///
         /// Route discovery is cached per concrete application/context closure
-        /// type. Route structure and exclusions should be deployment
-        /// configuration, not request-dependent state. The context closure is
-        /// still invoked for each handled SSR or server-function request.
-        pub fn generate_routes_with_exclusions_and_context<IV>(
+        /// type. The context closure runs against synthetic standard contexts
+        /// only when route discovery executes. Route structure, exclusions,
+        /// and discovery context must be deterministic deployment
+        /// configuration rather than request-dependent state.
+        ///
+        /// Use [`Self::handle_with_context`] for per-request context.
+        pub fn generate_routes_with_exclusions_and_discovery_context<IV>(
             mut self,
             app: impl Fn() -> IV + 'static + Send + Clone,
             excluded: Option<Vec<String>>,
@@ -1154,9 +1175,11 @@ macro_rules! common_handler_methods {
         where
             IV: IntoView + 'static,
         {
-            self.core = self.core.generate_routes_with_exclusions_and_context(
-                app, excluded, context,
-            )?;
+            self.core = self
+                .core
+                .generate_routes_with_exclusions_and_discovery_context(
+                    app, excluded, context,
+                )?;
             Ok(self)
         }
     };
@@ -1294,6 +1317,11 @@ pub mod wasip2 {
         common_handler_methods!();
 
         /// Renders and transmits the response through the WASI out-parameter.
+        ///
+        /// For SSR routes and registered server functions, `context` runs after
+        /// standard request contexts such as [`http::request::Parts`] have been
+        /// installed. This is the only handler hook for request-dependent
+        /// application context; route-discovery context is request-independent.
         pub async fn handle_with_context<IV>(
             self,
             app: impl Fn() -> IV + 'static + Send + Clone,
@@ -1578,6 +1606,11 @@ pub mod wasip3 {
         common_handler_methods!();
 
         /// Renders and converts the response to a WASI Preview 3 response.
+        ///
+        /// For SSR routes and registered server functions, `context` runs after
+        /// standard request contexts such as [`http::request::Parts`] have been
+        /// installed. This is the only handler hook for request-dependent
+        /// application context; route-discovery context is request-independent.
         pub async fn handle_with_context<IV>(
             self,
             app: impl Fn() -> IV + 'static + Send + Clone,
@@ -1747,13 +1780,16 @@ pub mod wasip3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use leptos::prelude::view;
+    use leptos::prelude::{use_context, view};
     use leptos_router::{
         components::{Route, Router, Routes},
         path,
         static_routes::StaticRoute,
     };
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    };
 
     static ROUTE_GENERATIONS: AtomicUsize = AtomicUsize::new(0);
 
@@ -1893,11 +1929,12 @@ mod tests {
         )
         .with_preset(plain_response(StatusCode::OK, "selected"), "test");
 
-        let result = core.generate_routes_with_exclusions_and_context(
-            static_route_app,
-            None,
-            || {},
-        );
+        let result = core
+            .generate_routes_with_exclusions_and_discovery_context(
+                static_route_app,
+                None,
+                || {},
+            );
         assert!(matches!(
             result,
             Err(RegistrationError::UnsupportedStaticSsr(path))
@@ -1912,11 +1949,12 @@ mod tests {
             HandlerConfig::default(),
         );
 
-        let result = core.generate_routes_with_exclusions_and_context(
-            duplicate_route_app,
-            None,
-            || {},
-        );
+        let result = core
+            .generate_routes_with_exclusions_and_discovery_context(
+                duplicate_route_app,
+                None,
+                || {},
+            );
         assert!(matches!(
             result,
             Err(RegistrationError::DuplicateRoute(path))
@@ -1932,11 +1970,12 @@ mod tests {
         )
         .with_preset(plain_response(StatusCode::OK, "selected"), "test");
 
-        let result = core.generate_routes_with_exclusions_and_context(
-            semantic_duplicate_route_app,
-            None,
-            || {},
-        );
+        let result = core
+            .generate_routes_with_exclusions_and_discovery_context(
+                semantic_duplicate_route_app,
+                None,
+                || {},
+            );
         assert!(matches!(
             result,
             Err(RegistrationError::DuplicateRoute(path))
@@ -2005,11 +2044,12 @@ mod tests {
                 HandlerConfig::default(),
             )
             .with_preset(plain_response(StatusCode::OK, "selected"), "test");
-            let result = core.generate_routes_with_exclusions_and_context(
-                counted_route_app,
-                None,
-                || {},
-            );
+            let result = core
+                .generate_routes_with_exclusions_and_discovery_context(
+                    counted_route_app,
+                    None,
+                    || {},
+                );
             assert!(result.is_ok());
         }
 
@@ -2024,22 +2064,73 @@ mod tests {
         )
         .with_preset(plain_response(StatusCode::OK, "selected"), "test");
         let core = core
-            .generate_routes_with_exclusions_and_context(
+            .generate_routes_with_exclusions_and_discovery_context(
                 repeated_route_app,
                 None,
                 || {},
             )
             .expect("initial route registration should succeed");
 
-        let result = core.generate_routes_with_exclusions_and_context(
-            repeated_route_app,
-            None,
-            || {},
-        );
+        let result = core
+            .generate_routes_with_exclusions_and_discovery_context(
+                repeated_route_app,
+                None,
+                || {},
+            );
         assert!(matches!(
             result,
             Err(RegistrationError::RoutesAlreadyGenerated)
         ));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn request_context_runs_after_standard_parts_for_each_request() {
+        const CONTEXT_HEADER: &str = "x-context-lifecycle";
+        let observed = Arc::new(Mutex::new(Vec::new()));
+
+        for value in ["first", "second"] {
+            let request = Request::builder()
+                .uri("/api/context")
+                .header(CONTEXT_HEADER, value)
+                .body(Bytes::new())
+                .expect("test request should be valid");
+            let mut core = HandlerCore::new(request, HandlerConfig::default());
+            core.server_fn = Some(Box::new(|_| {
+                Box::pin(async {
+                    http::Response::new(Body::Sync(Bytes::from_static(b"ok")))
+                })
+            }));
+
+            let observed = Arc::clone(&observed);
+            let _response = core
+                .render(
+                    || view! { "unused" },
+                    move || {
+                        let parts = use_context::<Parts>().expect(
+                            "standard request parts should be installed",
+                        );
+                        let value = parts
+                            .headers
+                            .get(CONTEXT_HEADER)
+                            .expect("request header should be preserved")
+                            .to_str()
+                            .expect("test header should be text")
+                            .to_owned();
+                        observed
+                            .lock()
+                            .expect("test observation lock should be available")
+                            .push(value);
+                    },
+                )
+                .await;
+        }
+
+        assert_eq!(
+            *observed
+                .lock()
+                .expect("test observation lock should be available"),
+            ["first", "second"]
+        );
     }
 
     #[test]

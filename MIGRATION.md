@@ -1,4 +1,23 @@
-# Migrating from `leptos_wasi` 0.3 to 0.4
+# `leptos_wasi` migration guide
+
+## Next breaking release: route context lifecycle
+
+Route-generation context has been renamed to make its lifecycle explicit:
+
+| Previous method | Replacement |
+|---|---|
+| `generate_routes_with_context` | `generate_routes_with_discovery_context` |
+| `generate_routes_with_exclusions_and_context` | `generate_routes_with_exclusions_and_discovery_context` |
+
+Discovery context runs only while Leptos discovers the route list. It receives
+synthetic request contexts, may be skipped when the route list is cached, and
+must never depend on headers, authentication, or other request state.
+
+Install request-dependent context through `handle_with_context`. That closure
+runs after standard contexts, including `http::request::Parts`, have been
+installed for SSR and server-function requests.
+
+## Migrating from `leptos_wasi` 0.3 to 0.4
 
 Version 0.4 is a deliberate breaking release. It makes Preview 2 and Preview 3
 additive, removes redundant server-function aliases, and makes registration and
@@ -108,8 +127,8 @@ let handler = Handler::build(request, response_out)?
 The fallible route methods are:
 
 - `generate_routes`
-- `generate_routes_with_context`
-- `generate_routes_with_exclusions_and_context`
+- `generate_routes_with_discovery_context`
+- `generate_routes_with_exclusions_and_discovery_context`
 
 Registration rejects invalid static prefixes, repeated or colliding generated
 routes, invalid route patterns, and unsupported `SsrMode::Static` routes.

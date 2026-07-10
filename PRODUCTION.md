@@ -45,9 +45,10 @@ this support matrix.
   not part of the stable 0.4 support claim. Middleware must strip untrusted
   identity headers before adding validated identity metadata, and only the
   outer composed handler may be externally routable.
-- Generated route discovery is cached by the concrete application/context
-  closure types. Keep route structure and exclusion lists deterministic
-  deployment configuration; do not derive them from request data.
+- Generated route discovery is cached by the concrete application/discovery
+  context closure types. Keep route structure, discovery context, and exclusion
+  lists deterministic deployment configuration. Request-dependent context must
+  be installed through `handle_with_context`, never a route-generation method.
 - Host failures before response commitment are converted to controlled HTTP
   failures. A stream failure after commitment terminates that response because
   its status can no longer be changed.

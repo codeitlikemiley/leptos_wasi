@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Rename route-generation context methods to
+  `generate_routes_with_discovery_context` and
+  `generate_routes_with_exclusions_and_discovery_context`. Discovery context
+  is deterministic and request-independent; `handle_with_context` remains the
+  per-request context hook.
+
 ## [0.4.1] — 2026-07-10
 
 ### Added
