@@ -86,6 +86,9 @@ if [[ "$MIDDLEWARE" == "1" ]]; then
   DEPLOYMENT_PROFILE="wasmtime-authn"
   if [[ "$AUTHZ" == "1" ]]; then
     DEPLOYMENT_PROFILE="wasmtime-authn-authz"
+    if [[ "${AUTHZ_COARSE_PEP:-0}" == "1" ]]; then
+      DEPLOYMENT_PROFILE="wasmtime-authn-authz-coarse"
+    fi
   fi
   MIDDLEWARE_COMPONENTS=()
   while IFS= read -r component; do
@@ -163,14 +166,19 @@ trap cleanup EXIT
 
 if [[ "$MIDDLEWARE" == "1" ]]; then
   LOG_FILES+=("$BROKER_LOG")
-  "$WASMTIME_BIN" serve \
+  BROKER_ARGS=(
+    serve \
     -W component-model-async=y \
     -S p3=y \
     -S cli=y \
     -S http=y \
-    --addr "127.0.0.1:${BROKER_PORT}" \
-    "$ROOT/tests/middleware-artifacts/mock-authn-broker.wasm" \
-    >"$BROKER_LOG" 2>&1 &
+    --addr "127.0.0.1:${BROKER_PORT}"
+  )
+  if [[ "${MIDDLEWARE_DIAGNOSTICS:-0}" == "1" ]]; then
+    BROKER_ARGS+=(--env=WASI_MIDDLEWARE_DIAGNOSTICS=true)
+  fi
+  BROKER_ARGS+=("$ROOT/tests/middleware-artifacts/mock-authn-broker.wasm")
+  "$WASMTIME_BIN" "${BROKER_ARGS[@]}" >"$BROKER_LOG" 2>&1 &
   BROKER_PID=$!
   for _ in $(seq 1 100); do
     if ! kill -0 "$BROKER_PID" 2>/dev/null; then
@@ -186,15 +194,20 @@ if [[ "$MIDDLEWARE" == "1" ]]; then
 fi
 if [[ "$AUTHZ" == "1" ]]; then
   LOG_FILES+=("$PDP_LOG")
-  "$WASMTIME_BIN" serve \
+  PDP_ARGS=(
+    serve \
     -W component-model-async=y \
     -S p3=y \
     -S cli=y \
     -S http=y \
     --env=WASI_AUTHZ_PDP_BEARER_TOKEN="$AUTHZ_PDP_TOKEN" \
-    --addr "127.0.0.1:${CEDAR_PDP_PORT}" \
-    "$ROOT/tests/authz-artifacts/cedar-pdp.wasm" \
-    >"$PDP_LOG" 2>&1 &
+    --addr "127.0.0.1:${CEDAR_PDP_PORT}"
+  )
+  if [[ "${MIDDLEWARE_DIAGNOSTICS:-0}" == "1" ]]; then
+    PDP_ARGS+=(--env=WASI_MIDDLEWARE_DIAGNOSTICS=true)
+  fi
+  PDP_ARGS+=("$ROOT/tests/authz-artifacts/cedar-pdp.wasm")
+  "$WASMTIME_BIN" "${PDP_ARGS[@]}" >"$PDP_LOG" 2>&1 &
   PDP_PID=$!
   for _ in $(seq 1 100); do
     if ! kill -0 "$PDP_PID" 2>/dev/null; then
@@ -221,6 +234,21 @@ case "$HOST" in
       -S cli=y
       -S http=y
     )
+    if [[ -n "${WASMTIME_MAX_INSTANCE_REUSE_COUNT:-}" ]]; then
+      WASMTIME_ARGS+=(
+        --max-instance-reuse-count
+        "${WASMTIME_MAX_INSTANCE_REUSE_COUNT}"
+      )
+    fi
+    if [[ -n "${WASMTIME_MAX_INSTANCE_CONCURRENT_REUSE_COUNT:-}" ]]; then
+      WASMTIME_ARGS+=(
+        --max-instance-concurrent-reuse-count
+        "${WASMTIME_MAX_INSTANCE_CONCURRENT_REUSE_COUNT}"
+      )
+    fi
+    if [[ -n "${WASMTIME_IDLE_INSTANCE_TIMEOUT:-}" ]]; then
+      WASMTIME_ARGS+=(--idle-instance-timeout "${WASMTIME_IDLE_INSTANCE_TIMEOUT}")
+    fi
     if [[ "$MIDDLEWARE" == "1" ]]; then
       WASMTIME_ARGS+=(
         -S inherit-network=y
@@ -236,6 +264,9 @@ case "$HOST" in
         --env=WASI_MIDDLEWARE_AUTHN_MAX_IN_FLIGHT="$AUTHN_MAX_IN_FLIGHT"
         --env=WASI_MIDDLEWARE_AUTHN_ALLOW_INSECURE_LOOPBACK=true
       )
+      if [[ "${MIDDLEWARE_DIAGNOSTICS:-0}" == "1" ]]; then
+        WASMTIME_ARGS+=(--env=WASI_MIDDLEWARE_DIAGNOSTICS=true)
+      fi
     fi
     if [[ "$AUTHZ" == "1" ]]; then
       WASMTIME_ARGS+=(
@@ -287,26 +318,31 @@ if [[ "$AUTHZ_FULL_CHAIN_BENCHMARK" == "1" ]]; then
     exit 2
   }
   OHA_BIN="$(resolve_middleware_tool OHA_BIN oha "$(middleware_lock_value oha_version)")"
-  BENCHMARK_DIR="$ROOT/target/authz-full-chain-benchmark"
+  BENCHMARK_DIR="${AUTHZ_FULL_CHAIN_BENCHMARK_DIR:-$ROOT/target/authz-full-chain-benchmark}"
+  BENCHMARK_REQUESTS="${AUTHZ_FULL_CHAIN_BENCHMARK_REQUESTS:-5000}"
+  BENCHMARK_WARMUP_REQUESTS="${AUTHZ_FULL_CHAIN_BENCHMARK_WARMUP_REQUESTS:-500}"
+  BENCHMARK_CONCURRENCY="${AUTHZ_FULL_CHAIN_BENCHMARK_CONCURRENCY:-100}"
+  BENCHMARK_RATE="${AUTHZ_FULL_CHAIN_BENCHMARK_RATE:-}"
   mkdir -p "$BENCHMARK_DIR"
-  NO_COLOR=true "$OHA_BIN" \
-    -n 500 -c 100 --http-version 1.1 -t 10s --no-tui \
-    --output-format json \
-    -m POST \
-    -H "authorization: Bearer allow" \
-    -H "content-type: application/x-www-form-urlencoded" \
-    -d "current=0" \
-    "$ACTION_URL" \
+  OHA_ARGS=(
+    --http-version 1.1
+    -t 10s
+    --no-tui
+    --output-format json
+    -m POST
+    -H "authorization: Bearer allow"
+    -H "content-type: application/x-www-form-urlencoded"
+    -d "current=0"
+    "$ACTION_URL"
+  )
+  if [[ -n "$BENCHMARK_RATE" ]]; then
+    OHA_ARGS=(-q "$BENCHMARK_RATE" "${OHA_ARGS[@]}")
+  fi
+  NO_COLOR=true "$OHA_BIN" -n "$BENCHMARK_WARMUP_REQUESTS" \
+    -c "$BENCHMARK_CONCURRENCY" "${OHA_ARGS[@]}" \
     >"$BENCHMARK_DIR/warmup.json"
-  NO_COLOR=true "$OHA_BIN" \
-    -n "$AUTHZ_FULL_CHAIN_BENCHMARK_REQUESTS" \
-    -c 100 --http-version 1.1 -t 10s --no-tui \
-    --output-format json \
-    -m POST \
-    -H "authorization: Bearer allow" \
-    -H "content-type: application/x-www-form-urlencoded" \
-    -d "current=0" \
-    "$ACTION_URL" \
+  NO_COLOR=true "$OHA_BIN" -n "$BENCHMARK_REQUESTS" \
+    -c "$BENCHMARK_CONCURRENCY" "${OHA_ARGS[@]}" \
     >"$BENCHMARK_DIR/result.json"
   python3 "$ROOT/scripts/check-authz-full-chain-performance.py" \
     "$BENCHMARK_DIR/result.json" \

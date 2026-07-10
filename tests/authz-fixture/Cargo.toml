@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 axum-core = "0.5.6"
+futures = "0.3.31"
 http = "1.4.1"
 leptos = { version = "0.8.20", default-features = false, features = ["islands", "ssr"] }
 leptos-wasi-authz = { path = "../../../wasi-authz/crates/leptos-wasi-authz", version = "=0.1.0-alpha.1" }

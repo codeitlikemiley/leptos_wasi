@@ -129,3 +129,11 @@ RSS result is useful evidence against an obvious unbounded-memory leak; it does
 not offset the severe latency and request-failure regression. The retained
 result is `target/authz-full-chain-soak/result.json`; it is diagnostic alpha
 evidence, not a passing production-soak claim.
+
+The capacity-localization harness is configurable through
+`scripts/benchmark-authz-capacity-matrix.sh`. It compares the default typed
+authorization path with the optional coarse HTTP PEP across offered-rate
+steps. The rate-limited diagnostic is an offered-load measurement, not a
+replacement for the 100-active-request release gate. Set
+`MIDDLEWARE_DIAGNOSTICS=1` to correlate controlled failures with fixed stage
+labels in the broker, PDP, and terminal logs.

@@ -910,6 +910,7 @@ name = "leptos-wasi-authz-fixture"
 version = "0.0.0"
 dependencies = [
  "axum-core",
+ "futures",
  "http",
  "leptos",
  "leptos-wasi-authz",

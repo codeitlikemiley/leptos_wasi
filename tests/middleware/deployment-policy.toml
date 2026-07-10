@@ -129,5 +129,16 @@ terminal_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_was
 output_artifact = "examples/counter/target/wasm32-wasip2/release/counter-middleware.wasm"
 listener_count = 1
 middleware_profile = "authn_authz"
+middleware = ["request-id", "security-headers", "cors", "authn-policy"]
+artifact_sets = ["middleware", "authorization"]
+
+[[profile]]
+name = "wasmtime-authn-authz-coarse"
+runtime = "wasmtime"
+support = "experimental"
+terminal_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_authz_fixture.wasm"
+output_artifact = "examples/counter/target/wasm32-wasip2/release/counter-middleware.wasm"
+listener_count = 1
+middleware_profile = "authn_authz_coarse"
 middleware = ["request-id", "security-headers", "cors", "authn-policy", "authz-http-pep"]
 artifact_sets = ["middleware", "authorization"]

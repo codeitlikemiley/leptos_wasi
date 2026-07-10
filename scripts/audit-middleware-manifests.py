@@ -46,6 +46,22 @@ WASMTIME_DEPLOYMENT_CONTRACTS = {
         ),
         "listener_count": 1,
         "middleware_profile": "authn_authz",
+        "middleware": EXPECTED_STACK,
+        "artifact_sets": ["middleware", "authorization"],
+    },
+    "wasmtime-authn-authz-coarse": {
+        "runtime": "wasmtime",
+        "support": "experimental",
+        "terminal_artifact": (
+            "tests/authz-fixture/target/wasm32-wasip2/release/"
+            "leptos_wasi_authz_fixture.wasm"
+        ),
+        "output_artifact": (
+            "examples/counter/target/wasm32-wasip2/release/"
+            "counter-middleware.wasm"
+        ),
+        "listener_count": 1,
+        "middleware_profile": "authn_authz_coarse",
         "middleware": EXPECTED_AUTHZ_STACK,
         "artifact_sets": ["middleware", "authorization"],
     },
@@ -198,10 +214,11 @@ def audit_wasmtime_deployment_contracts(profiles: list[dict]) -> None:
     """Bind each Wasmtime terminal to its immutable security profile.
 
     A generic non-empty middleware stack is insufficient for a guest whose
-    server functions enforce domain authorization. In particular, the typed
-    authorization fixture must always retain the coarse PEP and its signed
-    authorization artifact set. Keeping this contract in the auditor catches
-    a downgrade or terminal swap before a deployment manifest is accepted.
+    server functions enforce domain authorization. The typed authorization
+    fixture must retain its signed authorization artifact set; the coarse HTTP
+    PEP is an explicit optional profile rather than a mandatory duplicate
+    decision. Keeping both contracts here catches a downgrade or terminal
+    swap before a deployment manifest is accepted.
     """
     by_name = {
         profile.get("name"): profile
@@ -250,7 +267,8 @@ def audit_deployment_policy(lock: dict) -> None:
         expected = {
             "none": [],
             "authn": EXPECTED_STACK,
-            "authn_authz": EXPECTED_AUTHZ_STACK,
+            "authn_authz": EXPECTED_STACK,
+            "authn_authz_coarse": EXPECTED_AUTHZ_STACK,
         }.get(profile_kind)
         if expected is None or profile.get("middleware") != expected:
             raise AssertionError(f"deployment profile {name} has an invalid stack")
@@ -258,6 +276,7 @@ def audit_deployment_policy(lock: dict) -> None:
             "none": [],
             "authn": ["middleware"],
             "authn_authz": ["middleware", "authorization"],
+            "authn_authz_coarse": ["middleware", "authorization"],
         }[profile_kind]
         if profile.get("artifact_sets") != expected_artifact_sets:
             raise AssertionError(

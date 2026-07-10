@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import sys
 
@@ -33,7 +34,8 @@ def main() -> int:
     if summary.get("successRate") != 1.0:
         failures = max(failures, 1)
     report = {
-        "concurrency": 100,
+        "concurrency": int(os.environ.get("AUTHZ_FULL_CHAIN_BENCHMARK_CONCURRENCY", "100")),
+        "requested_rate": os.environ.get("AUTHZ_FULL_CHAIN_BENCHMARK_RATE"),
         "max_p99_ms": MAX_P99_MS,
         "requests_per_second": summary.get("requestsPerSec"),
         "first_byte_p99_ms": first_byte_p99_ms,

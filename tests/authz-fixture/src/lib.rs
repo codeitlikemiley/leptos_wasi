@@ -91,9 +91,20 @@ impl ServerFn for ProtectedIncrementCount {
             .ok_or_else(|| {
                 configuration_error("authorization provider is unavailable")
             })?;
-        authorize_current(&provider.cedar, action.clone(), resource.clone())
-            .await?;
-        authorize_current(&provider.spicedb, action, resource).await?;
+        // Cedar and SpiceDB are independent policy checks. Running them
+        // concurrently removes one serial provider round-trip while keeping
+        // both decisions mandatory before the mutation.
+        let cedar = authorize_current(&provider.cedar, action.clone(), resource.clone());
+        let spicedb = authorize_current(&provider.spicedb, action, resource);
+        let (cedar, spicedb) = futures::join!(cedar, spicedb);
+        if cedar.is_err() {
+            diagnostic_stage("terminal_cedar");
+        }
+        if spicedb.is_err() {
+            diagnostic_stage("terminal_spicedb");
+        }
+        cedar?;
+        spicedb?;
         self.current.checked_add(1).ok_or_else(|| {
             ServerFnError::ServerError(
                 "counter reached its maximum value".to_string(),
@@ -190,6 +201,12 @@ fn unique_environment_value<'a>(
         return Err(AuthorizationInitializationError);
     }
     Ok(value)
+}
+
+fn diagnostic_stage(stage: &'static str) {
+    if std::env::var("WASI_MIDDLEWARE_DIAGNOSTICS").as_deref() == Ok("true") {
+        eprintln!("wasi.middleware stage={stage}");
+    }
 }
 
 fn counter_resource() -> Result<Resource, ServerFnError> {

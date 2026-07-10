@@ -43,6 +43,14 @@ not a substitute for domain authorization: an order ID, ownership relation, or
 other body-derived resource must still be checked by typed server-function
 code after deserialization and resource loading.
 
+For the Leptos authorization fixture, the coarse PEP is intentionally an
+opt-in profile. The default `wasmtime-authn-authz` profile keeps only the
+framework-neutral middleware and performs Cedar/SpiceDB domain checks in the
+protected server function. Set `AUTHZ_COARSE_PEP=1` when validating the
+additional service-admission hop with the `wasmtime-authn-authz-coarse`
+profile. This avoids making every protected operation pay for both coarse path
+policy and typed domain policy by default.
+
 Requests travel from left to right and responses travel from right to left.
 This ordering lets CORS, request-ID, and security-header middleware decorate an
 authentication rejection without invoking the application.
@@ -161,6 +169,10 @@ but cannot authorize a resource identifier hidden in a server-function body.
 Keep ownership, RBAC, ABAC, and ReBAC decisions in server-function/domain policy
 through `ServerFn::middlewares()` or an explicit typed authorization call.
 
+The authorization fixture evaluates its independent Cedar and SpiceDB checks
+concurrently. Both decisions remain mandatory; concurrency only removes one
+serial provider round-trip from the request critical path.
+
 The companion `leptos-wasi-authz` bridge provides the typed request-context
 reader and server-function layers used by the integration fixture. It maps a
 missing middleware boundary to 503, an explicit anonymous caller to 401, an
@@ -216,6 +228,19 @@ and PDP responses, SSR, server functions, delayed streaming, islands, lazy
 split WASM, RBAC/ABAC/ReBAC denials, and sensitive-data log scans. Provider
 contract conformance remains owned by the independently versioned `wasi-authz`
 workspace.
+
+To localize sustained capacity failures, run
+`scripts/benchmark-authz-capacity-matrix.sh`. It compares the default typed
+authorization profile with the optional coarse-PEP profile across bounded
+offered rates. Set `MIDDLEWARE_DIAGNOSTICS=1` to emit fixed-name stage records
+such as `authn_transport`, `coarse_pep_provider`, and `spicedb_upstream`.
+Diagnostics never include credentials, identity, cookies, queries, bodies, or
+policy attributes and should remain disabled in normal production runs.
+The Wasmtime runner also accepts `WASMTIME_MAX_INSTANCE_REUSE_COUNT`,
+`WASMTIME_MAX_INSTANCE_CONCURRENT_REUSE_COUNT`, and
+`WASMTIME_IDLE_INSTANCE_TIMEOUT` for controlled host-reuse experiments. These
+are diagnostic knobs, not substitutes for a deployment-level concurrency
+limit or horizontal scaling.
 
 The alpha is not yet promotable. Delayed first-byte delivery, body cancellation,
 trailers, and a body that yields one frame before failing now pass through the
