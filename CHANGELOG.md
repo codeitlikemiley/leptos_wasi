@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Framework-neutral WASIp3 HTTP component-middleware documentation, a pinned
+  experimental Spin vNext manifest, Wasmtime precomposition runner, protocol
+  fixture, E2E/browser coverage, deterministic unauthenticated/authorized
+  server-action checks, and an explicit public `/pkg` split-asset boundary.
+  This adds no `leptos_wasi::Handler` API or Spin runtime dependency.
+
 ## [0.4.0] — 2026-07-10
 
 ### Added

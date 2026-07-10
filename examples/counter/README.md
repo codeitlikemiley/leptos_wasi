@@ -56,3 +56,29 @@ and lazy chunk always describe the same build.
 2. **Static Files:** Wasmtime maps `./target/site/` to guest `/site`, while Spin serves `./target/site/pkg/` from a dedicated `/pkg/...` file-server component. Both serve every generated split asset.
 3. **Split Manifest:** The server component can read `/site/pkg/__wasm_split_manifest.json`, allowing Leptos SSR to emit preload hints for server-invoked lazy functions and routes. The lazy island itself loads when island hydration runs.
 4. **WASI HTTP:** The server implements `wasip3::exports::http::handler::Guest` and runs as a native WebAssembly component using the Preview 3 async ABI.
+
+## Experimental component middleware
+
+`spin.middleware-vnext.toml` demonstrates Spin's vNext
+`dependencies.middleware` composition using the protocol-only fixture from
+this repository. The middleware is composed in-process around the `counter`
+service; it is not a separately deployed proxy and it does not change the
+`leptos_wasi::Handler` API.
+
+The `/pkg/...` file-server trigger deliberately has no authentication
+middleware. It must remain public so the browser can load `counter.js`,
+`counter.wasm`, and lazy `split_*.wasm` chunks. Middleware attached to the
+`counter` trigger does not apply to this separate asset trigger.
+
+Run the example against the pinned experimental toolchain with:
+
+```bash
+make middleware-wasmtime
+# or
+make middleware-spin
+```
+
+The exact SDK, Spin runtime, WIT, Wasmtime, and `wac` versions are recorded in
+`../../tests/middleware/components.lock.toml`. This remains experimental until
+Spin publishes stable middleware composition using a WIT revision compatible
+with the application.

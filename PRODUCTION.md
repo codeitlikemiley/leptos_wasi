@@ -11,6 +11,7 @@ Spin host security model.
 | Leptos SSR routes | Yes | Yes | Yes | Yes |
 | Typed server functions | Yes | Yes | Yes | Yes |
 | Server-function middleware | Yes | Yes | Yes | Yes |
+| Standard component middleware | No | No | Experimental | Experimental |
 | Streaming response bodies | Yes | Yes | Yes | Yes |
 | GET/HEAD static callback | Yes | Yes | Yes | Yes |
 | Islands and split browser WASM | Server compatible | Server compatible | Browser E2E | Browser E2E |
@@ -38,7 +39,12 @@ this support matrix.
   the host continues to feed.
 - Server-function middleware executes in Leptos order. Authentication,
   authorization, rate limiting, and tracing layers must still be supplied by
-  the application.
+  the application, a composed component, or the ingress at the appropriate
+  scope.
+- WASIp3 component middleware is currently an experimental compatibility path,
+  not part of the stable 0.4 support claim. Middleware must strip untrusted
+  identity headers before adding validated identity metadata, and only the
+  outer composed handler may be externally routable.
 - Generated route discovery is cached by the concrete application/context
   closure types. Keep route structure and exclusion lists deterministic
   deployment configuration; do not derive them from request data.
@@ -65,6 +71,10 @@ one of these deployment patterns:
    the candidate remains below the root before reading it.
 
 Do not grant the component broader filesystem preopens than its callback needs.
+Each host HTTP trigger has its own middleware stack. A middleware dependency on
+the Leptos trigger does not cover a separate static-file trigger or CDN. Keep
+browser loader, main WASM, and `split_*.wasm` assets public unless the asset
+service has an explicit authentication bypass.
 
 ## Runtime operations
 
@@ -86,6 +96,15 @@ monitor canceled/live pollable counts when tracing is enabled.
 WASIp3 delegates tasks to the host. Call `init_wasip3_spawner()` before serving
 the first request and propagate a persistent initialization conflict. Do not
 discard its result.
+
+The experimental WASIp3 component-middleware tuple is pinned in
+`tests/middleware/components.lock.toml`. Do not deploy a floating Spin or SDK
+branch. Promote component middleware into this support matrix only after a
+stable Spin release and the application bindings use the same WIT revision.
+The independently versioned `wasi-http-middleware 0.1.0-alpha.1` companion owns
+the reusable request-ID, security-header, CORS, and external-auth policy chain;
+the local fixture is intentionally limited to ABI, request-context, streaming,
+browser-auth, and split-WASM compatibility.
 
 ## Observability and sensitive data
 
@@ -160,6 +179,10 @@ A production release requires all of the following:
 - `cargo package --locked`, `cargo publish --dry-run --locked`, and
   `cargo audit` pass.
 - Every breaking API change appears in [MIGRATION.md](./MIGRATION.md).
+
+The non-blocking vNext middleware lane is additional compatibility evidence; it
+does not replace any stable-runtime gate above. See [WASIp3 HTTP
+Middleware](./MIDDLEWARE.md).
 
 Run the local compile/test/documentation matrix with:
 

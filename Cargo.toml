@@ -11,6 +11,7 @@ include = [
     "/src/**",
     "/CHANGELOG.md",
     "/LICENSE",
+    "/MIDDLEWARE.md",
     "/MIGRATION.md",
     "/PERFORMANCE.md",
     "/PRODUCTION.md",
