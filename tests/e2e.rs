@@ -71,6 +71,42 @@ fn start_server(
         args.push("-W".to_string());
         args.push("component-model-async=y".to_string());
     }
+    if wasm_path.contains("middleware") {
+        let broker_url = std::env::var("WASI_MIDDLEWARE_AUTHN_BROKER_URL")
+            .unwrap_or_else(|_| {
+                "http://127.0.0.1:3112/authenticate".to_string()
+            });
+        args.extend([
+            "-S".to_string(),
+            "http=y".to_string(),
+            "-S".to_string(),
+            "inherit-network=y".to_string(),
+            "--env".to_string(),
+            "WASI_MIDDLEWARE_CORS_ORIGINS=http://127.0.0.1:3110,http://127.0.0.1:3111"
+                .to_string(),
+            "--env".to_string(),
+            "WASI_MIDDLEWARE_CORS_METHODS=GET,HEAD,POST".to_string(),
+            "--env".to_string(),
+            "WASI_MIDDLEWARE_CORS_HEADERS=content-type,authorization,x-request-id"
+                .to_string(),
+            "--env".to_string(),
+            "WASI_MIDDLEWARE_CORS_ALLOW_CREDENTIALS=false".to_string(),
+            "--env".to_string(),
+            format!("WASI_MIDDLEWARE_AUTHN_BROKER_URL={broker_url}"),
+            "--env".to_string(),
+            "WASI_MIDDLEWARE_AUTHN_TIMEOUT_MS=2000".to_string(),
+            "--env".to_string(),
+            "WASI_MIDDLEWARE_AUTHN_MODE=optional".to_string(),
+            "--env".to_string(),
+            "WASI_MIDDLEWARE_SERVICE_ID=leptos-wasi-test-app".to_string(),
+            "--env".to_string(),
+            "WASI_MIDDLEWARE_AUTHN_AUDIENCES=leptos-wasi-test-app".to_string(),
+            "--env".to_string(),
+            "WASI_MIDDLEWARE_AUTHN_MAX_IN_FLIGHT=64".to_string(),
+            "--env".to_string(),
+            "WASI_MIDDLEWARE_AUTHN_ALLOW_INSECURE_LOOPBACK=true".to_string(),
+        ]);
+    }
 
     // Mount the static files directory to the virtual filesystem in the guest.
     args.push("--dir".to_string());
@@ -81,7 +117,9 @@ fn start_server(
     args.push("127.0.0.1:0".to_string());
 
     println!("Spawning wasmtime {:?}", args);
-    let mut child = Command::new("wasmtime")
+    let wasmtime =
+        std::env::var_os("WASMTIME_BIN").unwrap_or_else(|| "wasmtime".into());
+    let mut child = Command::new(wasmtime)
         .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -798,7 +836,12 @@ async fn run_assertions(
                 anyhow::anyhow!(
                     "committed failing stream ended before its first frame"
                 )
-            })??;
+            })?
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "committed failing stream errored before its first frame: {error}"
+                )
+            })?;
             assert_eq!(first.as_ref(), b"first-frame\n");
 
             match tokio::time::timeout(Duration::from_secs(5), body.next())
@@ -993,42 +1036,52 @@ async fn run_middleware_assertions(port: u16) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
     let base_url = format!("http://127.0.0.1:{port}");
 
-    let rejected = client
+    let anonymous = client
         .get(format!("{base_url}/api/middleware_request_header"))
         .send()
         .await?;
-    assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(
-        rejected
-            .headers()
-            .get("x-leptos-wasi-middleware")
-            .and_then(|value| value.to_str().ok()),
-        Some("wasip3-vnext")
-    );
+    assert_eq!(anonymous.status(), StatusCode::OK);
+    assert_middleware_response_headers(anonymous.headers());
+    assert_eq!(anonymous.json::<String>().await?, "sanitized");
+
+    let denied = client
+        .get(format!("{base_url}/api/middleware_request_header"))
+        .bearer_auth("deny")
+        .send()
+        .await?;
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+    assert_middleware_response_headers(denied.headers());
+
+    let unavailable = client
+        .get(format!("{base_url}/api/middleware_request_header"))
+        .bearer_auth("error")
+        .send()
+        .await?;
+    assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_middleware_response_headers(unavailable.headers());
+
+    let invalid = client
+        .get(format!("{base_url}/api/middleware_request_header"))
+        .bearer_auth("invalid")
+        .send()
+        .await?;
+    assert_eq!(invalid.status(), StatusCode::UNAUTHORIZED);
+    assert_middleware_response_headers(invalid.headers());
 
     let context = client
         .get(format!("{base_url}/api/middleware_request_header"))
         .bearer_auth("allow")
+        .header("x-wasi-auth-subject", "attacker")
+        .header("x-wasi-auth-context", "attacker")
         .send()
         .await?;
     assert_eq!(context.status(), StatusCode::OK);
-    assert_eq!(
-        context
-            .headers()
-            .get("x-leptos-wasi-middleware")
-            .and_then(|value| value.to_str().ok()),
-        Some("wasip3-vnext")
-    );
-    assert_eq!(context.json::<String>().await?, "wasip3-vnext");
+    assert_middleware_response_headers(context.headers());
+    assert_eq!(context.json::<String>().await?, "sanitized");
 
     let ssr = client.get(format!("{base_url}/ssr/async")).send().await?;
     assert_eq!(ssr.status(), StatusCode::OK);
-    assert_eq!(
-        ssr.headers()
-            .get("x-leptos-wasi-middleware")
-            .and_then(|value| value.to_str().ok()),
-        Some("wasip3-vnext")
-    );
+    assert_middleware_response_headers(ssr.headers());
     assert!(ssr.text().await?.contains("Async resource resolved"));
 
     let static_asset = client
@@ -1036,13 +1089,23 @@ async fn run_middleware_assertions(port: u16) -> anyhow::Result<()> {
         .send()
         .await?;
     assert_eq!(static_asset.status(), StatusCode::OK);
-    assert_eq!(
-        static_asset
-            .headers()
-            .get("x-leptos-wasi-middleware")
-            .and_then(|value| value.to_str().ok()),
-        Some("wasip3-vnext")
-    );
+    assert_middleware_response_headers(static_asset.headers());
+
+    let preflight = client
+        .request(
+            reqwest::Method::OPTIONS,
+            format!("{base_url}/api/post_test"),
+        )
+        .header("origin", "http://127.0.0.1:3110")
+        .header("access-control-request-method", "POST")
+        .header(
+            "access-control-request-headers",
+            "content-type,authorization",
+        )
+        .send()
+        .await?;
+    assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
+    assert_middleware_response_headers(preflight.headers());
 
     let started = Instant::now();
     let delayed = client
@@ -1050,6 +1113,7 @@ async fn run_middleware_assertions(port: u16) -> anyhow::Result<()> {
         .send()
         .await?;
     assert_eq!(delayed.status(), StatusCode::OK);
+    assert_middleware_response_headers(delayed.headers());
     let mut body = delayed.bytes_stream();
     let first = tokio::time::timeout(Duration::from_millis(350), body.next())
         .await?
@@ -1066,12 +1130,43 @@ async fn run_middleware_assertions(port: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn assert_middleware_response_headers(headers: &reqwest::header::HeaderMap) {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .expect("middleware response should include a request ID");
+    assert!(!request_id.is_empty() && request_id.len() <= 128);
+    assert_eq!(
+        headers
+            .get("x-content-type-options")
+            .and_then(|value| value.to_str().ok()),
+        Some("nosniff")
+    );
+    assert_eq!(
+        headers
+            .get("referrer-policy")
+            .and_then(|value| value.to_str().ok()),
+        Some("strict-origin-when-cross-origin")
+    );
+}
+
 async fn run_e2e_tests_with_middleware(wasm_path: &str) {
     let server = start_server(wasm_path, true)
         .expect("Failed to start composed Wasmtime middleware server");
+    run_assertions(server.port, WASMTIME_CAPABILITIES)
+        .await
+        .expect("Composed middleware transport assertions failed");
     run_middleware_assertions(server.port)
         .await
         .expect("Middleware assertions failed");
+}
+
+async fn run_middleware_transport_profile(wasm_path: &str) {
+    let server = start_server(wasm_path, true)
+        .expect("Failed to start middleware transport profile");
+    run_assertions(server.port, WASMTIME_CAPABILITIES)
+        .await
+        .expect("Middleware transport profile assertions failed");
 }
 
 #[tokio::test]
@@ -1090,6 +1185,14 @@ async fn test_e2e_wasip3() {
 #[ignore] // Run via ./scripts/run-middleware-tests.sh (requires Wasmtime + composed guests)
 async fn experimental_middleware_wasmtime_wasip3() {
     run_e2e_tests_with_middleware("tests/test-app-p3-middleware.wasm").await;
+}
+
+#[tokio::test]
+#[ignore] // Diagnostic profile selected through LEPTOS_WASI_MIDDLEWARE_WASM
+async fn experimental_middleware_transport_profile_wasip3() {
+    let wasm_path = std::env::var("LEPTOS_WASI_MIDDLEWARE_WASM")
+        .expect("LEPTOS_WASI_MIDDLEWARE_WASM must select a composed profile");
+    run_middleware_transport_profile(&wasm_path).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1126,7 +1229,8 @@ impl Drop for SpinServer {
 fn start_spin_server(manifest_path: &str) -> anyhow::Result<SpinServer> {
     let args = vec!["up", "-f", manifest_path, "--listen", "127.0.0.1:0"];
     println!("Spawning spin {:?}", args);
-    let mut child = Command::new("spin")
+    let spin = std::env::var_os("SPIN_BIN").unwrap_or_else(|| "spin".into());
+    let mut child = Command::new(spin)
         .args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -1228,14 +1332,16 @@ async fn test_e2e_spin_wasip2() {
 }
 
 #[tokio::test]
-#[ignore] // Run via ./run_tests.sh (requires spin + pre-built WASM guests)
+#[ignore] // Promotion fixture: stable Spin 4 currently fails the final-WASI canary
 async fn test_e2e_spin_wasip3() {
     run_spin_e2e_tests("tests/spin-p3.toml").await;
 }
 
 #[tokio::test]
-#[ignore] // Run via ./scripts/run-middleware-tests.sh (requires Spin vNext + pre-built guests)
+#[ignore] // Promotion fixture: stable Spin 4 currently fails the final-WASI canary
 async fn experimental_middleware_spin_wasip3() {
-    run_spin_e2e_tests_with_middleware("tests/spin-p3-middleware-vnext.toml")
-        .await;
+    run_spin_e2e_tests_with_middleware(
+        "tests/spin-p3-middleware-composed.toml",
+    )
+    .await;
 }

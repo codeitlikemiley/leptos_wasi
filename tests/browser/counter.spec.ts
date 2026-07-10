@@ -13,12 +13,16 @@ test("SSR shell contains the unhydrated counter island", async ({ request }) => 
   expect(html).toContain("COUNT VALUE");
 });
 
-test("experimental component middleware preserves public split assets", async ({ request }) => {
-  test.skip(!middlewareEnabled, "requires the experimental middleware composition");
+test("component middleware preserves public split assets", async ({ request }) => {
+  test.skip(!middlewareEnabled, "requires the composed middleware chain");
 
   const pageResponse = await request.get("/");
   expect(pageResponse.ok()).toBeTruthy();
-  expect(pageResponse.headers()["x-leptos-wasi-middleware"]).toBe("wasip3-vnext");
+  expect(pageResponse.headers()["x-request-id"]).toBeTruthy();
+  expect(pageResponse.headers()["x-content-type-options"]).toBe("nosniff");
+  expect(pageResponse.headers()["referrer-policy"]).toBe(
+    "strict-origin-when-cross-origin",
+  );
 
   // Spin serves this through a separate public file-service trigger, whereas
   // Wasmtime reaches the Leptos static callback inside the composed service.
@@ -65,18 +69,6 @@ test("lazy split island loads and handles a server action", async ({ page }) => 
   await expect.poll(() => splitModules.size).toBeGreaterThan(0);
 
   const button = page.locator('button[type="button"]');
-  if (middlewareEnabled) {
-    const rejectedAction = page.waitForResponse(/\/api\/increment_count(?:\?|$)/);
-    await button.click();
-    await expect(button).toBeDisabled();
-    const rejectedResponse = await rejectedAction;
-    expect(rejectedResponse.status()).toBe(401);
-    expect(rejectedResponse.headers()["x-leptos-wasi-middleware"]).toBe("wasip3-vnext");
-    await expect(count).toHaveText("0");
-    await expect(button).toBeEnabled();
-    await page.setExtraHTTPHeaders({ Authorization: "Bearer allow" });
-  }
-
   const acceptedAction = page.waitForResponse(/\/api\/increment_count(?:\?|$)/);
   await button.click();
   await expect(button).toBeDisabled();
@@ -87,6 +79,7 @@ test("lazy split island loads and handles a server action", async ({ page }) => 
   await expect(button).toBeEnabled();
   await expect(button).toHaveText("Increment Counter");
   if (middlewareEnabled) {
-    expect(acceptedResponse.headers()["x-leptos-wasi-middleware"]).toBe("wasip3-vnext");
+    expect(acceptedResponse.headers()["x-request-id"]).toBeTruthy();
+    expect(acceptedResponse.headers()["x-content-type-options"]).toBe("nosniff");
   }
 });

@@ -19,5 +19,8 @@ cp tests/test-app/target/wasm32-wasip2/release/test_app.wasm tests/test-app-p3.w
 echo "=== Running Wasmtime E2E tests ==="
 cargo test --locked --test e2e test_e2e_wasip -- --ignored --nocapture --test-threads=1
 
-echo "=== Running Spin E2E tests ==="
-cargo test --locked --test e2e test_e2e_spin -- --ignored --nocapture --test-threads=1
+echo "=== Running Spin WASIp2 E2E tests ==="
+cargo test --locked --test e2e test_e2e_spin_wasip2 -- --ignored --nocapture --test-threads=1
+
+echo "=== Confirming the Spin final-WASI compatibility canary ==="
+./scripts/check-spin-final-wasi-canary.sh

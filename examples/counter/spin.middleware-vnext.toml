@@ -10,15 +10,36 @@ description = "Experimental WASIp3 middleware composition around the Leptos coun
 route = "/..."
 component = "counter"
 executor = { type = "http" }
-dependencies.middleware = [{ component = "middleware-fixture" }]
+dependencies.middleware = [
+  { component = "request-id" },
+  { component = "security-headers" },
+  { component = "cors", inherit_configuration = ["environment"] },
+  { component = "authn-policy", inherit_configuration = ["environment", "allowed_outbound_hosts"] },
+]
 
 [component.counter]
 source = "target/wasm32-wasip2/release/counter.wasm"
-allowed_outbound_hosts = []
-environment = { LEPTOS_OUTPUT_NAME = "counter", LEPTOS_SITE_ROOT = "/site", LEPTOS_SITE_PKG_DIR = "pkg" }
+allowed_outbound_hosts = ["http://127.0.0.1:3112"]
 files = [
   { source = "target/site", destination = "/site" }
 ]
+
+[component.counter.environment]
+LEPTOS_OUTPUT_NAME = "counter"
+LEPTOS_SITE_ROOT = "/site"
+LEPTOS_SITE_PKG_DIR = "pkg"
+WASI_MIDDLEWARE_CORS_ORIGINS = "http://127.0.0.1:3110,http://127.0.0.1:3111"
+WASI_MIDDLEWARE_CORS_METHODS = "GET,HEAD,POST"
+WASI_MIDDLEWARE_CORS_HEADERS = "content-type,authorization,x-request-id"
+WASI_MIDDLEWARE_CORS_ALLOW_CREDENTIALS = "false"
+WASI_MIDDLEWARE_AUTHN_BROKER_URL = "http://127.0.0.1:3112/authenticate"
+WASI_MIDDLEWARE_AUTHN_TIMEOUT_MS = "2000"
+WASI_MIDDLEWARE_AUTHN_MODE = "optional"
+WASI_MIDDLEWARE_SERVICE_ID = "leptos-wasi-counter"
+WASI_MIDDLEWARE_AUTHN_AUDIENCES = "leptos-wasi-counter"
+WASI_MIDDLEWARE_AUTHN_MAX_IN_FLIGHT = "64"
+WASI_MIDDLEWARE_AUTHN_ALLOW_INSECURE_LOOPBACK = "true"
+
 [component.counter.build]
 command = "cargo leptos build --release --split --frontend-only --lib-cargo-args=--locked && LEPTOS_OUTPUT_NAME=counter cargo build --locked --lib --target wasm32-wasip2 --release --no-default-features --features ssr"
 watch = ["src/**/*.rs", "Cargo.toml"]
@@ -34,5 +55,14 @@ source = { url = "https://github.com/fermyon/spin-fileserver/releases/download/v
 files = [{ source = "target/site/pkg", destination = "/" }]
 environment = { CACHE_CONTROL = "no-cache" }
 
-[component.middleware-fixture]
-source = "../../tests/middleware-fixture.wasm"
+[component.request-id]
+source = "../../tests/middleware-artifacts/request-id.wasm"
+
+[component.security-headers]
+source = "../../tests/middleware-artifacts/security-headers.wasm"
+
+[component.cors]
+source = "../../tests/middleware-artifacts/cors.wasm"
+
+[component.authn-policy]
+source = "../../tests/middleware-artifacts/authn-policy.wasm"

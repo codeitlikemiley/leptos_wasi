@@ -1,0 +1,44 @@
+spin_manifest_version = 2
+
+[application]
+name = "counter-middleware-composed"
+version = "0.0.0"
+authors = ["Uriah Galang <codeitlikemiley@gmail.com>"]
+description = "Final-WASI precomposed middleware around the Leptos counter"
+
+[[trigger.http]]
+route = "/..."
+component = "counter-middleware"
+executor = { type = "http" }
+
+[component.counter-middleware]
+source = "target/wasm32-wasip2/release/counter-middleware.wasm"
+allowed_outbound_hosts = ["http://127.0.0.1:3112"]
+files = [{ source = "target/site", destination = "/site" }]
+
+[component.counter-middleware.environment]
+LEPTOS_OUTPUT_NAME = "counter"
+LEPTOS_SITE_ROOT = "/site"
+LEPTOS_SITE_PKG_DIR = "pkg"
+WASI_MIDDLEWARE_CORS_ORIGINS = "http://127.0.0.1:3110,http://127.0.0.1:3111"
+WASI_MIDDLEWARE_CORS_METHODS = "GET,HEAD,POST"
+WASI_MIDDLEWARE_CORS_HEADERS = "content-type,authorization,x-request-id"
+WASI_MIDDLEWARE_CORS_ALLOW_CREDENTIALS = "false"
+WASI_MIDDLEWARE_AUTHN_BROKER_URL = "http://127.0.0.1:3112/authenticate"
+WASI_MIDDLEWARE_AUTHN_TIMEOUT_MS = "2000"
+WASI_MIDDLEWARE_AUTHN_MODE = "optional"
+WASI_MIDDLEWARE_SERVICE_ID = "leptos-wasi-counter"
+WASI_MIDDLEWARE_AUTHN_AUDIENCES = "leptos-wasi-counter"
+WASI_MIDDLEWARE_AUTHN_MAX_IN_FLIGHT = "64"
+WASI_MIDDLEWARE_AUTHN_ALLOW_INSECURE_LOOPBACK = "true"
+
+# Split browser assets intentionally remain public and are served by a distinct
+# terminal component rather than bypassing the composed Leptos application.
+[[trigger.http]]
+route = "/pkg/..."
+component = "counter-pkg"
+
+[component.counter-pkg]
+source = { url = "https://github.com/fermyon/spin-fileserver/releases/download/v0.1.0/spin_static_fs.wasm", digest = "sha256:96c76d9af86420b39eb6cd7be5550e3cb5d4cc4de572ce0fd1f6a29471536cb4" }
+files = [{ source = "target/site/pkg", destination = "/" }]
+environment = { CACHE_CONTROL = "no-cache" }

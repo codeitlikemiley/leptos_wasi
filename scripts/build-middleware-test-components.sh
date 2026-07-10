@@ -15,4 +15,4 @@ install -m 0644 \
   "$ROOT/tests/test-app/target/wasm32-wasip2/release/test_app.wasm" \
   "$ROOT/tests/test-app-p3.wasm"
 
-"$ROOT/scripts/build-middleware-fixture.sh"
+"$ROOT/scripts/sync-middleware-components.sh"

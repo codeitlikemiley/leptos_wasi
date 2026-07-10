@@ -165,16 +165,19 @@ pub async fn get_test() -> Result<String, ServerFnError> {
     endpoint = "middleware_request_header"
 )]
 pub async fn middleware_request_header() -> Result<String, ServerFnError> {
-    let value = use_context::<http::request::Parts>()
-        .and_then(|parts| {
-            parts
-                .headers
-                .get("x-leptos-wasi-middleware-request")
-                .cloned()
-        })
-        .and_then(|value| value.to_str().ok().map(str::to_owned))
-        .unwrap_or_else(|| "missing".to_string());
-    Ok(value)
+    let sanitized = use_context::<http::request::Parts>().is_some_and(|parts| {
+        let context_count = parts
+            .headers
+            .get_all("x-wasi-auth-context")
+            .iter()
+            .count();
+        context_count == 1
+            && !parts.headers.contains_key(http::header::AUTHORIZATION)
+            && !parts.headers.contains_key("x-wasi-auth-subject")
+            && !parts.headers.contains_key("x-wasi-auth-issuer")
+            && !parts.headers.contains_key("x-wasi-auth-scopes")
+    });
+    Ok(if sanitized { "sanitized" } else { "invalid" }.to_string())
 }
 
 #[server(input = GetUrl, prefix = "/api", endpoint = "pollable_depth")]

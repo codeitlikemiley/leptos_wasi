@@ -1,16 +1,33 @@
-schema = 1
-wasi_http = "0.3.0-rc-2026-03-15"
-spin_runtime_repository = "https://github.com/spinframework/spin"
-spin_runtime_revision = "27451471b8ba0faeffa01c5a4ddd6daee9a9d526"
-spin_runtime_default_features = false
-spin_sdk_repository = "https://github.com/spinframework/spin-rust-sdk"
-spin_sdk_revision = "14e675aa877c2dd4040c631421dfdaf5d526fb40"
-wasmtime_version = "45.0.0"
+schema = 2
+wasi_http = "0.3.0"
+wasip3_version = "0.7.0"
+spin_stable_version = "4.0.0"
+spin_final_wasi_supported = false
+spin_final_wasi_failure = "wasi:http/types@0.3.0 resource implementation is missing"
+spin_middleware_repository = "https://github.com/spinframework/spin"
+spin_middleware_revision = "27451471b8ba0faeffa01c5a4ddd6daee9a9d526"
+spin_middleware_default_features = false
+spin_middleware_wasi_http = "0.3.0-rc-2026-03-15"
+spin_middleware_final_wasi_supported = false
+spin_sdk_version = "6.0.0"
+wasmtime_version = "46.0.1"
 wac_cli_version = "0.10.1"
-wasm_tools_version = "1.248.0"
+wasm_tools_version = "1.253.0"
 
-[fixture]
-name = "leptos-wasi-middleware-fixture"
-manifest = "tests/middleware-fixture/Cargo.toml"
-artifact = "tests/middleware-fixture.wasm"
-production = false
+[middleware]
+name = "wasi-http-middleware"
+version = "0.2.0-alpha.1"
+relative_path = "../wasi-http-middleware"
+baseline_revision = "6977a75c4d2cb1558158341c109e419189dc2c52"
+source_revision = "3f238b17d396526e5cd22d489bc0a4e5c4ecad86"
+components = [
+  "request-id",
+  "security-headers",
+  "cors",
+  "authn-policy",
+]
+
+[authorization]
+name = "wasi-authz"
+relative_path = "../wasi-authz"
+leptos_package = "leptos-wasi-authz"

@@ -22,6 +22,7 @@ target/
 
 # E2E test build artifacts (rebuilt by run_tests.sh)
 tests/*.wasm
+tests/middleware-artifacts/
 tests/browser/playwright-report/
 tests/browser/test-results/
 

@@ -1,26 +1,20 @@
 spin_manifest_version = 2
 
 [application]
-name = "test-app-p3-middleware-vnext"
+name = "test-app-p3-middleware-composed"
 version = "0.0.0"
 
 [[trigger.http]]
 route = "/..."
-component = "test-app-p3"
+component = "test-app-p3-middleware"
 executor = { type = "http" }
-dependencies.middleware = [
-  { component = "request-id" },
-  { component = "security-headers" },
-  { component = "cors", inherit_configuration = ["environment"] },
-  { component = "authn-policy", inherit_configuration = ["environment", "allowed_outbound_hosts"] },
-]
 
-[component.test-app-p3]
-source = "test-app-p3.wasm"
+[component.test-app-p3-middleware]
+source = "test-app-p3-middleware.wasm"
 allowed_outbound_hosts = ["http://127.0.0.1:3112"]
 files = [{ source = "test-app/static", destination = "/static" }]
 
-[component.test-app-p3.environment]
+[component.test-app-p3-middleware.environment]
 WASI_MIDDLEWARE_CORS_ORIGINS = "http://127.0.0.1:3110,http://127.0.0.1:3111"
 WASI_MIDDLEWARE_CORS_METHODS = "GET,HEAD,POST"
 WASI_MIDDLEWARE_CORS_HEADERS = "content-type,authorization,x-request-id"
@@ -32,15 +26,3 @@ WASI_MIDDLEWARE_SERVICE_ID = "leptos-wasi-test-app"
 WASI_MIDDLEWARE_AUTHN_AUDIENCES = "leptos-wasi-test-app"
 WASI_MIDDLEWARE_AUTHN_MAX_IN_FLIGHT = "64"
 WASI_MIDDLEWARE_AUTHN_ALLOW_INSECURE_LOOPBACK = "true"
-
-[component.request-id]
-source = "middleware-artifacts/request-id.wasm"
-
-[component.security-headers]
-source = "middleware-artifacts/security-headers.wasm"
-
-[component.cors]
-source = "middleware-artifacts/cors.wasm"
-
-[component.authn-policy]
-source = "middleware-artifacts/authn-policy.wasm"
