@@ -21,7 +21,7 @@ name = "wasi-http-middleware"
 version = "0.2.0-alpha.1"
 relative_path = "../wasi-http-middleware"
 baseline_revision = "6977a75c4d2cb1558158341c109e419189dc2c52"
-source_revision = "7dbef2c420f5c4a7bb062142d372d1fa8c181e6e"
+source_revision = "27660a354d762b2047723c15ff25c1542b9c9153"
 components = [
   "request-id",
   "security-headers",
@@ -39,7 +39,7 @@ leptos_crate_path = "crates/leptos-wasi-authz"
 client_package = "wasi-authz-client"
 client_crate_path = "crates/wasi-authz-client"
 baseline_revision = "043f5b66073bb8e941a29410029a8b9ba26d6c5f"
-source_revision = "5cad17fcdfea83cf68cc0714807cb46bb8c831bb"
+source_revision = "f788740d0d686ac1bd201acc53b8a3a86a494322"
 fixture_manifest = "tests/authz-fixture/Cargo.toml"
 components = [
   "authz-http-pep",
