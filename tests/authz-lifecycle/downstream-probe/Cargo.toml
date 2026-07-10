@@ -1,0 +1,19 @@
+[package]
+name = "leptos-wasi-authz-downstream-probe"
+description = "Transparent final-WASIp3 authorization downstream lifecycle probe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasip3 = { workspace = true, features = ["async-spawn"] }
+wasi-http-middleware-component-support.workspace = true
+wit-bindgen.workspace = true
+
+[lints]
+workspace = true
