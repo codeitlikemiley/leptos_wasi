@@ -1054,7 +1054,7 @@ dependencies = [
 
 [[package]]
 name = "leptos_wasi"
-version = "0.4.1"
+version = "0.5.0-alpha.1"
 dependencies = [
  "any_spawner",
  "async-stream",
