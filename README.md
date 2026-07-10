@@ -38,21 +38,21 @@ Preview 2:
 
 ```toml
 [dependencies]
-leptos_wasi = "0.4"
+leptos_wasi = "0.5.0-alpha.1"
 ```
 
 Preview 3:
 
 ```toml
 [dependencies]
-leptos_wasi = { version = "0.4", default-features = false, features = ["wasip3"] }
+leptos_wasi = { version = "0.5.0-alpha.1", default-features = false, features = ["wasip3"] }
 ```
 
 Both adapters in one build:
 
 ```toml
 [dependencies]
-leptos_wasi = { version = "0.4", features = ["wasip3", "islands-router"] }
+leptos_wasi = { version = "0.5.0-alpha.1", features = ["wasip3", "islands-router"] }
 ```
 
 The features are additive. Enabling `wasip3` does not disable or replace the
@@ -94,13 +94,16 @@ compatibility canaries, not deployment claims. See [WASIp3 HTTP
 Middleware](./MIDDLEWARE.md) for the boundary between component middleware,
 server-function middleware, and ingress policy. The reusable implementation is
 independently versioned as `wasi-http-middleware 0.2.0-alpha.1`; this repository
-consumes its checksum-pinned local artifacts.
+consumes its checksum-pinned local artifacts. Typed AuthZEN/Cedar/SpiceDB
+authorization lives in the separately versioned `wasi-authz 0.1.0-alpha.1`
+workspace; its `leptos-wasi-authz` bridge is intentionally an application
+dependency, not a `leptos_wasi` handler API.
 
-Version 0.4 does not claim a generic-response or fully Axum-free server-function
+Version 0.5 does not claim a generic-response or fully Axum-free server-function
 backend. Upstream `server_fn`'s generic `Request<Bytes>` fixes its WebSocket
 response to `Response<Bytes>`, which does not form the request/response pairing
 needed by the generic response body. A native `WasiServerFnBackend` therefore
-needs a dedicated request newtype and macro support and remains a post-0.4
+needs a dedicated request newtype and macro support and remains a post-0.5
 experiment.
 
 ### Preview 3 entrypoint
@@ -305,7 +308,7 @@ not present a non-atomic key-value store as production persistence.
 
 ## Upgrade and operations
 
-- Read [Migration from 0.3](./MIGRATION.md) before upgrading.
+- Read [Migration to 0.5](./MIGRATION.md) before upgrading.
 - Read [Production Support](./PRODUCTION.md) before exposing a component to
   public traffic.
 - Review [Performance Baseline](./PERFORMANCE.md) and retain the CI soak
@@ -320,6 +323,13 @@ not present a non-atomic key-value store as production persistence.
   `./scripts/run-middleware-tests.sh`. Set `MIDDLEWARE=1 HOST=wasmtime` on the
   browser command to prove middleware wrapping, authentication-context
   propagation, and lazy hydration without making `/pkg` split assets private.
+- Run `./scripts/run-authz-browser.sh` from sibling checkouts to prove the real
+  authentication plus Cedar/SpiceDB authorization chain. This is an alpha gate:
+  the current pinned Wasmtime transport does not yet satisfy its c100
+  performance target.
+- Run `./scripts/run-authz-lifecycle-e2e.sh` and
+  `./scripts/run-authz-wasip2-lifecycle-e2e.sh` to exercise final-artifact
+  WASIp3 and cancellation-safe WASIp2 authorization transport recovery.
 - From a repository checkout with a host already running, execute
   `python3 scripts/load_runtime.py http://127.0.0.1:3000/ --duration 600 --concurrency 100 --pid <host-pid>`
   to record throughput, first-byte and completed-response p50/p95/p99 latency,

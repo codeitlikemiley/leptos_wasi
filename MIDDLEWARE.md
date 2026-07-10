@@ -30,6 +30,19 @@ A recommended outermost-to-innermost stack is:
 request-id -> security-headers -> cors -> authn-policy -> leptos service
 ```
 
+When a service needs coarse HTTP admission as well, append the independently
+versioned `wasi-authz` PEP after trusted authentication:
+
+```text
+request-id -> security-headers -> cors -> authn-policy -> authz-http-pep -> leptos service
+```
+
+`authz-http-pep` evaluates only the stable `http.request` action against the
+configured immutable service ID, method, and normalized query-free path. It is
+not a substitute for domain authorization: an order ID, ownership relation, or
+other body-derived resource must still be checked by typed server-function
+code after deserialization and resource loading.
+
 Requests travel from left to right and responses travel from right to left.
 This ordering lets CORS, request-ID, and security-header middleware decorate an
 authentication rejection without invoking the application.
@@ -68,7 +81,13 @@ provide the final `wasi:http/types@0.3.0` resource implementation. Wasmtime 46
 is therefore the only blocking final-WASI behavioral runtime in this release.
 Production deployments must consume versioned artifacts pinned by digest. The
 local runner accepts a sibling checkout only after checking the declared
-compatibility tuple, artifact checksums, and component WIT.
+compatibility tuple, artifact checksums, component WIT, SBOMs, provenance
+subjects, OCI manifest, public key, and detached signature bundles. The sync
+gate runs pinned Cosign verification for both the provenance statement and OCI
+manifest before copying a component. The checked
+`tests/middleware/artifact-sets.toml` record binds those exact local-alpha
+files; its ephemeral development key is evidence for this local build, not a
+production release identity.
 
 The exact experimental runtime, SDK, WIT, and composition-tool revisions are
 recorded in
@@ -122,9 +141,17 @@ cannot prove that an inbound metadata header passed through the chain.
 `leptos_wasi` already provides `http::request::Parts` to SSR routes and server
 functions. Install typed identity or policy context through
 `handle_with_context`; that request-context closure runs after the standard
-parts are available. Route-discovery context is synthetic and must never be
-used for authentication. This does not require a middleware-specific public API
-in this crate.
+parts are available. That per-request context is the only application-side
+trust boundary for middleware identity. Route-discovery context is synthetic,
+may be cached, and must never read headers or perform authentication. This does
+not require a middleware-specific public API in this crate.
+
+SSR authentication state is presentation-only. It may select navigation,
+render a sign-in prompt, or hide a control, but hidden HTML is not an
+authorization boundary. Every protected server function must independently
+require the authenticated request context and enforce its typed action and
+resource policy after deserialization. Route discovery and SSR rendering never
+replace `ServerFn::middlewares()` or the equivalent typed authorization call.
 
 The counter and test applications use optional authentication so public SSR and
 split-WASM hydration remain available. Protected server functions must require
@@ -133,6 +160,13 @@ deserialization. Whole-service middleware can make coarse method/path decisions
 but cannot authorize a resource identifier hidden in a server-function body.
 Keep ownership, RBAC, ABAC, and ReBAC decisions in server-function/domain policy
 through `ServerFn::middlewares()` or an explicit typed authorization call.
+
+The companion `leptos-wasi-authz` bridge provides the typed request-context
+reader and server-function layers used by the integration fixture. It maps a
+missing middleware boundary to 503, an explicit anonymous caller to 401, an
+authenticated scope/decision denial to 403, and every malformed or unavailable
+provider result to a generic 503. Authentication credentials, cookies, raw
+queries, and request bodies are not authorization attributes.
 
 Status ownership is deliberate: missing or invalid authentication returns 401;
 an authenticated denial returns 403; broker/PDP transport, malformed data, or
@@ -174,26 +208,48 @@ by a separate component.
 
 ## Experimental verification
 
-The integration uses the companion's real request-ID, security, CORS, and
-authentication components plus its deterministic mock authentication broker.
-The tests cover spoof stripping, anonymous/authenticated context, bearer
-removal, fail-closed broker responses, SSR, server functions, delayed
-streaming, islands, and lazy split WASM. Authorization-provider conformance
-remains owned by the independently versioned `wasi-authz` workspace.
+The integration uses the companion's real request-ID, security, CORS,
+authentication, and coarse authorization components plus its deterministic mock
+authentication broker, Cedar PDP, and SpiceDB PDP. The tests cover spoof
+stripping, anonymous/authenticated context, bearer removal, fail-closed broker
+and PDP responses, SSR, server functions, delayed streaming, islands, lazy
+split WASM, RBAC/ABAC/ReBAC denials, and sensitive-data log scans. Provider
+contract conformance remains owned by the independently versioned `wasi-authz`
+workspace.
 
-The alpha is not yet promotable. The transport profile test currently exposes
-an intermittent composition bug when two response-header components wrap a
-body that yields one frame and then fails: the client can observe the terminal
-error before that committed frame. The identical unwrapped service passes the
-same contract. `experimental_middleware_transport_profile_wasip3` is the
-blocking regression gate; do not treat a delayed-success stream alone as
-sufficient streaming evidence.
+The alpha is not yet promotable. Delayed first-byte delivery, body cancellation,
+trailers, and a body that yields one frame before failing now pass through the
+composed chain without buffering. The remaining blocker is performance in the
+current final-WASI runtime. In a five-pair, 30-second, concurrency-100
+representative Leptos workload, a pure pass-through component stayed inside the
+10% budget, while the fused secure-defaults component regressed first-byte p99
+57.36%, total p99 51.98%, and throughput 29.08%. Policy parsing, full header
+copying, and quadratic diffs were removed without materially changing that
+result. The two immutable-header request/response reconstructions and their
+transmission-result bridges remain the measured hot boundary. Keep the
+integration alpha/experimental until the same fixed gate passes; do not weaken
+the threshold or infer production readiness from functional E2E alone.
+
+The complete authentication plus Cedar/SpiceDB chain is separately blocked:
+its 5,000-request, concurrency-100 run returned 2,317 controlled 503s with
+192.975 ms first-byte p99 and 275.921 ms total p99, versus a fixed 25 ms and
+zero-failure gate. Its ten-minute soak also failed its request/latency gate,
+even though RSS returned below its high-water mark. These local runners accept
+only loopback fixture credentials and deliberately refuse production PDP
+endpoints or arbitrary secrets because Wasmtime CLI `--env` values are visible
+to local process inspection. See [PERFORMANCE.md](./PERFORMANCE.md) for the
+retained evidence.
 
 ```bash
 ./scripts/audit-middleware-manifests.py
+python3 scripts/test_audit_middleware_manifests.py
+python3 scripts/test_verify_artifact_set.py
 WASI_HTTP_MIDDLEWARE_BUILD=1 ./scripts/sync-middleware-components.sh
 ./scripts/run-middleware-tests.sh
 MIDDLEWARE=1 HOST=wasmtime ./tests/browser/run.sh
+./scripts/run-authz-browser.sh
+./scripts/run-authz-lifecycle-e2e.sh
+./scripts/run-authz-wasip2-lifecycle-e2e.sh
 HOST=spin ./scripts/run-middleware-tests.sh
 ```
 

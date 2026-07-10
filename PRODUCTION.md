@@ -1,8 +1,8 @@
 # Production Support
 
-This document defines the supported `leptos_wasi` 0.4 contract and the release
-gate for calling a build production-ready. It does not replace the Wasmtime or
-Spin host security model.
+This document defines the supported `leptos_wasi` 0.5 alpha contract and the
+release gate for calling a future stable build production-ready. It does not
+replace the Wasmtime or Spin host security model.
 
 ## Support matrix
 
@@ -11,7 +11,7 @@ Spin host security model.
 | Leptos SSR routes | Yes | Yes | Yes | Blocked by host linker |
 | Typed server functions | Yes | Yes | Yes | Blocked by host linker |
 | Server-function middleware | Yes | Yes | Yes | Blocked by host linker |
-| Standard component middleware | No | No | Blocked by stream regression | Canary only |
+| Standard component middleware | No | No | Experimental alpha; performance-blocked | Canary only |
 | Streaming response bodies | Yes | Yes | Yes | Blocked by host linker |
 | GET/HEAD static callback | Yes | Yes | Yes | Blocked by host linker |
 | Islands and split browser WASM | Server compatible | Server compatible | Browser E2E | Canary only |
@@ -24,7 +24,7 @@ Spin host security model.
 Both runtime features may be enabled in one dependency graph. The application
 still exports a host entrypoint for the component model it intends to run.
 Axum-compatible generated server-function body types remain an internal
-dependency in 0.4. A native Axum-free WASI backend is experimental and outside
+dependency in the 0.5 alpha. A native Axum-free WASI backend is experimental and outside
 this support matrix.
 
 ## Request and response contract
@@ -42,13 +42,18 @@ this support matrix.
   the application, a composed component, or the ingress at the appropriate
   scope.
 - WASIp3 component middleware is currently an experimental compatibility path,
-  not part of the stable 0.4 support claim. Middleware must strip untrusted
+  not part of the stable support claim. Middleware must strip untrusted
   identity headers before adding validated identity metadata, and only the
   outer composed handler may be externally routable.
 - Generated route discovery is cached by the concrete application/discovery
   context closure types. Keep route structure, discovery context, and exclusion
   lists deterministic deployment configuration. Request-dependent context must
   be installed through `handle_with_context`, never a route-generation method.
+- Identity observed while rendering SSR is presentation state only. Hiding a
+  control or route link is never authorization. Protected server functions must
+  re-read trusted per-request context and enforce typed policy after
+  deserialization; synthetic route-discovery context must never participate in
+  authentication or authorization.
 - Host failures before response commitment are converted to controlled HTTP
   failures. A stream failure after commitment terminates that response because
   its status can no longer be changed.
@@ -138,9 +143,12 @@ otherwise generate or assign correlation at the ingress. Alerts should cover:
 
 ## Dependency policy
 
-Every release runs `cargo audit` and rejects known vulnerabilities. The 0.4
-dependency graph currently contains two transitive crates with unmaintained
-advisories, not known vulnerability advisories:
+Every release runs `cargo audit` and `cargo deny check`. The checked
+[`deny.toml`](./deny.toml) restricts registry sources, rejects yanked crates and
+wildcard requirements, makes duplicate versions visible, and permits only the
+reviewed license set. The 0.5 alpha dependency graph currently contains two
+transitive crates with unmaintained advisories, not known vulnerability
+advisories:
 
 | Advisory | Transitive crate | Introduced through | Owner | Compensating control | Removal condition |
 |---|---|---|---|---|---|
@@ -186,14 +194,29 @@ A production release requires all of the following:
 - Preview 3 browser E2E proves SSR output, an initially unhydrated island, lazy
   split-WASM fetch, hydration, and interaction on Wasmtime.
 - The checksum-pinned sibling middleware checkout is clean at the exact source
-  revision, its full Wasmtime chain and browser runner pass locally, and a
-  remote or release-artifact source exists before CI promotion. Until remote or
-  artifact distribution is authorized, this cross-repository gate is a release
-  blocker rather than a skipped CI success.
-- A stacked response-header profile preserves a committed first body frame
-  before an intentional terminal stream error across repeated runs. The alpha
-  currently fails this regression intermittently and cannot be promoted until
-  the companion implementation fixes it.
+  revision; its checksum manifest and provenance contain every declared
+  production component exactly once; pinned Cosign verification succeeds for
+  the bound provenance and OCI manifest; its full Wasmtime chain and browser
+  runner pass locally; and a remote or release-artifact source exists before CI
+  promotion. Until remote or artifact distribution is authorized, this
+  cross-repository gate is a release blocker rather than a skipped CI success.
+- Delayed first byte, trailers, disconnect, and a committed frame followed by
+  an intentional terminal stream error pass through the composed chain without
+  buffering or rewriting the committed status.
+- The unchanged five-pair, 30-second, concurrency-100 representative middleware
+  comparison passes its 10% first-byte, total-p99, and throughput budgets. The
+  current alpha fails this promotion gate even after removing redundant header
+  copies and diffs; immutable-header reconstruction and transmission bridging
+  remain a measured runtime blocker.
+- The full local broker/Cedar/SpiceDB authorization chain returns zero
+  unexpected responses and stays at or below 25 ms first-byte and total p99 at
+  concurrency 100. The current alpha fails this independent gate; see
+  [PERFORMANCE.md](./PERFORMANCE.md) for the retained evidence.
+- The full authorization-chain ten-minute, concurrency-100 soak has also been
+  run locally. Its memory samples reached a non-monotonic plateau, but its
+  controlled failures and p99 latency were far outside the gate; it is failed
+  diagnostic evidence, not a passing soak result. Do not promote this alpha on
+  the strength of the generic transport soak alone.
 - A ten-minute steady-load soak reaches a memory plateau, leaves no orphaned
   WASIp2 pollables, and produces no unexpected 5xx.
 - Release-mode p99 latency regresses no more than 5% from the recorded baseline.

@@ -1,8 +1,9 @@
 # `leptos_wasi` migration guide
 
-## Next breaking release: route context lifecycle
+## Migrating from 0.4.1 to 0.5.0-alpha.1
 
-Route-generation context has been renamed to make its lifecycle explicit:
+The 0.5 alpha makes one deliberate public API break: route-generation context
+has been renamed to make its lifecycle explicit.
 
 | Previous method | Replacement |
 |---|---|
@@ -16,6 +17,19 @@ must never depend on headers, authentication, or other request state.
 Install request-dependent context through `handle_with_context`. That closure
 runs after standard contexts, including `http::request::Parts`, have been
 installed for SSR and server-function requests.
+
+This release does not add an HTTP-layer builder API to `leptos_wasi`. Reusable
+whole-service authentication and authorization remain externally composed
+WASIp3 components. Applications that want the typed bridge use the separately
+versioned `leptos-wasi-authz` crate with the trusted
+`x-wasi-auth-context` installed by the composed authentication boundary.
+`leptos_wasi` itself does not establish trust in that header; an application
+that exposes its terminal component directly must not install the bridge.
+
+The 0.5 alpha is intentionally not a stable production promotion: current
+Wasmtime middleware transport performance and stable Spin final-WASI component
+support remain release gates. See [PRODUCTION.md](./PRODUCTION.md) and
+[MIDDLEWARE.md](./MIDDLEWARE.md) before enabling the integration.
 
 ## Migrating from `leptos_wasi` 0.3 to 0.4
 

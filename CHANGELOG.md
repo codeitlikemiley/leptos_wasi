@@ -4,21 +4,61 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.5.0-alpha.1] — 2026-07-10
+
+### Breaking
+
+- Rename `generate_routes_with_context` to
+  `generate_routes_with_discovery_context`, and
+  `generate_routes_with_exclusions_and_context` to
+  `generate_routes_with_exclusions_and_discovery_context`. Discovery context
+  is deterministic and request-independent; `handle_with_context` remains the
+  sole per-request context hook.
+
+### Added
+
+- Final `wasi:http@0.3.0` component integration fixtures that pin
+  `wasi-http-middleware 0.2.0-alpha.1` and `wasi-authz 0.1.0-alpha.1` by exact
+  source revision, checksums, SBOMs, WIT reports, provenance, OCI manifests,
+  public keys, and detached signature bundles.
+- Real Wasmtime browser coverage for public SSR, initially unhydrated islands,
+  lazy `split_*.wasm` retrieval, hydration, anonymous rejection, authenticated
+  mutation, and Cedar RBAC/ABAC plus SpiceDB ReBAC denials.
+- Final-artifact WASIp3 lifecycle coverage for delayed first bytes, trailers,
+  terminal stream errors, timeouts, disconnects, saturation, outage/recovery,
+  exact downstream invocation, and sensitive-data log scans; plus a real-host
+  WASIp2 `WaitPoll` authorization timeout/recovery fixture.
+- Deployment-policy verification that rejects terminal exposure without its
+  required middleware stack, artifact set, exact component order, or protected
+  terminal identity.
+
 ### Changed
 
 - Upgrade Preview 3 bindings to final `wasi:http@0.3.0` through exact
   `wasip3` 0.7.0 bindings, and validate the service component with Wasmtime
   46.0.1.
-- Rename route-generation context methods to
-  `generate_routes_with_discovery_context` and
-  `generate_routes_with_exclusions_and_discovery_context`. Discovery context
-  is deterministic and request-independent; `handle_with_context` remains the
-  per-request context hook.
 - Replace the protocol-only middleware probe with checksum-pinned artifacts
   from the independently versioned `wasi-http-middleware` workspace. Wasmtime
   46 is the blocking final-WASI middleware/browser runtime; stable Spin 4 and
   the pinned native middleware commit are explicit incompatibility canaries
   until a tagged Spin release implements final HTTP host resources and WIT.
+- Harden browser and lifecycle runners with isolated dynamic listener ports and
+  child-process readiness checks so a bind failure cannot be masked by an
+  unrelated local HTTP service.
+
+### Known alpha promotion blockers
+
+- The final-WASI composed authorization path does not meet the local
+  broker/PDP c100 25 ms p99 target and exhibits sustained controlled 503s under
+  the current stress profile. The runner preserves this as a failing gate.
+- The fused `secure-defaults` middleware profile still exceeds its fixed 10%
+  p99/throughput budget on the representative Leptos workload.
+- Stable Spin 4 and the pinned native middleware commit cannot host the final
+  WASI HTTP resource world. Both remain expected-failure canaries.
+- The sibling alpha repositories have no authorized remote or published
+  artifacts, so hosted CI cannot reproduce the local cross-repository chain.
 
 ## [0.4.1] — 2026-07-10
 
