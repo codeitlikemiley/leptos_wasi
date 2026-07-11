@@ -108,7 +108,7 @@ def verify_bundle(
     for key in ("name", "version"):
         if bundle.get(key) != lock.get(key):
             raise ArtifactSetError(f"artifact bundle {key} does not match compatibility lock")
-    if bundle.get("source_revision") != lock.get("source_revision"):
+    if bundle.get("source_revision") != lock.get("artifact_revision"):
         raise ArtifactSetError("artifact bundle source revision does not match compatibility lock")
     expected_components = lock.get("components")
     if not isinstance(expected_components, list) or not all(
