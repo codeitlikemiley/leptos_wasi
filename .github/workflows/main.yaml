@@ -331,7 +331,9 @@ jobs:
           repositories have authorized remotes or immutable release artifacts.
           Run them locally from sibling checkouts with
           `./scripts/run-middleware-tests.sh` and
-          `AUTHZ=1 MIDDLEWARE=1 HOST=wasmtime ./tests/browser/run.sh`.
+          `./scripts/run-trusted-ingress-browser.sh`. Promotion additionally
+          requires `./scripts/benchmark-trusted-ingress.sh` and
+          `DURATION=600 CONCURRENCY=100 ./scripts/soak-trusted-ingress.sh`.
           EOF
 
   soak:

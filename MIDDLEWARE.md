@@ -19,6 +19,13 @@ as independently compiled components. Local integration runners verify and
 copy checksum-pinned artifacts from the sibling checkout; `leptos_wasi` does
 not carry a second protocol-only implementation.
 
+The reference production topology is executable through
+`scripts/run-trusted-ingress-browser.sh`. It exposes only the native ingress;
+Wasmtime binds to a private listener. The context envelope is bounded and
+encoded, but deliberately not signed. Production deployments therefore must
+use private networking or mutually authenticated TLS between ingress and
+terminal. Guest-held signing keys are not a substitute for that boundary.
+
 ## Scope and ordering
 
 There are three distinct policy boundaries:
@@ -283,6 +290,20 @@ returned zero failures, but first-byte and total p99 remained 73.841 ms and
 68.921 ms, still above the 25 ms promotion target. Treat this as an active
 capacity blocker, not as evidence that the full chain is production-ready.
 
+Those portable guest-component measurements are not promotion evidence for
+the trusted-ingress topology. The native ingress avoids guest response-header
+reconstruction and keeps Cedar embedded in the terminal; SpiceDB is the only
+authorization network hop for relationship checks. Generate promotion evidence
+from release builds with `scripts/run-trusted-ingress-browser.sh`,
+`scripts/benchmark-trusted-ingress.sh`, and
+`DURATION=600 CONCURRENCY=100 scripts/soak-trusted-ingress.sh`.
+
+The benchmark records an identical proxy baseline, edge policy, anonymous SSR,
+Cedar-only, SpiceDB-only, and Cedar-first hybrid profiles. The soak applies a
+final-quarter RSS growth limit of `max(32 MiB, 10%)`. Local alpha signatures
+use ephemeral development keys only. Published OCI artifacts require approved
+CI keyless signing or a durable release identity.
+
 ```bash
 ./scripts/audit-middleware-manifests.py
 python3 scripts/test_audit_middleware_manifests.py
@@ -293,6 +314,9 @@ MIDDLEWARE=1 HOST=wasmtime ./tests/browser/run.sh
 ./scripts/run-authz-browser.sh
 ./scripts/run-authz-lifecycle-e2e.sh
 ./scripts/run-authz-wasip2-lifecycle-e2e.sh
+./scripts/run-trusted-ingress-browser.sh
+./scripts/benchmark-trusted-ingress.sh
+DURATION=600 CONCURRENCY=100 ./scripts/soak-trusted-ingress.sh
 HOST=spin ./scripts/run-middleware-tests.sh
 ```
 

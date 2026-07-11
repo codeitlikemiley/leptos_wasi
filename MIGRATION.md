@@ -1,6 +1,6 @@
 # `leptos_wasi` migration guide
 
-## Migrating from 0.4.1 to 0.5.0-alpha.1
+## Migrating from 0.4.1 to 0.5.0-alpha.3
 
 The 0.5 alpha makes one deliberate public API break: route-generation context
 has been renamed to make its lifecycle explicit.
