@@ -117,6 +117,18 @@ saturation; it is not release evidence and does not replace five 5,000-request
 repetitions or the ten-minute soak. Run lifecycle selection and the 1/2/4
 replica matrix before promotion.
 
+The quick lifecycle harness selected reuse `512/16` from its deliberately
+reduced smoke matrix. It measured 8.183 ms p99 at concurrency 16 and 38.623 ms
+p99 at concurrency 100 with two terminals. A four-terminal ceiling probe did
+not improve the result: it measured 49.535 ms p99 with zero admission queueing
+or failures. Ingress diagnostics placed authentication below the target while
+terminal first-byte occupied the 32--64 ms bucket. Isolated single-run profiles
+measured 17.935 ms authn-only, 27.695 ms Cedar, 46.911 ms direct relationship,
+47.359 ms hybrid allow, and 33.471 ms Cedar-first denial p99. These are
+localization diagnostics, not promotion evidence; they identify the direct
+relationship/terminal path as the next optimization target and prohibit adding
+more than four replicas to mask it.
+
 `scripts/benchmark-authz-full-chain.sh` uses the real composed chain, a local
 authentication broker, the final-WASI Cedar PEP, and the final-WASI SpiceDB
 PDP. It warms 500 requests and then sends 5,000 form-encoded server-function
