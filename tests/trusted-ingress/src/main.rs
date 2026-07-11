@@ -52,6 +52,7 @@ struct Ingress {
     cors: CorsConfig,
     request_ids: Arc<AtomicU64>,
     broker_admission: Arc<Semaphore>,
+    policy_enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -137,6 +138,7 @@ impl Ingress {
             cors,
             request_ids: Arc::new(AtomicU64::new(1)),
             broker_admission: Arc::new(Semaphore::new(128)),
+            policy_enabled: optional_bool("TRUSTED_INGRESS_POLICY_ENABLED")?,
         })
     }
 
@@ -155,8 +157,12 @@ impl Ingress {
         else {
             return Self::reject(Rejection::Unavailable, None, None);
         };
-        let Ok(cors) = self.cors.evaluate(request.method(), request.headers())
-        else {
+        let cors = if self.policy_enabled {
+            self.cors.evaluate(request.method(), request.headers())
+        } else {
+            self.cors.evaluate(request.method(), &HeaderMap::new())
+        };
+        let Ok(cors) = cors else {
             return Self::reject(
                 Rejection::InvalidRequest,
                 Some(&request_id),
@@ -182,7 +188,7 @@ impl Ingress {
             );
         };
         let context = match self
-            .authenticate(authorization.as_deref(), &request_id)
+            .promote_context(authorization.as_deref(), &request_id)
             .await
         {
             Ok(context) => context,
@@ -297,6 +303,22 @@ impl Ingress {
         }
     }
 
+    async fn promote_context(
+        &self,
+        authorization: Option<&str>,
+        request_id: &str,
+    ) -> Result<AuthContextV1, Rejection> {
+        if self.policy_enabled {
+            self.authenticate(authorization, request_id).await
+        } else {
+            AuthContextV1::anonymous(
+                self.service_id.to_string(),
+                self.audiences.iter().cloned(),
+            )
+            .map_err(|_| Rejection::Unavailable)
+        }
+    }
+
     fn reject(
         rejection: Rejection,
         request_id: Option<&str>,
@@ -329,6 +351,20 @@ impl Ingress {
         if let Ok(value) = HeaderValue::from_str(request_id) {
             response.headers_mut().insert(REQUEST_ID_HEADER, value);
         }
+    }
+}
+
+fn optional_bool(name: &str) -> Result<bool> {
+    match std::env::var(name) {
+        Ok(value) if value.eq_ignore_ascii_case("true") || value == "1" => {
+            Ok(true)
+        }
+        Ok(value) if value.eq_ignore_ascii_case("false") || value == "0" => {
+            Ok(false)
+        }
+        Ok(_) => anyhow::bail!("{name} must be true, false, 1, or 0"),
+        Err(std::env::VarError::NotPresent) => Ok(true),
+        Err(error) => Err(error).with_context(|| format!("invalid {name}")),
     }
 }
 

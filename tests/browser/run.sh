@@ -12,6 +12,23 @@ HOST="${HOST:-wasmtime}"
 PORT="${PORT:-$(available_port)}"
 MIDDLEWARE="${MIDDLEWARE:-0}"
 AUTHZ="${AUTHZ:-0}"
+AUTHENTICATION_MODE="${AUTHENTICATION_MODE:-}"
+if [[ -z "$AUTHENTICATION_MODE" ]]; then
+  if [[ "$MIDDLEWARE" == "1" ]]; then
+    AUTHENTICATION_MODE="portable_component"
+  else
+    AUTHENTICATION_MODE="none"
+  fi
+fi
+PORTABLE_COMPONENT=0
+TRUSTED_INGRESS=0
+case "$AUTHENTICATION_MODE" in
+  none) ;;
+  portable_component) PORTABLE_COMPONENT=1 ;;
+  trusted_ingress) TRUSTED_INGRESS=1 ;;
+  *) echo "unsupported AUTHENTICATION_MODE: $AUTHENTICATION_MODE" >&2; exit 2 ;;
+esac
+EDGE_POLICY=$((PORTABLE_COMPONENT || TRUSTED_INGRESS))
 AUTHZ_PDP_TOKEN="${AUTHZ_PDP_TOKEN:-leptos-wasi-browser-pdp-token-do-not-log}"
 SPICEDB_PDP_URL="${WASI_AUTHZ_TEST_PDP_URL:-}"
 SPICEDB_PDP_TOKEN="${WASI_AUTHZ_TEST_PDP_BEARER_TOKEN:-}"
@@ -20,12 +37,13 @@ AUTHZ_FULL_CHAIN_BENCHMARK_ONLY="${AUTHZ_FULL_CHAIN_BENCHMARK_ONLY:-0}"
 AUTHZ_FULL_CHAIN_BENCHMARK_REQUESTS="${AUTHZ_FULL_CHAIN_BENCHMARK_REQUESTS:-5000}"
 AUTHZ_FULL_CHAIN_SOAK="${AUTHZ_FULL_CHAIN_SOAK:-0}"
 AUTHZ_FULL_CHAIN_SOAK_DURATION="${AUTHZ_FULL_CHAIN_SOAK_DURATION:-600}"
+AUTHZ_FULL_CHAIN_BENCHMARK_PATH="${AUTHZ_FULL_CHAIN_BENCHMARK_PATH:-/api/increment_count}"
 # Keep the normal fixture admission bound explicit, while allowing dedicated
 # diagnostics to select another validated per-instance limit.
 AUTHN_MAX_IN_FLIGHT="${AUTHN_MAX_IN_FLIGHT:-128}"
 
-if [[ "$AUTHZ" == "1" && "$MIDDLEWARE" != "1" ]]; then
-  echo "AUTHZ=1 requires the trusted MIDDLEWARE=1 boundary" >&2
+if [[ "$AUTHZ" == "1" && "$EDGE_POLICY" != "1" ]]; then
+  echo "AUTHZ=1 requires portable component or trusted-ingress authentication" >&2
   exit 2
 fi
 if [[ "$AUTHZ" == "1" && ( -z "$SPICEDB_PDP_URL" || -z "$SPICEDB_PDP_TOKEN" ) ]]; then
@@ -78,7 +96,7 @@ if [[ "$AUTHZ" == "1" ]]; then
     --all-features
   SERVER_COMPONENT="$ROOT/tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_authz_fixture.wasm"
 fi
-if [[ "$MIDDLEWARE" == "1" ]]; then
+if [[ "$PORTABLE_COMPONENT" == "1" ]]; then
   "$ROOT/scripts/audit-middleware-manifests.py"
   "$ROOT/scripts/sync-middleware-components.sh"
   TERMINAL_COMPONENT="$SERVER_COMPONENT"
@@ -112,7 +130,7 @@ if [[ "$MIDDLEWARE" == "1" ]]; then
 fi
 
 if [[ "$HOST" == "spin" ]]; then
-  if [[ "$MIDDLEWARE" == "1" ]]; then
+  if [[ "$PORTABLE_COMPONENT" == "1" ]]; then
     "$ROOT/scripts/audit-middleware-manifests.py" --spin
     manifest="$PWD/spin.middleware-composed.toml"
   else
@@ -126,21 +144,26 @@ fi
 WASMTIME_BIN="$(resolve_middleware_tool WASMTIME_BIN wasmtime "$(middleware_lock_value wasmtime_version)")"
 BROKER_PORT="${BROKER_PORT:-$(available_port)}"
 CEDAR_PDP_PORT="${CEDAR_PDP_PORT:-$(available_port)}"
+TERMINAL_PORT="${TERMINAL_PORT:-$(available_port)}"
 BROKER_PID=""
 PDP_PID=""
 SERVER_PID=""
+TERMINAL_PID=""
 APP_LOG="$ROOT/tests/browser/app.log"
+TERMINAL_LOG="$ROOT/tests/browser/terminal.log"
 PDP_LOG="$ROOT/tests/browser/cedar-pdp.log"
 BROKER_LOG="$ROOT/tests/browser/authn-broker.log"
-rm -f "$APP_LOG" "$PDP_LOG" "$BROKER_LOG"
+rm -f "$APP_LOG" "$TERMINAL_LOG" "$PDP_LOG" "$BROKER_LOG"
 LOG_FILES=("$APP_LOG")
 cleanup() {
   status=$?
   trap - EXIT
   [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null || true
+  [[ -n "$TERMINAL_PID" ]] && kill "$TERMINAL_PID" 2>/dev/null || true
   [[ -n "$BROKER_PID" ]] && kill "$BROKER_PID" 2>/dev/null || true
   [[ -n "$PDP_PID" ]] && kill "$PDP_PID" 2>/dev/null || true
   [[ -n "$SERVER_PID" ]] && wait "$SERVER_PID" 2>/dev/null || true
+  [[ -n "$TERMINAL_PID" ]] && wait "$TERMINAL_PID" 2>/dev/null || true
   [[ -n "$BROKER_PID" ]] && wait "$BROKER_PID" 2>/dev/null || true
   [[ -n "$PDP_PID" ]] && wait "$PDP_PID" 2>/dev/null || true
   for sentinel in \
@@ -164,7 +187,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ "$MIDDLEWARE" == "1" ]]; then
+if [[ "$EDGE_POLICY" == "1" ]]; then
   LOG_FILES+=("$BROKER_LOG")
   BROKER_ARGS=(
     serve \
@@ -192,7 +215,7 @@ if [[ "$MIDDLEWARE" == "1" ]]; then
   done
   [[ "${status:-000}" == "401" ]]
 fi
-if [[ "$AUTHZ" == "1" ]]; then
+if [[ "$AUTHZ" == "1" && "${AUTHZ_COARSE_PEP:-0}" == "1" ]]; then
   LOG_FILES+=("$PDP_LOG")
   PDP_ARGS=(
     serve \
@@ -224,7 +247,7 @@ fi
 
 case "$HOST" in
   wasmtime)
-    if [[ "$MIDDLEWARE" == "1" ]]; then
+    if [[ "$EDGE_POLICY" == "1" ]]; then
       "$ROOT/scripts/audit-middleware-manifests.py" --wasmtime
     fi
     WASMTIME_ARGS=(
@@ -249,7 +272,7 @@ case "$HOST" in
     if [[ -n "${WASMTIME_IDLE_INSTANCE_TIMEOUT:-}" ]]; then
       WASMTIME_ARGS+=(--idle-instance-timeout "${WASMTIME_IDLE_INSTANCE_TIMEOUT}")
     fi
-    if [[ "$MIDDLEWARE" == "1" ]]; then
+    if [[ "$PORTABLE_COMPONENT" == "1" ]]; then
       WASMTIME_ARGS+=(
         -S inherit-network=y
         --env=WASI_MIDDLEWARE_CORS_ORIGINS="http://127.0.0.1:$PORT"
@@ -269,26 +292,67 @@ case "$HOST" in
       fi
     fi
     if [[ "$AUTHZ" == "1" ]]; then
+      if [[ "$TRUSTED_INGRESS" == "1" ]]; then
+        WASMTIME_ARGS+=(-S inherit-network=y)
+      fi
       WASMTIME_ARGS+=(
-        --env=WASI_AUTHZ_SERVICE_ID=leptos-wasi-counter
-        --env=WASI_AUTHZ_ENDPOINT=http://127.0.0.1:${CEDAR_PDP_PORT}/access/v1/evaluation
-        --env=WASI_AUTHZ_TIMEOUT_MS=2000
-        --env=WASI_AUTHZ_ALLOW_LOOPBACK_DEV=true
-        --env=WASI_AUTHZ_PDP_BEARER_TOKEN="$AUTHZ_PDP_TOKEN"
-        --env=WASI_AUTHZ_CEDAR_ENDPOINT=http://127.0.0.1:${CEDAR_PDP_PORT}/access/v1/evaluation
         --env=WASI_AUTHZ_SPICEDB_ENDPOINT="$SPICEDB_PDP_URL"
         --env=WASI_AUTHZ_SPICEDB_PDP_BEARER_TOKEN="$SPICEDB_PDP_TOKEN"
       )
+      if [[ "${AUTHZ_COARSE_PEP:-0}" == "1" ]]; then
+        WASMTIME_ARGS+=(
+          --env=WASI_AUTHZ_SERVICE_ID=leptos-wasi-counter
+          --env=WASI_AUTHZ_ENDPOINT=http://127.0.0.1:${CEDAR_PDP_PORT}/access/v1/evaluation
+          --env=WASI_AUTHZ_TIMEOUT_MS=2000
+          --env=WASI_AUTHZ_ALLOW_LOOPBACK_DEV=true
+          --env=WASI_AUTHZ_PDP_BEARER_TOKEN="$AUTHZ_PDP_TOKEN"
+        )
+      fi
+    fi
+    TARGET_PORT="$PORT"
+    if [[ "$TRUSTED_INGRESS" == "1" ]]; then
+      TARGET_PORT="$TERMINAL_PORT"
     fi
     WASMTIME_ARGS+=(
       --dir="$PWD/target/site::/site"
       --env=LEPTOS_OUTPUT_NAME=counter
       --env=LEPTOS_SITE_ROOT=/site
       --env=LEPTOS_SITE_PKG_DIR=pkg
-      --addr "127.0.0.1:$PORT"
+      --addr "127.0.0.1:$TARGET_PORT"
       "$SERVER_COMPONENT"
     )
-    "$WASMTIME_BIN" "${WASMTIME_ARGS[@]}" >"$APP_LOG" 2>&1 &
+    if [[ "$TRUSTED_INGRESS" == "1" ]]; then
+      LOG_FILES+=("$TERMINAL_LOG")
+      "$WASMTIME_BIN" "${WASMTIME_ARGS[@]}" >"$TERMINAL_LOG" 2>&1 &
+      TERMINAL_PID=$!
+      for _ in $(seq 1 100); do
+        if ! kill -0 "$TERMINAL_PID" 2>/dev/null; then
+          cat "$TERMINAL_LOG" >&2 || true
+          echo "trusted terminal exited before readiness" >&2
+          exit 1
+        fi
+        status="$(curl --silent --max-time 1 --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:$TERMINAL_PORT/" || true)"
+        [[ "$status" == "503" ]] && break
+        sleep 0.05
+      done
+      [[ "${status:-000}" == "503" ]] || {
+        echo "direct terminal did not fail closed without ingress context" >&2
+        exit 1
+      }
+      cargo build --locked --release \
+        --manifest-path "$ROOT/tests/trusted-ingress/Cargo.toml"
+      TRUSTED_INGRESS_LISTEN_ADDR="127.0.0.1:$PORT" \
+      TRUSTED_INGRESS_TERMINAL_ORIGIN="http://127.0.0.1:$TERMINAL_PORT" \
+      TRUSTED_INGRESS_AUTHN_BROKER_URL="http://127.0.0.1:$BROKER_PORT/authenticate" \
+      TRUSTED_INGRESS_SERVICE_ID=leptos-wasi-counter \
+      TRUSTED_INGRESS_AUDIENCES=api://leptos-wasi-counter \
+      TRUSTED_INGRESS_CORS_ORIGIN="http://127.0.0.1:$PORT" \
+      TRUSTED_INGRESS_POLICY_ENABLED="${TRUSTED_INGRESS_POLICY_ENABLED:-true}" \
+        "$ROOT/tests/trusted-ingress/target/release/leptos-wasi-trusted-ingress" \
+        >"$APP_LOG" 2>&1 &
+    else
+      "$WASMTIME_BIN" "${WASMTIME_ARGS[@]}" >"$APP_LOG" 2>&1 &
+    fi
     ;;
   *)
     echo "unsupported HOST: $HOST" >&2
@@ -311,7 +375,7 @@ for _ in $(seq 1 60); do
 done
 curl --fail --silent "http://127.0.0.1:$PORT/" >/dev/null
 
-ACTION_URL="http://127.0.0.1:$PORT/api/increment_count"
+ACTION_URL="http://127.0.0.1:$PORT$AUTHZ_FULL_CHAIN_BENCHMARK_PATH"
 if [[ "$AUTHZ_FULL_CHAIN_BENCHMARK" == "1" ]]; then
   [[ "$AUTHZ" == "1" ]] || {
     echo "the full-chain benchmark requires AUTHZ=1" >&2
@@ -323,18 +387,19 @@ if [[ "$AUTHZ_FULL_CHAIN_BENCHMARK" == "1" ]]; then
   BENCHMARK_WARMUP_REQUESTS="${AUTHZ_FULL_CHAIN_BENCHMARK_WARMUP_REQUESTS:-500}"
   BENCHMARK_CONCURRENCY="${AUTHZ_FULL_CHAIN_BENCHMARK_CONCURRENCY:-100}"
   BENCHMARK_RATE="${AUTHZ_FULL_CHAIN_BENCHMARK_RATE:-}"
+  BENCHMARK_METHOD="${AUTHZ_FULL_CHAIN_BENCHMARK_METHOD:-POST}"
   mkdir -p "$BENCHMARK_DIR"
   OHA_ARGS=(
     --http-version 1.1
     -t 10s
     --no-tui
     --output-format json
-    -m POST
-    -H "authorization: Bearer allow"
-    -H "content-type: application/x-www-form-urlencoded"
-    -d "current=0"
+    -m "$BENCHMARK_METHOD"
     "$ACTION_URL"
   )
+  if [[ "$BENCHMARK_METHOD" == "POST" ]]; then
+    OHA_ARGS=(-H "authorization: Bearer allow" -H "content-type: application/x-www-form-urlencoded" -d "current=0" "${OHA_ARGS[@]}")
+  fi
   if [[ -n "$BENCHMARK_RATE" ]]; then
     OHA_ARGS=(-q "$BENCHMARK_RATE" "${OHA_ARGS[@]}")
   fi
@@ -375,4 +440,4 @@ cd "$ROOT/tests/browser"
 if [[ ! -x node_modules/.bin/playwright ]]; then
   npm ci
 fi
-BASE_URL="http://127.0.0.1:$PORT" MIDDLEWARE="$MIDDLEWARE" AUTHZ="$AUTHZ" npm test
+BASE_URL="http://127.0.0.1:$PORT" MIDDLEWARE="$EDGE_POLICY" AUTHZ="$AUTHZ" npm test

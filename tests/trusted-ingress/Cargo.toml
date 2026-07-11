@@ -14,8 +14,8 @@ hyper = { version = "1.10", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "server-auto", "tokio"] }
 serde_json = "1.0"
 tokio = { version = "1.52", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
-wasi-http-metadata = { path = "../../../wasi-http-middleware/crates/metadata", version = "=0.2.0-alpha.2" }
-wasi-http-policy-core = { path = "../../../wasi-http-middleware/crates/policy-core", version = "=0.2.0-alpha.2" }
+wasi-http-metadata = { path = "../../../wasi-http-middleware/crates/metadata", version = "=0.2.0-alpha.3" }
+wasi-http-policy-core = { path = "../../../wasi-http-middleware/crates/policy-core", version = "=0.2.0-alpha.3" }
 
 [lints.rust]
 unsafe_code = "forbid"

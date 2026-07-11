@@ -1258,7 +1258,7 @@ dependencies = [
 
 [[package]]
 name = "leptos-wasi-authz"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "axum-core",
  "bytes",
@@ -2904,7 +2904,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-cedar"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "base64",
  "cedar-policy",
@@ -2916,7 +2916,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-client"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "bytes",
  "futures",
@@ -2929,7 +2929,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-contract"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -2938,7 +2938,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-http"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "http",
  "wasi-authz-client",
@@ -2949,7 +2949,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-http-authn"
-version = "0.2.0-alpha.2"
+version = "0.2.0-alpha.3"
 dependencies = [
  "http",
  "thiserror 2.0.18",
@@ -2959,7 +2959,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-http-metadata"
-version = "0.2.0-alpha.2"
+version = "0.2.0-alpha.3"
 dependencies = [
  "base64",
  "http",
@@ -2970,7 +2970,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-http-policy-core"
-version = "0.2.0-alpha.2"
+version = "0.2.0-alpha.3"
 dependencies = [
  "http",
  "serde",
