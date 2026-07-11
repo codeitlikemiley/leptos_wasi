@@ -66,6 +66,50 @@ test("component middleware preserves public split assets", async ({ request }) =
   expectTrustedHeadersStripped(loaderResponse.headers());
 });
 
+test("trusted ingress separates authentication and authorization profiles", async ({ request }) => {
+  test.skip(!authzEnabled, "requires the authorization fixture");
+  const invoke = async (path: string, credential?: string) => {
+    const headers: Record<string, string> = {
+      "content-type": "application/x-www-form-urlencoded",
+      "x-wasi-auth-context": "spoofed-browser-context-sentinel",
+    };
+    if (credential) headers.authorization = `Bearer ${credential}`;
+    return request.post(path, { headers, data: "current=0" });
+  };
+
+  const anonymous = await invoke("/api/authorize_authn");
+  expect(anonymous.status()).toBe(401);
+  expectTrustedHeadersStripped(anonymous.headers());
+
+  const authenticated = await invoke("/api/authorize_authn", "allow");
+  expect(authenticated.status()).toBe(200);
+  expectTrustedHeadersStripped(authenticated.headers());
+
+  const cedarDenied = await invoke("/api/authorize_cedar", "readonly");
+  expect(cedarDenied.status()).toBe(403);
+
+  const relationshipDenied = await invoke(
+    "/api/authorize_relationship",
+    "no-relation",
+  );
+  expect(relationshipDenied.status()).toBe(403);
+
+  const hybridDenied = await invoke("/api/authorize_hybrid_deny", "allow");
+  expect(hybridDenied.status()).toBe(403);
+
+  const hybridAllowed = await invoke("/api/increment_count", "allow");
+  expect(hybridAllowed.status()).toBe(200);
+  for (const response of [
+    cedarDenied,
+    relationshipDenied,
+    hybridDenied,
+    hybridAllowed,
+  ]) {
+    expect(response.headers()["x-request-id"]).toBeTruthy();
+    expectTrustedHeadersStripped(response.headers());
+  }
+});
+
 test("lazy split island loads and handles a server action", async ({ page }) => {
   const splitModules = new Set<string>();
   let splitRequested = false;

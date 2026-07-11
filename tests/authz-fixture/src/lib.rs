@@ -240,14 +240,11 @@ impl ServerFn for DeniedHybridIncrementCount {
 
     async fn run_body(self) -> Result<Self::Output, Self::Error> {
         let provider = authorization_provider()?;
-        let denied = Action::new("counter.denied").map_err(|_| {
-            configuration_error("invalid denied authorization action")
-        })?;
         authorize_current_hybrid_with_consistency(
             &provider.cedar,
             &provider.spicedb,
-            denied,
-            counter_resource()?,
+            increment_action()?,
+            classified_counter_resource("restricted")?,
             Consistency::FullyConsistent,
         )
         .await?;
@@ -399,11 +396,17 @@ fn unique_environment_value<'a>(
 }
 
 fn counter_resource() -> Result<Resource, ServerFnError> {
+    classified_counter_resource("internal")
+}
+
+fn classified_counter_resource(
+    classification: &str,
+) -> Result<Resource, ServerFnError> {
     let attribute = AttributeV1::new(
         AttributeNameV1::new("classification")
             .map_err(|_| configuration_error("invalid resource attribute"))?,
         AttributeValueV1::String(
-            AttributeStringV1::new("internal")
+            AttributeStringV1::new(classification)
                 .map_err(|_| configuration_error("invalid resource value"))?,
         ),
         AttributeProvenanceV1::ResourceStore,
