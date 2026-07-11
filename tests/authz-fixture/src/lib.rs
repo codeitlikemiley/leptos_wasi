@@ -12,19 +12,17 @@ use leptos::{config::get_configuration, prelude::use_context};
 use leptos_wasi::wasip3::prelude::{Handler, init_wasip3_spawner};
 use leptos_wasi_authz::{
     RequireAuthLayer, ResponseStatusSink, authorize_current,
-    authorize_current_hybrid, provide_auth_context,
-    provide_response_status_sink,
+    authorize_current_hybrid_with_consistency, authorize_current_relationship,
+    provide_auth_context, provide_response_status_sink,
 };
 use server_fn::{ServerFn, ServerFnError};
-use wasi_authz_client::{
-    AuthzenClient, AuthzenEndpoint, BearerAuthTransport,
-    wasip3::Wasip3Transport,
-};
 use wasi_authz_cedar::CedarProvider;
+use wasi_authz_client::{BearerAuthTransport, wasip3::Wasip3Transport};
 use wasi_authz_contract::{
     Action, AttributeNameV1, AttributeProvenanceV1, AttributeStringV1,
-    AttributeV1, AttributeValueV1, AttributesV1, Resource,
+    AttributeV1, AttributeValueV1, AttributesV1, Consistency, Resource,
 };
+use wasi_authz_spicedb::{PermissionMap, SpiceDbEndpoint, SpiceDbProvider};
 use wasi_http_authn::{
     AuthenticationConfigError, TrustedIngressConfig, accept_trusted_ingress,
 };
@@ -33,16 +31,15 @@ use wasip3::http::types::{ErrorCode, Request, Response};
 const SERVICE_ID: &str = "leptos-wasi-counter";
 const EXPECTED_AUDIENCE: &str = "api://leptos-wasi-counter";
 const SPICEDB_ENDPOINT_ENV: &str = "WASI_AUTHZ_SPICEDB_ENDPOINT";
-const SPICEDB_BEARER_ENV: &str = "WASI_AUTHZ_SPICEDB_PDP_BEARER_TOKEN";
-const CEDAR_POLICY: &str = include_str!(
-    "../../../../wasi-authz/fixtures/cedar/http_policy.cedar"
-);
-const CEDAR_SCHEMA: &str = include_str!(
-    "../../../../wasi-authz/fixtures/cedar/http_schema.json"
-);
-const CEDAR_ENTITIES: &str = include_str!(
-    "../../../../wasi-authz/fixtures/cedar/http_entities.json"
-);
+const SPICEDB_BEARER_ENV: &str = "WASI_AUTHZ_SPICEDB_BEARER_TOKEN";
+const SPICEDB_POLICY_REVISION_ENV: &str = "WASI_AUTHZ_SPICEDB_POLICY_REVISION";
+const SPICEDB_MODEL_VERSION_ENV: &str = "WASI_AUTHZ_SPICEDB_MODEL_VERSION";
+const CEDAR_POLICY: &str =
+    include_str!("../../../../wasi-authz/fixtures/cedar/http_policy.cedar");
+const CEDAR_SCHEMA: &str =
+    include_str!("../../../../wasi-authz/fixtures/cedar/http_schema.json");
+const CEDAR_ENTITIES: &str =
+    include_str!("../../../../wasi-authz/fixtures/cedar/http_entities.json");
 
 type AxumRequest = http::Request<axum_core::body::Body>;
 type AxumResponse = http::Response<axum_core::body::Body>;
@@ -56,11 +53,12 @@ static TRUSTED_INGRESS_CONFIG: OnceLock<
     Result<TrustedIngressConfig, AuthenticationConfigError>,
 > = OnceLock::new();
 
-type AuthorizationClient = AuthzenClient<BearerAuthTransport<Wasip3Transport>>;
+type RelationshipProvider =
+    SpiceDbProvider<BearerAuthTransport<Wasip3Transport>>;
 
 struct AuthorizationProviders {
     cedar: CedarProvider,
-    spicedb: AuthorizationClient,
+    spicedb: RelationshipProvider,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
@@ -69,18 +67,14 @@ struct ProtectedIncrementCount {
 }
 
 fn authorization_middlewares()
--> Vec<Arc<dyn server_fn::middleware::Layer<AxumRequest, AxumResponse>>>
-{
+-> Vec<Arc<dyn server_fn::middleware::Layer<AxumRequest, AxumResponse>>> {
     AUTHORIZATION_LAYER
         .get()
         .cloned()
         .map(|layer| {
             Arc::new(layer)
                 as Arc<
-                    dyn server_fn::middleware::Layer<
-                            AxumRequest,
-                            AxumResponse,
-                        >,
+                    dyn server_fn::middleware::Layer<AxumRequest, AxumResponse>,
                 >
         })
         .into_iter()
@@ -114,11 +108,12 @@ impl ServerFn for ProtectedIncrementCount {
             .ok_or_else(|| {
                 configuration_error("authorization provider is unavailable")
             })?;
-        authorize_current_hybrid(
+        authorize_current_hybrid_with_consistency(
             &provider.cedar,
             &provider.spicedb,
             action,
             resource,
+            Consistency::FullyConsistent,
         )
         .await?;
         self.current.checked_add(1).ok_or_else(|| {
@@ -185,10 +180,49 @@ impl ServerFn for RelationshipIncrementCount {
 
     async fn run_body(self) -> Result<Self::Output, Self::Error> {
         let provider = authorization_provider()?;
-        authorize_current(
+        authorize_current_relationship(
             &provider.spicedb,
             increment_action()?,
             counter_resource()?,
+            Consistency::FullyConsistent,
+        )
+        .await?;
+        checked_increment(self.current)
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+struct DeniedHybridIncrementCount {
+    current: u32,
+}
+
+impl ServerFn for DeniedHybridIncrementCount {
+    const PATH: &'static str = "/api/authorize_hybrid_deny";
+    type Client = <IncrementCount as ServerFn>::Client;
+    type Server = <IncrementCount as ServerFn>::Server;
+    type Protocol = <IncrementCount as ServerFn>::Protocol;
+    type Output = u32;
+    type Error = ServerFnError;
+    type InputStreamError = ServerFnError;
+    type OutputStreamError = ServerFnError;
+
+    fn middlewares()
+    -> Vec<Arc<dyn server_fn::middleware::Layer<AxumRequest, AxumResponse>>>
+    {
+        authorization_middlewares()
+    }
+
+    async fn run_body(self) -> Result<Self::Output, Self::Error> {
+        let provider = authorization_provider()?;
+        let denied = Action::new("counter.denied").map_err(|_| {
+            configuration_error("invalid denied authorization action")
+        })?;
+        authorize_current_hybrid_with_consistency(
+            &provider.cedar,
+            &provider.spicedb,
+            denied,
+            counter_resource()?,
+            Consistency::FullyConsistent,
         )
         .await?;
         checked_increment(self.current)
@@ -196,8 +230,7 @@ impl ServerFn for RelationshipIncrementCount {
 }
 
 fn authorization_provider()
--> Result<&'static AuthorizationProviders, ServerFnError>
-{
+-> Result<&'static AuthorizationProviders, ServerFnError> {
     AUTHORIZATION_PROVIDER
         .get()
         .and_then(|provider| provider.as_ref().ok())
@@ -231,7 +264,9 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
         let leptos_options = conf.leptos_options;
         let mut request = wasip3::http_compat::http_from_wasi_request(request)?;
         let trusted_ingress = TRUSTED_INGRESS_CONFIG
-            .get_or_init(|| TrustedIngressConfig::new(SERVICE_ID, [EXPECTED_AUDIENCE]))
+            .get_or_init(|| {
+                TrustedIngressConfig::new(SERVICE_ID, [EXPECTED_AUDIENCE])
+            })
             .as_ref()
             .map_err(internal_error)?;
         if accept_trusted_ingress(trusted_ingress, &mut request).is_err() {
@@ -246,6 +281,7 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
             .with_server_fn::<ProtectedIncrementCount>()
             .with_server_fn::<CedarIncrementCount>()
             .with_server_fn::<RelationshipIncrementCount>()
+            .with_server_fn::<DeniedHybridIncrementCount>()
             .generate_routes(App)
             .map_err(internal_error)?
             .handle_with_context(
@@ -291,23 +327,33 @@ fn load_authorization_provider()
         "cedar-4.11.2",
     )
     .map_err(|_| AuthorizationInitializationError)?;
-    let spicedb =
-        load_client(&environment, SPICEDB_ENDPOINT_ENV, SPICEDB_BEARER_ENV)?;
+    let spicedb = load_spicedb_provider(&environment)?;
     Ok(AuthorizationProviders { cedar, spicedb })
 }
 
-fn load_client(
+fn load_spicedb_provider(
     environment: &[(String, String)],
-    endpoint_key: &str,
-    bearer_key: &str,
-) -> Result<AuthorizationClient, AuthorizationInitializationError> {
-    let endpoint = unique_environment_value(environment, endpoint_key)?;
-    let bearer = unique_environment_value(environment, bearer_key)?;
-    let endpoint = AuthzenEndpoint::new_loopback_for_dev(endpoint)
+) -> Result<RelationshipProvider, AuthorizationInitializationError> {
+    let endpoint = unique_environment_value(environment, SPICEDB_ENDPOINT_ENV)?;
+    let bearer = unique_environment_value(environment, SPICEDB_BEARER_ENV)?;
+    let policy_revision =
+        unique_environment_value(environment, SPICEDB_POLICY_REVISION_ENV)?;
+    let model_version =
+        unique_environment_value(environment, SPICEDB_MODEL_VERSION_ENV)?;
+    let endpoint = SpiceDbEndpoint::new_loopback_for_dev(endpoint)
         .map_err(|_| AuthorizationInitializationError)?;
     let transport = BearerAuthTransport::new(Wasip3Transport::new(), bearer)
         .map_err(|_| AuthorizationInitializationError)?;
-    Ok(AuthzenClient::new(endpoint, transport))
+    let permissions = PermissionMap::new([("counter.increment", "increment")])
+        .map_err(|_| AuthorizationInitializationError)?;
+    SpiceDbProvider::new(
+        endpoint,
+        transport,
+        permissions,
+        policy_revision,
+        model_version,
+    )
+    .map_err(|_| AuthorizationInitializationError)
 }
 
 fn unique_environment_value<'a>(

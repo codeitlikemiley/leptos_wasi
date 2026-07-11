@@ -1292,6 +1292,7 @@ dependencies = [
  "wasi-authz-cedar",
  "wasi-authz-client",
  "wasi-authz-contract",
+ "wasi-authz-spicedb",
  "wasi-http-authn",
  "wasip3",
 ]
@@ -2945,6 +2946,19 @@ dependencies = [
  "wasi-authz-contract",
  "wasi-http-metadata",
  "wasi-http-policy-core",
+]
+
+[[package]]
+name = "wasi-authz-spicedb"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "base64",
+ "http",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "wasi-authz-client",
+ "wasi-authz-contract",
 ]
 
 [[package]]

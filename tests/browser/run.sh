@@ -32,6 +32,10 @@ EDGE_POLICY=$((PORTABLE_COMPONENT || TRUSTED_INGRESS))
 AUTHZ_PDP_TOKEN="${AUTHZ_PDP_TOKEN:-leptos-wasi-browser-pdp-token-do-not-log}"
 SPICEDB_PDP_URL="${WASI_AUTHZ_TEST_PDP_URL:-}"
 SPICEDB_PDP_TOKEN="${WASI_AUTHZ_TEST_PDP_BEARER_TOKEN:-}"
+SPICEDB_URL="${WASI_AUTHZ_TEST_SPICEDB_URL:-}"
+SPICEDB_TOKEN="${WASI_AUTHZ_TEST_SPICEDB_TOKEN:-}"
+SPICEDB_POLICY_REVISION="${WASI_AUTHZ_TEST_SPICEDB_POLICY_REVISION:-}"
+SPICEDB_MODEL_VERSION="${WASI_AUTHZ_TEST_SPICEDB_MODEL_VERSION:-}"
 AUTHZ_FULL_CHAIN_BENCHMARK="${AUTHZ_FULL_CHAIN_BENCHMARK:-0}"
 AUTHZ_FULL_CHAIN_BENCHMARK_ONLY="${AUTHZ_FULL_CHAIN_BENCHMARK_ONLY:-0}"
 AUTHZ_FULL_CHAIN_BENCHMARK_REQUESTS="${AUTHZ_FULL_CHAIN_BENCHMARK_REQUESTS:-5000}"
@@ -46,7 +50,7 @@ if [[ "$AUTHZ" == "1" && "$EDGE_POLICY" != "1" ]]; then
   echo "AUTHZ=1 requires portable component or trusted-ingress authentication" >&2
   exit 2
 fi
-if [[ "$AUTHZ" == "1" && ( -z "$SPICEDB_PDP_URL" || -z "$SPICEDB_PDP_TOKEN" ) ]]; then
+if [[ "$AUTHZ" == "1" && ( -z "$SPICEDB_URL" || -z "$SPICEDB_TOKEN" || -z "$SPICEDB_POLICY_REVISION" || -z "$SPICEDB_MODEL_VERSION" ) ]]; then
   echo "AUTHZ=1 must run through scripts/run-authz-browser.sh" >&2
   exit 2
 fi
@@ -55,10 +59,10 @@ if [[ "$AUTHZ" == "1" ]]; then
     echo "AUTHZ=1 browser runs are test-only; use scripts/run-authz-browser.sh" >&2
     exit 2
   }
-  case "$SPICEDB_PDP_URL" in
+  case "$SPICEDB_URL" in
     http://127.0.0.1:*|http://localhost:*) ;;
     *)
-      echo "AUTHZ=1 browser runs require a loopback SpiceDB test PDP" >&2
+      echo "AUTHZ=1 browser runs require a loopback SpiceDB endpoint" >&2
       exit 2
       ;;
   esac
@@ -66,8 +70,8 @@ if [[ "$AUTHZ" == "1" ]]; then
     echo "AUTHZ=1 browser runs refuse a non-fixture Cedar PDP credential" >&2
     exit 2
   }
-  [[ "$SPICEDB_PDP_TOKEN" == pep-component-live-secret-* ]] || {
-    echo "AUTHZ=1 browser runs refuse a non-fixture SpiceDB PDP credential" >&2
+  [[ "$SPICEDB_TOKEN" == spicedb-component-live-secret-* ]] || {
+    echo "AUTHZ=1 browser runs refuse a non-fixture SpiceDB credential" >&2
     exit 2
   }
 fi
@@ -296,8 +300,10 @@ case "$HOST" in
         WASMTIME_ARGS+=(-S inherit-network=y)
       fi
       WASMTIME_ARGS+=(
-        --env=WASI_AUTHZ_SPICEDB_ENDPOINT="$SPICEDB_PDP_URL"
-        --env=WASI_AUTHZ_SPICEDB_PDP_BEARER_TOKEN="$SPICEDB_PDP_TOKEN"
+        --env=WASI_AUTHZ_SPICEDB_ENDPOINT="$SPICEDB_URL"
+        --env=WASI_AUTHZ_SPICEDB_BEARER_TOKEN="$SPICEDB_TOKEN"
+        --env=WASI_AUTHZ_SPICEDB_POLICY_REVISION="$SPICEDB_POLICY_REVISION"
+        --env=WASI_AUTHZ_SPICEDB_MODEL_VERSION="$SPICEDB_MODEL_VERSION"
       )
       if [[ "${AUTHZ_COARSE_PEP:-0}" == "1" ]]; then
         WASMTIME_ARGS+=(

@@ -1,6 +1,6 @@
 schema = 2
 artifact_set_file = "tests/middleware/artifact-sets.toml"
-artifact_set_sha256 = "ed7a6a04ba294385c11dbbe2e9778d76e00c6ad7e5c72129e9a0b545a0c43a6c"
+artifact_set_sha256 = "303d8c08d7003182cd818b285239bdece793d7904fccf4f07016440c56957e1a"
 
 [support_allowlist]
 spin = [
