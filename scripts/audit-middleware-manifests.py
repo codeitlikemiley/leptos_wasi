@@ -83,6 +83,13 @@ WASMTIME_DEPLOYMENT_CONTRACTS = {
         "listener_count": 1,
         "private_terminal": True,
         "edge_policy": "managed-private-ingress",
+        "ingress_manifest": "tests/trusted-ingress/Cargo.toml",
+        "network_descriptor": "tests/trusted-ingress/compose.yaml",
+        "public_listener": "ingress",
+        "terminal_listener": "private",
+        "forwards_authorization": False,
+        "allows_trusted_response_headers": False,
+        "portable_fallback": False,
         "middleware_profile": "trusted_ingress_authz",
         "middleware": [],
         "artifact_sets": ["authorization"],
@@ -259,6 +266,13 @@ def audit_wasmtime_deployment_contracts(profiles: list[dict]) -> None:
                 raise AssertionError(
                     f"Wasmtime deployment profile {name} drifted at {key}"
                 )
+        if actual.get("support") == "production":
+            for descriptor in ("ingress_manifest", "network_descriptor"):
+                path = actual.get(descriptor)
+                if not isinstance(path, str) or not (ROOT / path).is_file():
+                    raise AssertionError(
+                        f"production profile {name} lacks concrete {descriptor}"
+                    )
 
 
 def audit_deployment_policy(lock: dict) -> None:
@@ -559,14 +573,14 @@ def main() -> int:
     if lock["schema"] != 2:
         raise AssertionError("middleware compatibility lock schema must be 2")
     middleware_lock = lock["middleware"]
-    if middleware_lock["version"] != "0.2.0-alpha.2":
+    if middleware_lock["version"] != "0.2.0-alpha.3":
         raise AssertionError("middleware integration must target the breaking 0.2 alpha")
     for key in ("baseline_revision", "source_revision"):
         if re.fullmatch(r"[0-9a-f]{40}", middleware_lock[key]) is None:
             raise AssertionError(f"middleware {key} must be a full Git revision")
     if middleware_lock["baseline_revision"] == middleware_lock["source_revision"]:
         raise AssertionError("middleware source revision must advance beyond its baseline")
-    if authorization_lock["version"] != "0.1.0-alpha.2":
+    if authorization_lock["version"] != "0.1.0-alpha.3":
         raise AssertionError("authorization integration must target its first alpha")
     for key in ("baseline_revision", "source_revision"):
         if re.fullmatch(r"[0-9a-f]{40}", authorization_lock[key]) is None:

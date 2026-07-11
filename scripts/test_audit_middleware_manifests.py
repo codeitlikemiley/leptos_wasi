@@ -140,6 +140,34 @@ class DeploymentPolicyNegativeTests(unittest.TestCase):
             ).__setitem__("authentication_mode", "portable_component")
         )
 
+    def test_production_ingress_omission_is_rejected(self) -> None:
+        self.assert_policy_rejected(
+            lambda policy: self.profile(
+                policy, "wasmtime-trusted-ingress-authz"
+            ).pop("ingress_manifest")
+        )
+
+    def test_production_terminal_public_listener_is_rejected(self) -> None:
+        self.assert_policy_rejected(
+            lambda policy: self.profile(
+                policy, "wasmtime-trusted-ingress-authz"
+            ).__setitem__("terminal_listener", "public")
+        )
+
+    def test_authorization_forwarding_is_rejected(self) -> None:
+        self.assert_policy_rejected(
+            lambda policy: self.profile(
+                policy, "wasmtime-trusted-ingress-authz"
+            ).__setitem__("forwards_authorization", True)
+        )
+
+    def test_trusted_response_metadata_is_rejected(self) -> None:
+        self.assert_policy_rejected(
+            lambda policy: self.profile(
+                policy, "wasmtime-trusted-ingress-authz"
+            ).__setitem__("allows_trusted_response_headers", True)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

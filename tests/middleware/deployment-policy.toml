@@ -1,6 +1,6 @@
 schema = 2
 artifact_set_file = "tests/middleware/artifact-sets.toml"
-artifact_set_sha256 = "fd1bdd828d0c15e2970f08ddedb9b6afaaeca800b1da8326db0bc9643b024446"
+artifact_set_sha256 = "ed7a6a04ba294385c11dbbe2e9778d76e00c6ad7e5c72129e9a0b545a0c43a6c"
 
 [support_allowlist]
 spin = [
@@ -163,6 +163,13 @@ output_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_
 listener_count = 1
 private_terminal = true
 edge_policy = "managed-private-ingress"
+ingress_manifest = "tests/trusted-ingress/Cargo.toml"
+network_descriptor = "tests/trusted-ingress/compose.yaml"
+public_listener = "ingress"
+terminal_listener = "private"
+forwards_authorization = false
+allows_trusted_response_headers = false
+portable_fallback = false
 middleware_profile = "trusted_ingress_authz"
 middleware = []
 artifact_sets = ["authorization"]
