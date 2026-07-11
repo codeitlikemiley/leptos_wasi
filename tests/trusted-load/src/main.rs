@@ -114,6 +114,7 @@ struct ReportConfiguration {
     scenario: String,
     mode: LoadMode,
     duration_seconds: f64,
+    elapsed_seconds: f64,
     concurrency: usize,
     requests: Option<u64>,
     rate: Option<u64>,
@@ -220,12 +221,13 @@ async fn main() -> Result<()> {
         .build(HttpConnector::new());
 
     run_load(&config, &scenario, client, Arc::clone(&metrics)).await?;
+    let measured_elapsed = started.elapsed();
     sampling.store(false, Ordering::Release);
     if let Some(sampler) = sampler {
         sampler.await.context("process sampler failed")??;
     }
 
-    let report = build_report(&config, metrics, processes)?;
+    let report = build_report(&config, metrics, processes, measured_elapsed)?;
     if let Some(parent) = config.output.parent() {
         fs::create_dir_all(parent)
             .context("failed to create report directory")?;
@@ -725,6 +727,7 @@ fn build_report(
     config: &Config,
     metrics: Arc<Mutex<Metrics>>,
     processes: Arc<Mutex<BTreeMap<String, Vec<ProcessSample>>>>,
+    elapsed: Duration,
 ) -> Result<Report> {
     let metrics = Arc::try_unwrap(metrics)
         .map_err(|_| anyhow::anyhow!("load metrics still referenced"))?
@@ -757,6 +760,7 @@ fn build_report(
             scenario: config.scenario_path.display().to_string(),
             mode: config.mode,
             duration_seconds: config.duration.as_secs_f64(),
+            elapsed_seconds: elapsed.as_secs_f64(),
             concurrency: config.concurrency,
             requests: config.requests,
             rate: config.rate,
@@ -880,12 +884,12 @@ fn summarize(histogram: &Histogram<u64>) -> HistogramSummary {
 
 fn classify_transport(error: &str) -> &'static str {
     let lower = error.to_ascii_lowercase();
-    if lower.contains("connect") {
+    if lower.contains("reset") {
+        "reset"
+    } else if lower.contains("connect") {
         "connect"
     } else if lower.contains("incomplete") {
         "incomplete_headers"
-    } else if lower.contains("reset") {
-        "reset"
     } else if lower.contains("cancel") {
         "canceled"
     } else {
@@ -926,7 +930,7 @@ mod tests {
 
     #[test]
     fn transport_classification_should_not_expose_error_text() {
-        assert_eq!(classify_transport("connection reset by peer"), "connect");
+        assert_eq!(classify_transport("connection reset by peer"), "reset");
     }
 
     fn fixture_route(name: &str, weight: u64) -> Route {

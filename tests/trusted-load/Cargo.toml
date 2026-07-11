@@ -5,6 +5,10 @@ edition = "2024"
 rust-version = "1.93.0"
 publish = false
 
+[[bin]]
+name = "trusted-load"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0.103"
 bytes = "1.12.1"

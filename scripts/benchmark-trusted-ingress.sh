@@ -4,27 +4,49 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RESULTS="${RESULTS:-$ROOT/target/trusted-ingress-benchmark}"
 REPETITIONS="${REPETITIONS:-5}"
+TERMINAL_REPLICAS="${TERMINAL_REPLICAS:-1}"
 mkdir -p "$RESULTS"
 
 run_profile() {
-  local profile="$1" path="$2" policy="$3" method="$4"
-  local repetition
-  for repetition in $(seq 1 "$REPETITIONS"); do
-    AUTHENTICATION_MODE=trusted_ingress AUTHZ=1 MIDDLEWARE=0 HOST=wasmtime \
-      TRUSTED_INGRESS_POLICY_ENABLED="$policy" \
-      AUTHZ_FULL_CHAIN_BENCHMARK=1 AUTHZ_FULL_CHAIN_BENCHMARK_ONLY=1 \
-      AUTHZ_FULL_CHAIN_BENCHMARK_PATH="$path" \
-      AUTHZ_FULL_CHAIN_BENCHMARK_METHOD="$method" \
-      AUTHZ_FULL_CHAIN_BENCHMARK_DIR="$RESULTS/$profile/$repetition" \
-      "$ROOT/scripts/run-trusted-ingress-browser.sh"
-  done
+  local profile="$1" scenario="$2" ingress_profile="$3" repetition="$4"
+  AUTHENTICATION_MODE=trusted_ingress AUTHZ=1 MIDDLEWARE=0 HOST=wasmtime \
+    TERMINAL_REPLICAS="$TERMINAL_REPLICAS" \
+    TRUSTED_INGRESS_PROFILE="$ingress_profile" \
+    AUTHZ_FULL_CHAIN_BENCHMARK=1 AUTHZ_FULL_CHAIN_BENCHMARK_ONLY=1 \
+    AUTHZ_FULL_CHAIN_SCENARIO="$ROOT/tests/trusted-ingress/scenarios/$scenario.toml" \
+    AUTHZ_FULL_CHAIN_BENCHMARK_DIR="$RESULTS/$profile/$repetition" \
+    "$ROOT/scripts/run-trusted-ingress-browser.sh"
 }
 
-run_profile proxy-baseline / false GET
-run_profile edge-policy / true GET
-run_profile anonymous-ssr / true GET
-run_profile cedar /api/authorize_cedar true POST
-run_profile spicedb /api/authorize_relationship true POST
-run_profile hybrid /api/increment_count true POST
+for repetition in $(seq 1 "$REPETITIONS"); do
+  while IFS= read -r profile; do
+    case "$profile" in
+      edge-pair)
+        run_profile proxy-baseline proxy-baseline proxy-baseline "$repetition"
+        run_profile edge-anonymous edge-anonymous edge-anonymous "$repetition"
+        ;;
+      authn-only)
+        run_profile authn-only authn-only edge-authenticated "$repetition"
+        ;;
+      cedar)
+        run_profile cedar cedar edge-authenticated "$repetition"
+        ;;
+      relationship-direct)
+        run_profile relationship-direct relationship-direct edge-authenticated "$repetition"
+        ;;
+      hybrid-direct)
+        run_profile hybrid-direct hybrid-direct edge-authenticated "$repetition"
+        ;;
+      hybrid-deny)
+        run_profile hybrid-deny hybrid-deny edge-authenticated "$repetition"
+        ;;
+    esac
+  done < <(python3 -c '
+import random
+profiles = ["edge-pair", "authn-only", "cedar", "relationship-direct", "hybrid-direct", "hybrid-deny"]
+random.shuffle(profiles)
+print("\n".join(profiles))
+')
+done
 
 python3 "$ROOT/scripts/summarize-trusted-ingress-benchmark.py" "$RESULTS"

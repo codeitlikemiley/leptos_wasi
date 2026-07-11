@@ -1,0 +1,11 @@
+[[route]]
+name = "hybrid-direct"
+weight = 1
+method = "POST"
+path = "/api/increment_count"
+credential = "allow"
+body = "current=0"
+expected_status = [200]
+
+[route.headers]
+content-type = "application/x-www-form-urlencoded"

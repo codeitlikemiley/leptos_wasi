@@ -129,6 +129,32 @@ struct CedarIncrementCount {
     current: u32,
 }
 
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+struct AuthenticatedIncrementCount {
+    current: u32,
+}
+
+impl ServerFn for AuthenticatedIncrementCount {
+    const PATH: &'static str = "/api/authorize_authn";
+    type Client = <IncrementCount as ServerFn>::Client;
+    type Server = <IncrementCount as ServerFn>::Server;
+    type Protocol = <IncrementCount as ServerFn>::Protocol;
+    type Output = u32;
+    type Error = ServerFnError;
+    type InputStreamError = ServerFnError;
+    type OutputStreamError = ServerFnError;
+
+    fn middlewares()
+    -> Vec<Arc<dyn server_fn::middleware::Layer<AxumRequest, AxumResponse>>>
+    {
+        authorization_middlewares()
+    }
+
+    async fn run_body(self) -> Result<Self::Output, Self::Error> {
+        checked_increment(self.current)
+    }
+}
+
 impl ServerFn for CedarIncrementCount {
     const PATH: &'static str = "/api/authorize_cedar";
     type Client = <IncrementCount as ServerFn>::Client;
@@ -279,6 +305,7 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
             .static_files_handler("/pkg", serve_static_files)
             .map_err(internal_error)?
             .with_server_fn::<ProtectedIncrementCount>()
+            .with_server_fn::<AuthenticatedIncrementCount>()
             .with_server_fn::<CedarIncrementCount>()
             .with_server_fn::<RelationshipIncrementCount>()
             .with_server_fn::<DeniedHybridIncrementCount>()

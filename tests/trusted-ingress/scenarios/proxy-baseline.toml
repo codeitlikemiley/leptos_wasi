@@ -1,0 +1,6 @@
+[[route]]
+name = "proxy-baseline"
+weight = 1
+method = "GET"
+path = "/"
+expected_status = [200]

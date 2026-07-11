@@ -42,6 +42,7 @@ AUTHZ_FULL_CHAIN_BENCHMARK_REQUESTS="${AUTHZ_FULL_CHAIN_BENCHMARK_REQUESTS:-5000
 AUTHZ_FULL_CHAIN_SOAK="${AUTHZ_FULL_CHAIN_SOAK:-0}"
 AUTHZ_FULL_CHAIN_SOAK_DURATION="${AUTHZ_FULL_CHAIN_SOAK_DURATION:-600}"
 AUTHZ_FULL_CHAIN_BENCHMARK_PATH="${AUTHZ_FULL_CHAIN_BENCHMARK_PATH:-/api/increment_count}"
+AUTHZ_FULL_CHAIN_SCENARIO="${AUTHZ_FULL_CHAIN_SCENARIO:-$ROOT/tests/trusted-ingress/scenarios/hybrid-direct.toml}"
 # Keep the normal fixture admission bound explicit, while allowing dedicated
 # diagnostics to select another validated per-instance limit.
 AUTHN_MAX_IN_FLIGHT="${AUTHN_MAX_IN_FLIGHT:-128}"
@@ -149,30 +150,39 @@ WASMTIME_BIN="$(resolve_middleware_tool WASMTIME_BIN wasmtime "$(middleware_lock
 BROKER_PORT="${BROKER_PORT:-$(available_port)}"
 CEDAR_PDP_PORT="${CEDAR_PDP_PORT:-$(available_port)}"
 TERMINAL_PORT="${TERMINAL_PORT:-$(available_port)}"
+TERMINAL_REPLICAS="${TERMINAL_REPLICAS:-1}"
+[[ "$TERMINAL_REPLICAS" =~ ^[1-4]$ ]] || {
+  echo "TERMINAL_REPLICAS must be between 1 and 4" >&2
+  exit 2
+}
+DIAGNOSTICS_PORT="${DIAGNOSTICS_PORT:-$(available_port)}"
+PROCESS_FILE="${TRUSTED_TOPOLOGY_PROCESS_FILE:-$ROOT/target/trusted-topology/processes.json}"
 BROKER_PID=""
 PDP_PID=""
 SERVER_PID=""
-TERMINAL_PID=""
+TERMINAL_PIDS=()
+TERMINAL_PORTS=()
+TERMINAL_LOGS=()
 APP_LOG="$ROOT/tests/browser/app.log"
-TERMINAL_LOG="$ROOT/tests/browser/terminal.log"
 PDP_LOG="$ROOT/tests/browser/cedar-pdp.log"
 BROKER_LOG="$ROOT/tests/browser/authn-broker.log"
-rm -f "$APP_LOG" "$TERMINAL_LOG" "$PDP_LOG" "$BROKER_LOG"
+rm -f "$APP_LOG" "$ROOT/tests/browser/terminal-"*.log "$PDP_LOG" "$BROKER_LOG"
 LOG_FILES=("$APP_LOG")
 cleanup() {
   status=$?
   trap - EXIT
   [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null || true
-  [[ -n "$TERMINAL_PID" ]] && kill "$TERMINAL_PID" 2>/dev/null || true
+  for pid in "${TERMINAL_PIDS[@]}"; do kill "$pid" 2>/dev/null || true; done
   [[ -n "$BROKER_PID" ]] && kill "$BROKER_PID" 2>/dev/null || true
   [[ -n "$PDP_PID" ]] && kill "$PDP_PID" 2>/dev/null || true
   [[ -n "$SERVER_PID" ]] && wait "$SERVER_PID" 2>/dev/null || true
-  [[ -n "$TERMINAL_PID" ]] && wait "$TERMINAL_PID" 2>/dev/null || true
+  for pid in "${TERMINAL_PIDS[@]}"; do wait "$pid" 2>/dev/null || true; done
   [[ -n "$BROKER_PID" ]] && wait "$BROKER_PID" 2>/dev/null || true
   [[ -n "$PDP_PID" ]] && wait "$PDP_PID" 2>/dev/null || true
   for sentinel in \
     "$AUTHZ_PDP_TOKEN" \
     "$SPICEDB_PDP_TOKEN" \
+    "$SPICEDB_TOKEN" \
     "Bearer allow" \
     "Bearer readonly" \
     "Bearer lowacr" \
@@ -201,6 +211,15 @@ if [[ "$EDGE_POLICY" == "1" ]]; then
     -S http=y \
     --addr "127.0.0.1:${BROKER_PORT}"
   )
+  if [[ -n "${BROKER_MAX_INSTANCE_REUSE_COUNT:-}" ]]; then
+    BROKER_ARGS+=(--max-instance-reuse-count "$BROKER_MAX_INSTANCE_REUSE_COUNT")
+  fi
+  if [[ -n "${BROKER_MAX_INSTANCE_CONCURRENT_REUSE_COUNT:-}" ]]; then
+    BROKER_ARGS+=(--max-instance-concurrent-reuse-count "$BROKER_MAX_INSTANCE_CONCURRENT_REUSE_COUNT")
+  fi
+  if [[ -n "${BROKER_IDLE_INSTANCE_TIMEOUT:-}" ]]; then
+    BROKER_ARGS+=(--idle-instance-timeout "$BROKER_IDLE_INSTANCE_TIMEOUT")
+  fi
   if [[ "${MIDDLEWARE_DIAGNOSTICS:-0}" == "1" ]]; then
     BROKER_ARGS+=(--env=WASI_MIDDLEWARE_DIAGNOSTICS=true)
   fi
@@ -261,20 +280,23 @@ case "$HOST" in
       -S cli=y
       -S http=y
     )
-    if [[ -n "${WASMTIME_MAX_INSTANCE_REUSE_COUNT:-}" ]]; then
+    TERMINAL_REUSE_COUNT="${TERMINAL_MAX_INSTANCE_REUSE_COUNT:-${WASMTIME_MAX_INSTANCE_REUSE_COUNT:-}}"
+    TERMINAL_CONCURRENT_REUSE_COUNT="${TERMINAL_MAX_INSTANCE_CONCURRENT_REUSE_COUNT:-${WASMTIME_MAX_INSTANCE_CONCURRENT_REUSE_COUNT:-}}"
+    TERMINAL_IDLE_TIMEOUT="${TERMINAL_IDLE_INSTANCE_TIMEOUT:-${WASMTIME_IDLE_INSTANCE_TIMEOUT:-}}"
+    if [[ -n "$TERMINAL_REUSE_COUNT" ]]; then
       WASMTIME_ARGS+=(
         --max-instance-reuse-count
-        "${WASMTIME_MAX_INSTANCE_REUSE_COUNT}"
+        "$TERMINAL_REUSE_COUNT"
       )
     fi
-    if [[ -n "${WASMTIME_MAX_INSTANCE_CONCURRENT_REUSE_COUNT:-}" ]]; then
+    if [[ -n "$TERMINAL_CONCURRENT_REUSE_COUNT" ]]; then
       WASMTIME_ARGS+=(
         --max-instance-concurrent-reuse-count
-        "${WASMTIME_MAX_INSTANCE_CONCURRENT_REUSE_COUNT}"
+        "$TERMINAL_CONCURRENT_REUSE_COUNT"
       )
     fi
-    if [[ -n "${WASMTIME_IDLE_INSTANCE_TIMEOUT:-}" ]]; then
-      WASMTIME_ARGS+=(--idle-instance-timeout "${WASMTIME_IDLE_INSTANCE_TIMEOUT}")
+    if [[ -n "$TERMINAL_IDLE_TIMEOUT" ]]; then
+      WASMTIME_ARGS+=(--idle-instance-timeout "$TERMINAL_IDLE_TIMEOUT")
     fi
     if [[ "$PORTABLE_COMPONENT" == "1" ]]; then
       WASMTIME_ARGS+=(
@@ -315,49 +337,69 @@ case "$HOST" in
         )
       fi
     fi
-    TARGET_PORT="$PORT"
-    if [[ "$TRUSTED_INGRESS" == "1" ]]; then
-      TARGET_PORT="$TERMINAL_PORT"
-    fi
     WASMTIME_ARGS+=(
       --dir="$PWD/target/site::/site"
       --env=LEPTOS_OUTPUT_NAME=counter
       --env=LEPTOS_SITE_ROOT=/site
       --env=LEPTOS_SITE_PKG_DIR=pkg
-      --addr "127.0.0.1:$TARGET_PORT"
-      "$SERVER_COMPONENT"
     )
     if [[ "$TRUSTED_INGRESS" == "1" ]]; then
-      LOG_FILES+=("$TERMINAL_LOG")
-      "$WASMTIME_BIN" "${WASMTIME_ARGS[@]}" >"$TERMINAL_LOG" 2>&1 &
-      TERMINAL_PID=$!
-      for _ in $(seq 1 100); do
-        if ! kill -0 "$TERMINAL_PID" 2>/dev/null; then
-          cat "$TERMINAL_LOG" >&2 || true
-          echo "trusted terminal exited before readiness" >&2
-          exit 1
+      for replica in $(seq 1 "$TERMINAL_REPLICAS"); do
+        if [[ "$replica" == "1" ]]; then
+          replica_port="$TERMINAL_PORT"
+        else
+          replica_port="$(available_port)"
         fi
-        status="$(curl --silent --max-time 1 --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:$TERMINAL_PORT/" || true)"
-        [[ "$status" == "503" ]] && break
-        sleep 0.05
+        replica_log="$ROOT/tests/browser/terminal-${replica}.log"
+        TERMINAL_PORTS+=("$replica_port")
+        TERMINAL_LOGS+=("$replica_log")
+        LOG_FILES+=("$replica_log")
+        "$WASMTIME_BIN" "${WASMTIME_ARGS[@]}" \
+          --addr "127.0.0.1:$replica_port" "$SERVER_COMPONENT" \
+          >"$replica_log" 2>&1 &
+        TERMINAL_PIDS+=("$!")
       done
-      [[ "${status:-000}" == "503" ]] || {
-        echo "direct terminal did not fail closed without ingress context" >&2
-        exit 1
-      }
-      cargo build --locked --release \
+      for replica_index in "${!TERMINAL_PIDS[@]}"; do
+        terminal_pid="${TERMINAL_PIDS[$replica_index]}"
+        replica_port="${TERMINAL_PORTS[$replica_index]}"
+        replica_log="${TERMINAL_LOGS[$replica_index]}"
+        status=000
+        for _ in $(seq 1 100); do
+          if ! kill -0 "$terminal_pid" 2>/dev/null; then
+            rtk cat "$replica_log" >&2 || true
+            echo "trusted terminal replica $((replica_index + 1)) exited before readiness" >&2
+            exit 1
+          fi
+          status="$(curl --silent --max-time 1 --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:$replica_port/" || true)"
+          [[ "$status" == "503" ]] && break
+          sleep 0.05
+        done
+        [[ "$status" == "503" ]] || {
+          echo "direct terminal replica $((replica_index + 1)) did not fail closed" >&2
+          exit 1
+        }
+      done
+      terminal_origins=""
+      for replica_port in "${TERMINAL_PORTS[@]}"; do
+        terminal_origins="${terminal_origins:+${terminal_origins},}http://127.0.0.1:${replica_port}"
+      done
+      rtk cargo build --locked --release \
         --manifest-path "$ROOT/tests/trusted-ingress/Cargo.toml"
       TRUSTED_INGRESS_LISTEN_ADDR="127.0.0.1:$PORT" \
-      TRUSTED_INGRESS_TERMINAL_ORIGIN="http://127.0.0.1:$TERMINAL_PORT" \
+      TRUSTED_INGRESS_DIAGNOSTICS_ADDR="127.0.0.1:$DIAGNOSTICS_PORT" \
+      TRUSTED_INGRESS_TERMINAL_ORIGINS="$terminal_origins" \
       TRUSTED_INGRESS_AUTHN_BROKER_URL="http://127.0.0.1:$BROKER_PORT/authenticate" \
       TRUSTED_INGRESS_SERVICE_ID=leptos-wasi-counter \
       TRUSTED_INGRESS_AUDIENCES=api://leptos-wasi-counter \
       TRUSTED_INGRESS_CORS_ORIGIN="http://127.0.0.1:$PORT" \
+      TRUSTED_INGRESS_ROUTE_POLICY="$ROOT/tests/trusted-ingress/routes.toml" \
+      TRUSTED_INGRESS_PROFILE="${TRUSTED_INGRESS_PROFILE:-edge-authenticated}" \
       TRUSTED_INGRESS_POLICY_ENABLED="${TRUSTED_INGRESS_POLICY_ENABLED:-true}" \
         "$ROOT/tests/trusted-ingress/target/release/leptos-wasi-trusted-ingress" \
         >"$APP_LOG" 2>&1 &
     else
-      "$WASMTIME_BIN" "${WASMTIME_ARGS[@]}" >"$APP_LOG" 2>&1 &
+      "$WASMTIME_BIN" "${WASMTIME_ARGS[@]}" \
+        --addr "127.0.0.1:$PORT" "$SERVER_COMPONENT" >"$APP_LOG" 2>&1 &
     fi
     ;;
   *)
@@ -367,6 +409,30 @@ case "$HOST" in
 esac
 
 SERVER_PID=$!
+
+if [[ "$TRUSTED_INGRESS" == "1" ]]; then
+  mkdir -p "$(dirname "$PROCESS_FILE")"
+  PROCESS_FILE="$PROCESS_FILE" \
+  INGRESS_PID="$SERVER_PID" \
+  BROKER_PID="$BROKER_PID" \
+  TERMINAL_PIDS="${TERMINAL_PIDS[*]}" \
+  SPICEDB_PID="${WASI_AUTHZ_TEST_SPICEDB_PID:-}" \
+  AUTHZEN_PDP_PID="${WASI_AUTHZ_TEST_AUTHZEN_PDP_PID:-}" \
+    python3 -c '
+import json, os
+processes = [
+    {"name": "ingress", "pid": int(os.environ["INGRESS_PID"])},
+    {"name": "authentication-broker", "pid": int(os.environ["BROKER_PID"])},
+]
+for index, pid in enumerate(os.environ["TERMINAL_PIDS"].split(), 1):
+    processes.append({"name": f"terminal-{index}", "pid": int(pid)})
+for name, key in (("spicedb", "SPICEDB_PID"), ("authzen-pdp", "AUTHZEN_PDP_PID")):
+    if os.environ.get(key):
+        processes.append({"name": name, "pid": int(os.environ[key])})
+with open(os.environ["PROCESS_FILE"], "w", encoding="utf-8") as output:
+    json.dump({"schema": 1, "processes": processes}, output, indent=2)
+'
+fi
 
 for _ in $(seq 1 60); do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
@@ -387,37 +453,31 @@ if [[ "$AUTHZ_FULL_CHAIN_BENCHMARK" == "1" ]]; then
     echo "the full-chain benchmark requires AUTHZ=1" >&2
     exit 2
   }
-  OHA_BIN="$(resolve_middleware_tool OHA_BIN oha "$(middleware_lock_value oha_version)")"
   BENCHMARK_DIR="${AUTHZ_FULL_CHAIN_BENCHMARK_DIR:-$ROOT/target/authz-full-chain-benchmark}"
   BENCHMARK_REQUESTS="${AUTHZ_FULL_CHAIN_BENCHMARK_REQUESTS:-5000}"
   BENCHMARK_WARMUP_REQUESTS="${AUTHZ_FULL_CHAIN_BENCHMARK_WARMUP_REQUESTS:-500}"
   BENCHMARK_CONCURRENCY="${AUTHZ_FULL_CHAIN_BENCHMARK_CONCURRENCY:-100}"
-  BENCHMARK_RATE="${AUTHZ_FULL_CHAIN_BENCHMARK_RATE:-}"
-  BENCHMARK_METHOD="${AUTHZ_FULL_CHAIN_BENCHMARK_METHOD:-POST}"
   mkdir -p "$BENCHMARK_DIR"
-  OHA_ARGS=(
-    --http-version 1.1
-    -t 10s
-    --no-tui
-    --output-format json
-    -m "$BENCHMARK_METHOD"
-    "$ACTION_URL"
-  )
-  if [[ "$BENCHMARK_METHOD" == "POST" ]]; then
-    OHA_ARGS=(-H "authorization: Bearer allow" -H "content-type: application/x-www-form-urlencoded" -d "current=0" "${OHA_ARGS[@]}")
-  fi
-  if [[ -n "$BENCHMARK_RATE" ]]; then
-    OHA_ARGS=(-q "$BENCHMARK_RATE" "${OHA_ARGS[@]}")
-  fi
-  NO_COLOR=true "$OHA_BIN" -n "$BENCHMARK_WARMUP_REQUESTS" \
-    -c "$BENCHMARK_CONCURRENCY" "${OHA_ARGS[@]}" \
-    >"$BENCHMARK_DIR/warmup.json"
-  NO_COLOR=true "$OHA_BIN" -n "$BENCHMARK_REQUESTS" \
-    -c "$BENCHMARK_CONCURRENCY" "${OHA_ARGS[@]}" \
-    >"$BENCHMARK_DIR/result.json"
-  python3 "$ROOT/scripts/check-authz-full-chain-performance.py" \
-    "$BENCHMARK_DIR/result.json" \
-    "$BENCHMARK_DIR/summary.json"
+  rtk cargo build --locked --release \
+    --manifest-path "$ROOT/tests/trusted-load/Cargo.toml"
+  TRUSTED_LOAD_CREDENTIAL_ALLOW="Bearer allow" \
+    "$ROOT/tests/trusted-load/target/release/trusted-load" \
+    --base-url "http://127.0.0.1:$PORT" \
+    --scenario "$AUTHZ_FULL_CHAIN_SCENARIO" \
+    --mode fixed \
+    --requests "$BENCHMARK_WARMUP_REQUESTS" \
+    --concurrency "$BENCHMARK_CONCURRENCY" \
+    --process-file "$PROCESS_FILE" \
+    --output "$BENCHMARK_DIR/warmup.json"
+  TRUSTED_LOAD_CREDENTIAL_ALLOW="Bearer allow" \
+    "$ROOT/tests/trusted-load/target/release/trusted-load" \
+    --base-url "http://127.0.0.1:$PORT" \
+    --scenario "$AUTHZ_FULL_CHAIN_SCENARIO" \
+    --mode fixed \
+    --requests "$BENCHMARK_REQUESTS" \
+    --concurrency "$BENCHMARK_CONCURRENCY" \
+    --process-file "$PROCESS_FILE" \
+    --output "$BENCHMARK_DIR/result.json"
 fi
 
 if [[ "$AUTHZ_FULL_CHAIN_SOAK" == "1" ]]; then
@@ -426,16 +486,17 @@ if [[ "$AUTHZ_FULL_CHAIN_SOAK" == "1" ]]; then
     exit 2
   }
   mkdir -p "$ROOT/target/authz-full-chain-soak"
-  python3 "$ROOT/scripts/load_runtime.py" \
-    "$ACTION_URL" \
+  rtk cargo build --locked --release \
+    --manifest-path "$ROOT/tests/trusted-load/Cargo.toml"
+  TRUSTED_LOAD_CREDENTIAL_ALLOW="Bearer allow" \
+    "$ROOT/tests/trusted-load/target/release/trusted-load" \
+    --base-url "http://127.0.0.1:$PORT" \
+    --scenario "$ROOT/tests/trusted-ingress/scenarios/mixed.toml" \
+    --mode closed-loop \
     --duration "$AUTHZ_FULL_CHAIN_SOAK_DURATION" \
     --concurrency "${AUTHZ_FULL_CHAIN_BENCHMARK_CONCURRENCY:-100}" \
-    --pid "$SERVER_PID" \
-    --method POST \
-    --header "authorization: Bearer allow" \
-    --header "content-type: application/x-www-form-urlencoded" \
-    --body "current=0" \
-    | tee "$ROOT/target/authz-full-chain-soak/result.json"
+    --process-file "$PROCESS_FILE" \
+    --output "$ROOT/target/authz-full-chain-soak/result.json"
 fi
 
 if [[ "$AUTHZ_FULL_CHAIN_BENCHMARK_ONLY" == "1" ]]; then

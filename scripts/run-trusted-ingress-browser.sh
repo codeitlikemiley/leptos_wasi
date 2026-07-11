@@ -11,6 +11,7 @@ repository="$(authz_repository)"
   exit 2
 }
 
+WASI_AUTHZ_START_COMPATIBILITY_PDP=0 \
 bash "${repository}/scripts/with-spicedb-pdp-wasmtime.sh" \
   env \
   AUTHZ_TEST_ONLY=1 \
