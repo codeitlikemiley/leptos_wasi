@@ -102,6 +102,21 @@ runtime.
 
 ## Full authentication and authorization chain
 
+The promotion topology now removes the extra Wasmtime AuthZEN PDP hop:
+relationship and hybrid operations use the typed `SpiceDbProvider` directly
+from a private terminal, while Cedar remains embedded. A new Rust/Hyper load
+driver replaces `urllib` for this gate and reports per-process CPU/RSS,
+successful and failed latency histograms, first-byte latency, status classes,
+and hangs.
+
+A 2026-07-11 two-terminal, 500-request concurrency-100 diagnostic completed
+with zero failures. The direct hybrid path measured 54.975 ms first-byte and
+total p99, so it still fails the unchanged 25 ms gate. This short run proves
+that bounded admission and replica tie-breaking removed the observed 503
+saturation; it is not release evidence and does not replace five 5,000-request
+repetitions or the ten-minute soak. Run lifecycle selection and the 1/2/4
+replica matrix before promotion.
+
 `scripts/benchmark-authz-full-chain.sh` uses the real composed chain, a local
 authentication broker, the final-WASI Cedar PEP, and the final-WASI SpiceDB
 PDP. It warms 500 requests and then sends 5,000 form-encoded server-function

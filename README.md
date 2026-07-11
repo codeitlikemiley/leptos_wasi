@@ -327,12 +327,15 @@ not present a non-atomic key-value store as production persistence.
   authentication plus Cedar/SpiceDB authorization chain. This is an alpha gate:
   the current pinned Wasmtime transport does not yet satisfy its c100
   performance target.
+- Use `./scripts/tune-trusted-ingress.sh` to select Wasmtime instance lifecycle
+  values before running the paired trusted-ingress benchmark. Production
+  relationship checks call SpiceDB directly; the AuthZEN SpiceDB service is a
+  compatibility profile, not the default performance path.
 - Run `./scripts/run-authz-lifecycle-e2e.sh` and
   `./scripts/run-authz-wasip2-lifecycle-e2e.sh` to exercise final-artifact
   WASIp3 and cancellation-safe WASIp2 authorization transport recovery.
-- From a repository checkout with a host already running, execute
-  `python3 scripts/load_runtime.py http://127.0.0.1:3000/ --duration 600 --concurrency 100 --pid <host-pid>`
-  to record throughput, first-byte and completed-response p50/p95/p99 latency,
-  status/failure counts, and optional host RSS samples.
+- Trusted-ingress benchmarks and soaks use the Rust `trusted-load` fixture with
+  persistent HTTP/1.1 connections. `scripts/load_runtime.py` remains only for
+  older transport tests and must not be used as promotion evidence.
 
 [wasm-component]: https://component-model.bytecodealliance.org

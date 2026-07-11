@@ -298,11 +298,26 @@ from release builds with `scripts/run-trusted-ingress-browser.sh`,
 `scripts/benchmark-trusted-ingress.sh`, and
 `DURATION=600 CONCURRENCY=100 scripts/soak-trusted-ingress.sh`.
 
-The benchmark records an identical proxy baseline, edge policy, anonymous SSR,
-Cedar-only, SpiceDB-only, and Cedar-first hybrid profiles. The soak applies a
-final-quarter RSS growth limit of `max(32 MiB, 10%)`. Local alpha signatures
-use ephemeral development keys only. Published OCI artifacts require approved
-CI keyless signing or a durable release identity.
+The production fixture calls SpiceDB directly from the terminal. The remote
+AuthZEN SpiceDB PDP is retained only as an explicitly selected compatibility
+profile and is not started by the trusted-ingress runner. The benchmark records
+paired proxy/edge runs plus authentication-only, embedded Cedar, direct
+SpiceDB, Cedar-first hybrid, and Cedar-denial profiles. `trusted-load` uses
+persistent Hyper connections and accounts for every success, status failure,
+transport failure, cancellation, and hung request. The old Python soak client
+is not promotion evidence.
+
+Ingress admission is bounded by route class and holds permits until the body
+finishes or is dropped. Healthy terminal replicas are chosen by least active
+load with round-robin tie breaking. This backpressure protects the topology;
+it does not create capacity, and any overload 503 fails promotion. Route policy
+is deployment data in `tests/trusted-ingress/routes.toml`. Wasmtime lifecycle
+values must be selected from measured repeated runs with
+`scripts/tune-trusted-ingress.sh`, not copied between hosts as universal
+defaults. The soak applies a final-quarter RSS growth limit of
+`max(32 MiB, 10%)`. Local alpha signatures use ephemeral development keys only.
+Published OCI artifacts require approved CI keyless signing or a durable
+release identity.
 
 ```bash
 ./scripts/audit-middleware-manifests.py
