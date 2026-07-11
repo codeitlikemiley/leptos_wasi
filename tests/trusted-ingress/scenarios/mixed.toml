@@ -1,0 +1,61 @@
+[[route]]
+name = "public-ssr"
+weight = 20
+method = "GET"
+path = "/"
+expected_status = [200]
+
+[[route]]
+name = "split-asset"
+weight = 15
+method = "GET"
+path = "/pkg/counter.js"
+expected_status = [200]
+
+[[route]]
+name = "cedar"
+weight = 20
+method = "POST"
+path = "/api/authorize_cedar"
+credential = "allow"
+body = "current=0"
+expected_status = [200]
+
+[route.headers]
+content-type = "application/x-www-form-urlencoded"
+
+[[route]]
+name = "relationship"
+weight = 15
+method = "POST"
+path = "/api/authorize_relationship"
+credential = "allow"
+body = "current=0"
+expected_status = [200]
+
+[route.headers]
+content-type = "application/x-www-form-urlencoded"
+
+[[route]]
+name = "hybrid-allow"
+weight = 20
+method = "POST"
+path = "/api/increment_count"
+credential = "allow"
+body = "current=0"
+expected_status = [200]
+
+[route.headers]
+content-type = "application/x-www-form-urlencoded"
+
+[[route]]
+name = "hybrid-deny"
+weight = 10
+method = "POST"
+path = "/api/authorize_hybrid_deny"
+credential = "allow"
+body = "current=0"
+expected_status = [403]
+
+[route.headers]
+content-type = "application/x-www-form-urlencoded"
