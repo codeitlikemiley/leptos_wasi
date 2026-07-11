@@ -9,11 +9,14 @@ publish = false
 anyhow = "1.0"
 bytes = "1.12"
 http = "1.4"
+http-body = "1.0"
 http-body-util = "0.1"
 hyper = { version = "1.10", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "server-auto", "tokio"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.52", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+toml = "0.9"
 wasi-http-metadata = { path = "../../../wasi-http-middleware/crates/metadata", version = "=0.2.0-alpha.3" }
 wasi-http-policy-core = { path = "../../../wasi-http-middleware/crates/policy-core", version = "=0.2.0-alpha.3" }
 
