@@ -10,12 +10,14 @@ rust-version = "1.93.0"
 include = [
     "/src/**",
     "/CHANGELOG.md",
+    "/COMPATIBILITY.md",
     "/LICENSE",
     "/MIDDLEWARE.md",
     "/MIGRATION.md",
     "/PERFORMANCE.md",
     "/PRODUCTION.md",
     "/README.md",
+    "/SPIN_COMPATIBILITY.md",
 ]
 
 [dependencies]

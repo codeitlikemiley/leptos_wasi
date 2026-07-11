@@ -103,7 +103,7 @@ provide the final `wasi:http/types@0.3.0` resource implementation. The pinned
 Spin main revision runs plain final-WASI terminals and outbound HTTP, but its
 default CPU accounting hook panics when a WAC-composed handler is invoked.
 Building that revision without default features proves the component chain but
-is diagnostic only. Wasmtime 46 is therefore the only blocking final-WASI
+is diagnostic only. Wasmtime 46.0.1 is therefore the only blocking final-WASI
 behavioral runtime in this release.
 Production deployments must consume versioned artifacts pinned by digest. The
 local runner accepts a sibling checkout only after checking the declared
@@ -340,7 +340,7 @@ DURATION=600 CONCURRENCY=100 ./scripts/soak-trusted-ingress.sh
 HOST=spin ./scripts/run-middleware-tests.sh
 ```
 
-Wasmtime 46 runs the final precomposed chain as the behavioral gate. Tagged
+Wasmtime 46.0.1 runs the final precomposed chain as the behavioral gate. Tagged
 Spin's linker lane, pinned Spin main's CPU-metrics regression lane, and the
 exact-commit native middleware lane remain incompatibility canaries until Spin
 publishes tagged final-WASI host and middleware support.

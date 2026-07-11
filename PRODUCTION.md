@@ -12,20 +12,21 @@ complete correctness, browser, performance, and soak gates passed;
 **experimental** is interoperability-only; and **blocked upstream** means the
 tagged runtime cannot link the final application ABI.
 
-| Capability | Wasmtime WASIp2 | Spin WASIp2 | Wasmtime WASIp3 | Spin WASIp3 |
-|---|---:|---:|---:|---:|
-| Leptos SSR routes | Yes | Yes | Yes | Blocked by host linker |
-| Typed server functions | Yes | Yes | Yes | Blocked by host linker |
-| Server-function middleware | Yes | Yes | Yes | Blocked by host linker |
-| Standard component middleware | No | No | Experimental alpha; performance-blocked | Canary only |
-| Streaming response bodies | Yes | Yes | Yes | Blocked by host linker |
-| GET/HEAD static callback | Yes | Yes | Yes | Blocked by host linker |
-| Islands and split browser WASM | Server compatible | Server compatible | Browser E2E | Canary only |
-| Incoming request streaming | No | No | No | No |
-| WebSockets | No | No | No | No |
-| HTTP response trailers | No | No | No | No |
-| `SsrMode::Static` generation | No | No | No | No |
-| Byte ranges/precompressed negotiation | No | No | No | No |
+| Capability | Wasmtime WASIp2 | Spin WASIp2 | Wasmtime WASIp3 | Tagged Spin 4.0.2 WASIp3 | Pinned Spin main WASIp3 |
+|---|---:|---:|---:|---:|---:|
+| Leptos SSR routes | Yes | Yes | Yes | Blocked by host linker | Experimental pass |
+| Typed server functions | Yes | Yes | Yes | Blocked by host linker | Experimental pass |
+| Server-function middleware | Yes | Yes | Yes | Blocked by host linker | Experimental pass |
+| Standard component middleware | No | No | Experimental alpha; performance-blocked | Blocked by host linker | CPU-metrics panic / native RC-only |
+| Streaming response bodies | Yes | Yes | Yes | Blocked by host linker | Experimental pass |
+| GET/HEAD static callback | Yes | Yes | Yes | Blocked by host linker | Experimental pass |
+| Islands and split browser WASM | Server compatible | Server compatible | Browser E2E | Blocked by host linker | Browser E2E |
+| SQLite counter client | N/A | N/A | Cross-runtime E2E | Blocked by host linker | Cross-runtime E2E |
+| Incoming request streaming | No | No | No | No | No |
+| WebSockets | No | No | No | No | No |
+| HTTP response trailers | No | No | No | No | No |
+| `SsrMode::Static` generation | No | No | No | No | No |
+| Byte ranges/precompressed negotiation | No | No | No | No | No |
 
 Both runtime features may be enabled in one dependency graph. The application
 still exports a host entrypoint for the component model it intends to run.
@@ -120,14 +121,15 @@ discard its result.
 
 The final `wasi:http@0.3.0` component tuple is pinned in
 `tests/middleware/components.lock.toml`. Wasmtime 46.0.1 runs the deterministic
-WAC-precomposed chain. Stable Spin 4 cannot link the final
-`wasi:http/types@0.3.0` resources, while Spin's native middleware commit still
-imports the March RC handler world. The precomposed runtime lane and native
-`dependencies.middleware` lane therefore remain expected-incompatibility
-canaries. Promote Spin only after a tagged release provides final handler,
-types, and client host support plus native middleware composition against the
-final WIT. Do not downgrade production components to the RC or deploy floating
-tool/runtime revisions. The independently versioned middleware companion owns
+WAC-precomposed chain. Tagged Spin 4.0.2 cannot link the final
+`wasi:http/types@0.3.0` resources. Pinned Spin `4.1.0-pre0` at `c34c584...`
+runs plain terminals, final outbound HTTP, trusted ingress, islands, and the
+SQLite persistence example, but is not a released runtime. Its default CPU
+accounting still panics around WAC-composed handlers, while native middleware
+still imports the March RC handler world. Promote Spin only after a tagged
+release contains the working final-WASI path and fixes those middleware
+limitations. Do not downgrade production components to the RC or deploy
+floating tool/runtime revisions. The independently versioned middleware companion owns
 the request-ID, security-header, CORS, authentication, spoof stripping, and
 credential-removal components; `wasi-authz` owns typed application policy.
 
@@ -190,8 +192,9 @@ deployment promotion is tracked separately:
 - Formatting, Clippy, tests, and rustdoc pass for WASIp2, WASIp3, and both
   features together.
 - Rust 1.93.0 and current stable pass the feature matrix.
-- Wasmtime E2E passes for both previews; Spin E2E passes for Preview 2, and the
-  Preview 3 expected-failure canary still matches the pinned linker failure.
+- Wasmtime E2E passes for both previews; Spin E2E passes for Preview 2; the
+  tagged Preview 3 expected-failure canary matches its pinned linker failure;
+  and the exact pinned-main terminal lane passes final-WASI browser behavior.
 - Raw encoded-path security cases, middleware, SSR query context, body limits,
   cancellation, disconnect, delayed stream, and mid-stream failure are tested.
 - Preview 3 browser E2E proves SSR output, an initially unhydrated island, lazy

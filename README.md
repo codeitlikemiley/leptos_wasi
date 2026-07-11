@@ -18,9 +18,11 @@ https://github.com/user-attachments/assets/6596e0f3-80c0-4258-a4e3-f85c41b328b4
 
 - Rust 1.93.0 or newer
 - `wasm32-wasip2` (`rustup target add wasm32-wasip2`)
-- Cargo Leptos 0.3.7 or newer for the included islands example
-- Wasmtime 46.0.1 for production Preview 3; tagged Spin 4.0.2 for Preview 2;
-  or the exact pinned Spin main revision for experimental final Preview 3
+- Cargo Leptos 0.3.6 for the included islands example
+- `wasm-bindgen-cli` 0.2.126, matching the counter's locked browser crate
+- Wasmtime 46.0.1 as the final-WASI correctness reference; tagged Spin 4.0.2
+  for Preview 2; or Spin `4.1.0-pre0` at `c34c584...` for experimental final
+  Preview 3
 
 The Rust target name is `wasm32-wasip2` for both component models. The
 `wasip2` and `wasip3` crate features select the host bindings and executor, not
@@ -104,9 +106,14 @@ dependency, not a `leptos_wasi` handler API.
 
 See [Spin final-WASI compatibility](./SPIN_COMPATIBILITY.md) for the exact
 terminal, trusted-ingress, composed-handler, and native-middleware gates.
-The [production counter persistence service](./examples/production-counter/README.md)
-shows the private PostgreSQL boundary for durable, idempotent updates; the
-polished islands counter remains intentionally session scoped.
+The [counter persistence service](./examples/production-counter/README.md)
+owns a local SQLite database behind a private HTTP boundary. Both `make
+wasmtime` and `make spin` use it, proving that the same WASIp3 component keeps
+state across refreshes and runtime restarts without a runtime-specific database
+API.
+
+See [Tested Compatibility](./COMPATIBILITY.md) for the complete version tuple,
+installation commands, and the `wasm-bindgen` WASI regression history.
 
 Version 0.5 does not claim a generic-response or fully Axum-free server-function
 backend. Upstream `server_fn`'s generic `Request<Bytes>` fixes its WebSocket
@@ -273,7 +280,7 @@ For high-volume production assets, prefer a host fileserver or CDN.
 ## Islands and split browser WASM
 
 Leptos islands and browser WASM splitting work with the Preview 3 server
-component on Wasmtime 46. Splitting affects the browser target
+component on Wasmtime 46.0.1. Splitting affects the browser target
 (`wasm32-unknown-unknown`), not the WASI server component. Spin promotion is
 blocked until a tagged release links final `wasi:http@0.3.0`.
 
@@ -309,11 +316,11 @@ do not require it.
 
 ## Example
 
-[`examples/counter`](./examples/counter) is the supported example. It is a
-session-scoped counter demonstrating SSR, one lazy island, split browser WASM,
-typed server-function registration, Wasmtime, and a Spin compatibility
-manifest. It intentionally does
-not present a non-atomic key-value store as production persistence.
+[`examples/counter`](./examples/counter) is the supported example. It
+demonstrates SSR, one lazy island, split browser WASM, typed server-function
+registration, SQLite-backed idempotent increments, Wasmtime, and a pinned Spin
+compatibility manifest. Without `COUNTER_STORE_URL`, the component deliberately
+falls back to an isolated session counter for protocol and authorization tests.
 
 ## Upgrade and operations
 

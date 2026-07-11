@@ -6,7 +6,7 @@ collapsed into one "Spin support" flag.
 | Profile | Expected result |
 |---|---|
 | Tagged Spin 4.0.2 | Rejects final `wasi:http/types@0.3.0` |
-| Pinned Spin main terminal | Serves SSR, server functions, static callbacks, islands, and split WASM |
+| Pinned Spin `4.1.0-pre0` (`c34c584...`) terminal | Serves SSR, server functions, static callbacks, islands, split WASM, and the SQLite counter client |
 | Pinned Spin main trusted terminal | Passes native-ingress authentication plus Cedar and direct SpiceDB authorization |
 | Pinned Spin main WAC composition | Default build panics in CPU-time call-hook accounting |
 | Pinned Spin main without default features | Composed chain passes, but is diagnostic only |
