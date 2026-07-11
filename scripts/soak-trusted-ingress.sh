@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DURATION="${DURATION:-600}"
+CONCURRENCY="${CONCURRENCY:-100}"
+AUTHENTICATION_MODE=trusted_ingress AUTHZ=1 MIDDLEWARE=0 HOST=wasmtime \
+  AUTHZ_FULL_CHAIN_BENCHMARK_ONLY=1 AUTHZ_FULL_CHAIN_SOAK=1 \
+  AUTHZ_FULL_CHAIN_SOAK_DURATION="$DURATION" \
+  AUTHZ_FULL_CHAIN_BENCHMARK_CONCURRENCY="$CONCURRENCY" \
+  "$ROOT/scripts/run-trusted-ingress-browser.sh"

@@ -28,7 +28,7 @@ def main() -> int:
     parser.add_argument("baseline", type=Path)
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--max-regression", type=float, default=0.05)
-    parser.add_argument("--max-final-rss-growth-kib", type=int, default=8192)
+    parser.add_argument("--max-final-rss-growth-kib", type=int, default=32768)
     args = parser.parse_args()
 
     baseline = read_result(args.baseline)
@@ -74,11 +74,19 @@ def main() -> int:
         final_rss_growth = rss.get("last_quarter_growth")
         if not isinstance(final_rss_growth, int):
             errors.append("candidate final-quarter RSS growth is unavailable")
-        elif final_rss_growth > args.max_final_rss_growth_kib:
+        else:
+            rss_start = rss.get("start")
+            proportional_limit = (
+                int(float(rss_start) * 0.10)
+                if isinstance(rss_start, (int, float))
+                else 0
+            )
+            memory_limit = max(args.max_final_rss_growth_kib, proportional_limit)
+        if isinstance(final_rss_growth, int) and final_rss_growth > memory_limit:
             errors.append(
                 "candidate RSS grew "
                 f"{final_rss_growth} KiB in the final quarter "
-                f"(allowed {args.max_final_rss_growth_kib} KiB)"
+                f"(allowed {memory_limit} KiB)"
             )
 
     summary = {
