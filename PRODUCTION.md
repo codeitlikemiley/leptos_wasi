@@ -6,6 +6,12 @@ replace the Wasmtime or Spin host security model.
 
 ## Support matrix
 
+Runtime labels are separate from crate stability: **production** means the
+complete correctness, browser, performance, and soak gates passed;
+**reference** means correctness-compatible without a production latency claim;
+**experimental** is interoperability-only; and **blocked upstream** means the
+tagged runtime cannot link the final application ABI.
+
 | Capability | Wasmtime WASIp2 | Spin WASIp2 | Wasmtime WASIp3 | Spin WASIp3 |
 |---|---:|---:|---:|---:|
 | Leptos SSR routes | Yes | Yes | Yes | Blocked by host linker |
@@ -94,7 +100,10 @@ Configure these controls outside the crate:
 - TLS, forwarded-header trust, and client IP policy;
 - log retention, metrics collection, and alerts.
 
-The stock `wasmtime serve` CLI needs inherited networking for the precomposed
+The stock `wasmtime serve` CLI is the final-WASI correctness reference. Its
+current Preview 3 outbound client opens fresh connections and has not passed
+the concurrency-100 authorization latency gate, so it carries no production
+performance claim. It needs inherited networking for the precomposed
 authentication client and does not provide a per-host HTTP allowlist. Enforce
 the exact broker destination in a custom Wasmtime embedding or an outbound
 network sandbox before production. The local loopback runner validates the
@@ -161,28 +170,22 @@ the affected path, compensating controls, owner, and removal condition here.
 
 ## Load and soak probe
 
-From a repository checkout, start the target Spin or Wasmtime deployment and
-run the release probe:
+From a repository checkout, run the trusted-ingress release probe:
 
 ```bash
-python3 scripts/load_runtime.py http://127.0.0.1:3000/ \
-  --duration 600 \
-  --concurrency 100 \
-  --pid <host-pid>
+DURATION=600 CONCURRENCY=100 ./scripts/soak-trusted-ingress.sh
 ```
 
-The probe reports request rate, status counts, failures, first-byte and
-completed-response p50/p95/p99/max latency, and optional host RSS samples. It
-exits unsuccessfully when any request fails or returns a non-2xx/3xx response.
-Run it against each host/preview combination and retain the JSON with the
-release evidence. Omit `--pid` when host RSS is collected by deployment
-monitoring. The final-quarter RSS growth is a diagnostic; a release reviewer
-must still inspect the time series or host telemetry before declaring a stable
-memory plateau.
+The Rust `trusted-load` driver keeps its Hyper pool across warmup and
+measurement, consumes bodies and trailers, separates response-header,
+first-body-byte, and total latency, and samples every topology process.
+`scripts/load_runtime.py` remains a legacy transport probe and is not valid
+promotion evidence.
 
 ## Release gate
 
-A production release requires all of the following:
+A stable library release requires the following runtime-independent gates;
+deployment promotion is tracked separately:
 
 - Formatting, Clippy, tests, and rustdoc pass for WASIp2, WASIp3, and both
   features together.
@@ -203,20 +206,6 @@ A production release requires all of the following:
 - Delayed first byte, trailers, disconnect, and a committed frame followed by
   an intentional terminal stream error pass through the composed chain without
   buffering or rewriting the committed status.
-- The unchanged five-pair, 30-second, concurrency-100 representative middleware
-  comparison passes its 10% first-byte, total-p99, and throughput budgets. The
-  current alpha fails this promotion gate even after removing redundant header
-  copies and diffs; immutable-header reconstruction and transmission bridging
-  remain a measured runtime blocker.
-- The full local broker/Cedar/SpiceDB authorization chain returns zero
-  unexpected responses and stays at or below 25 ms first-byte and total p99 at
-  concurrency 100. The current alpha fails this independent gate; see
-  [PERFORMANCE.md](./PERFORMANCE.md) for the retained evidence.
-- The full authorization-chain ten-minute, concurrency-100 soak has also been
-  run locally. Its memory samples reached a non-monotonic plateau, but its
-  controlled failures and p99 latency were far outside the gate; it is failed
-  diagnostic evidence, not a passing soak result. Do not promote this alpha on
-  the strength of the generic transport soak alone.
 - A ten-minute steady-load soak reaches a memory plateau, leaves no orphaned
   WASIp2 pollables, and produces no unexpected 5xx.
 - Release-mode p99 latency regresses no more than 5% from the recorded baseline.
@@ -224,9 +213,12 @@ A production release requires all of the following:
   `cargo audit` pass.
 - Every breaking API change appears in [MIGRATION.md](./MIGRATION.md).
 
-The two non-blocking Spin Preview 3 canaries are compatibility evidence; they
-do not replace the Wasmtime final-WASI gate above. See [WASIp3 HTTP
-Middleware](./MIDDLEWARE.md).
+Wasmtime remains a blocking correctness/reference gate, not a 25 ms production
+latency gate. Spin becomes the production-performance target only after a
+tagged release links final `wasi:http@0.3.0`; it must then pass five paired
+5,000-request concurrency-100 repetitions and the ten-minute mixed soak. Until
+then the Spin Preview 3 checks are upstream compatibility canaries. See
+[WASIp3 HTTP Middleware](./MIDDLEWARE.md).
 
 Run the local compile/test/documentation matrix with:
 

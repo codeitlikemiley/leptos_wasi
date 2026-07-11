@@ -319,6 +319,9 @@ jobs:
             27451471b8ba0faeffa01c5a4ddd6daee9a9d526
           ./scripts/check-spin-native-middleware-canary.sh "${RUNNER_TEMP}/spin"
 
+      - name: Confirm tagged Spin still lacks the final-WASI terminal ABI
+        run: ./scripts/check-spin-final-wasi-canary.sh
+
       - name: Report cross-repository middleware promotion gate
         run: |
           echo "::warning title=Companion promotion unavailable::The real full-chain, authorization, and browser gates require exact local wasi-http-middleware and wasi-authz source revisions. No remote or release artifact is authorized yet, so this workflow does not claim those production gates."

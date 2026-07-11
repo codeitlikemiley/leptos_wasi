@@ -1,0 +1,5 @@
+# Production candidate defaults for the final-WASI authorization profile.
+# Re-select the concurrency limit on each deployment class before promotion.
+[outbound_http]
+connection_pooling = true
+max_concurrent_requests = 100

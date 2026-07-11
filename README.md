@@ -324,9 +324,10 @@ not present a non-atomic key-value store as production persistence.
   browser command to prove middleware wrapping, authentication-context
   propagation, and lazy hydration without making `/pkg` split assets private.
 - Run `./scripts/run-authz-browser.sh` from sibling checkouts to prove the real
-  authentication plus Cedar/SpiceDB authorization chain. This is an alpha gate:
-  the current pinned Wasmtime transport does not yet satisfy its c100
-  performance target.
+  authentication plus Cedar/SpiceDB authorization chain. Wasmtime is the
+  final-WASI correctness reference and does not currently satisfy the c100
+  production latency target. Spin is the preferred production-performance
+  runtime once a tagged release links final `wasi:http@0.3.0`.
 - Use `./scripts/tune-trusted-ingress.sh` to select Wasmtime instance lifecycle
   values before running the paired trusted-ingress benchmark. Production
   relationship checks call SpiceDB directly; the AuthZEN SpiceDB service is a

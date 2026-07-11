@@ -102,6 +102,13 @@ runtime.
 
 ## Full authentication and authorization chain
 
+The Wasmtime results below are reference-runtime diagnostics. They remain
+correctness and regression evidence but do not block stable library packaging
+on the 25 ms deployment SLO. Spin is the preferred production-performance
+target because it pools outbound HTTP and supports concurrent Preview 3
+instance reuse. Promotion remains blocked until a tagged Spin release supports
+final `wasi:http@0.3.0`; this project will not downgrade to an RC ABI.
+
 The promotion topology now removes the extra Wasmtime AuthZEN PDP hop:
 relationship and hybrid operations use the typed `SpiceDbProvider` directly
 from a private terminal, while Cedar remains embedded. A new Rust/Hyper load

@@ -71,7 +71,7 @@ WASMTIME_DEPLOYMENT_CONTRACTS = {
     "wasmtime-trusted-ingress-authz": {
         "authentication_mode": "trusted_ingress",
         "runtime": "wasmtime",
-        "support": "production",
+        "support": "reference",
         "terminal_artifact": (
             "tests/authz-fixture/target/wasm32-wasip2/release/"
             "leptos_wasi_authz_fixture.wasm"
@@ -266,12 +266,12 @@ def audit_wasmtime_deployment_contracts(profiles: list[dict]) -> None:
                 raise AssertionError(
                     f"Wasmtime deployment profile {name} drifted at {key}"
                 )
-        if actual.get("support") == "production":
+        if actual.get("authentication_mode") == "trusted_ingress":
             for descriptor in ("ingress_manifest", "network_descriptor"):
                 path = actual.get(descriptor)
                 if not isinstance(path, str) or not (ROOT / path).is_file():
                     raise AssertionError(
-                        f"production profile {name} lacks concrete {descriptor}"
+                        f"trusted-ingress profile {name} lacks concrete {descriptor}"
                     )
 
 
@@ -279,11 +279,30 @@ def audit_deployment_policy(lock: dict) -> None:
     policy = load("tests/middleware/deployment-policy.toml")
     if policy.get("schema") != 2:
         raise AssertionError("deployment policy schema must be 2")
+    spin_runtime = load("tests/spin/runtime-config.production.toml")
+    outbound = spin_runtime.get("outbound_http", {})
+    if outbound.get("connection_pooling") is not True:
+        raise AssertionError("Spin production profile must pool outbound HTTP")
+    concurrency = outbound.get("max_concurrent_requests")
+    if not isinstance(concurrency, int) or not 1 <= concurrency <= 1000:
+        raise AssertionError("Spin outbound concurrency must be explicitly bounded")
     profiles = policy.get("profile", [])
     if not isinstance(profiles, list):
         raise AssertionError("deployment profiles must be an array")
     if any(not isinstance(profile, dict) for profile in profiles):
         raise AssertionError("deployment profiles must be tables")
+    blocked = [
+        profile["name"]
+        for profile in profiles
+        if profile.get("runtime") == "spin"
+        and profile.get("support") == "blocked_upstream"
+    ]
+    if lock.get("spin_final_wasi_supported") is False and not blocked:
+        raise AssertionError("Spin final-WASI profiles must remain blocked upstream")
+    if lock.get("spin_final_wasi_supported") is True and blocked:
+        raise AssertionError(
+            "Spin now supports final WASI; replace blocked canaries with promotion lanes"
+        )
     names = [profile.get("name") for profile in profiles]
     if not names or len(names) != len(set(names)):
         raise AssertionError("deployment profile names must be unique")
@@ -353,13 +372,13 @@ def audit_deployment_policy(lock: dict) -> None:
             raise AssertionError(
                 f"deployment profile {name} has an invalid authentication mode"
             )
-        if support == "production" and (
+        if authentication_mode == "trusted_ingress" and (
             authentication_mode != "trusted_ingress"
             or profile.get("private_terminal") is not True
             or profile.get("edge_policy") != "managed-private-ingress"
         ):
             raise AssertionError(
-                f"production profile {name} must require a private trusted ingress"
+                f"trusted-ingress profile {name} must require a private terminal"
             )
 
         if runtime == "wasmtime":

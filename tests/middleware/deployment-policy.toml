@@ -5,10 +5,10 @@ artifact_set_sha256 = "890a15da9574f1db64f675d8bcb0aa6ff5b7994881068386122f51ce8
 [support_allowlist]
 spin = [
   "middleware_unsupported",
-  "runtime_incompatibility_canary",
+  "blocked_upstream",
   "test_fixture",
 ]
-wasmtime = ["experimental", "production"]
+wasmtime = ["experimental", "reference"]
 
 [[profile]]
 name = "spin-counter-stable"
@@ -33,7 +33,7 @@ source_digest = "sha256:96c76d9af86420b39eb6cd7be5550e3cb5d4cc4de572ce0fd1f6a294
 name = "spin-counter-native-canary"
 authentication_mode = "portable_component"
 runtime = "spin"
-support = "runtime_incompatibility_canary"
+support = "blocked_upstream"
 manifest = "examples/counter/spin.middleware-vnext.toml"
 terminal_component = "counter"
 terminal_artifact = "target/wasm32-wasip2/release/counter.wasm"
@@ -52,7 +52,7 @@ source_digest = "sha256:96c76d9af86420b39eb6cd7be5550e3cb5d4cc4de572ce0fd1f6a294
 name = "spin-counter-precomposed-canary"
 authentication_mode = "portable_component"
 runtime = "spin"
-support = "runtime_incompatibility_canary"
+support = "blocked_upstream"
 manifest = "examples/counter/spin.middleware-composed.toml"
 terminal_component = "counter-middleware"
 terminal_artifact = "target/wasm32-wasip2/release/counter-middleware.wasm"
@@ -84,7 +84,7 @@ artifact_sets = []
 name = "spin-p3-runtime-canary"
 authentication_mode = "none"
 runtime = "spin"
-support = "runtime_incompatibility_canary"
+support = "blocked_upstream"
 manifest = "tests/spin-p3.toml"
 terminal_component = "test-app-p3"
 terminal_artifact = "test-app-p3.wasm"
@@ -96,7 +96,7 @@ artifact_sets = []
 name = "spin-p3-native-canary"
 authentication_mode = "portable_component"
 runtime = "spin"
-support = "runtime_incompatibility_canary"
+support = "blocked_upstream"
 manifest = "tests/spin-p3-middleware-vnext.toml"
 terminal_component = "test-app-p3"
 terminal_artifact = "test-app-p3.wasm"
@@ -108,7 +108,7 @@ artifact_sets = ["middleware"]
 name = "spin-p3-precomposed-canary"
 authentication_mode = "portable_component"
 runtime = "spin"
-support = "runtime_incompatibility_canary"
+support = "blocked_upstream"
 manifest = "tests/spin-p3-middleware-composed.toml"
 terminal_component = "test-app-p3-middleware"
 terminal_artifact = "test-app-p3-middleware.wasm"
@@ -157,7 +157,7 @@ artifact_sets = ["middleware", "authorization"]
 name = "wasmtime-trusted-ingress-authz"
 authentication_mode = "trusted_ingress"
 runtime = "wasmtime"
-support = "production"
+support = "reference"
 terminal_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_authz_fixture.wasm"
 output_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_authz_fixture.wasm"
 listener_count = 1

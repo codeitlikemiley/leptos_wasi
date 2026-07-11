@@ -56,6 +56,12 @@ class DeploymentPolicyNegativeTests(unittest.TestCase):
 
         self.assert_policy_rejected(mutate)
 
+    def test_spin_final_wasi_transition_requires_promotion_lanes(self) -> None:
+        candidate = copy.deepcopy(self.lock)
+        candidate["spin_final_wasi_supported"] = True
+        with self.assertRaisesRegex(AssertionError, "replace blocked canaries"):
+            MODULE.audit_deployment_policy(candidate)
+
     def test_stack_order_drift_is_rejected(self) -> None:
         def mutate(policy: dict) -> None:
             profile = self.profile(policy, "wasmtime-authn")
