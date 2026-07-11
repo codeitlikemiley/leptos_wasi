@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RESULTS="${RESULTS:-$ROOT/target/trusted-ingress-benchmark}"
 REPETITIONS="${REPETITIONS:-5}"
 TERMINAL_REPLICAS="${TERMINAL_REPLICAS:-1}"
+BENCHMARK_SEED="${BENCHMARK_SEED:-20260711}"
 mkdir -p "$RESULTS"
 
 run_profile() {
@@ -15,6 +16,7 @@ run_profile() {
     AUTHZ_FULL_CHAIN_BENCHMARK=1 AUTHZ_FULL_CHAIN_BENCHMARK_ONLY=1 \
     AUTHZ_FULL_CHAIN_SCENARIO="$ROOT/tests/trusted-ingress/scenarios/$scenario.toml" \
     AUTHZ_FULL_CHAIN_BENCHMARK_DIR="$RESULTS/$profile/$repetition" \
+    AUTHZ_FULL_CHAIN_BENCHMARK_SEED="$((BENCHMARK_SEED + repetition))" \
     "$ROOT/scripts/run-trusted-ingress-browser.sh"
 }
 
@@ -42,11 +44,11 @@ for repetition in $(seq 1 "$REPETITIONS"); do
         ;;
     esac
   done < <(python3 -c '
-import random
+import random, sys
 profiles = ["edge-pair", "authn-only", "cedar", "relationship-direct", "hybrid-direct", "hybrid-deny"]
-random.shuffle(profiles)
+random.Random(int(sys.argv[1])).shuffle(profiles)
 print("\n".join(profiles))
-')
+' "$((BENCHMARK_SEED + repetition))")
 done
 
 python3 "$ROOT/scripts/summarize-trusted-ingress-benchmark.py" "$RESULTS"

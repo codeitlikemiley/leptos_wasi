@@ -492,6 +492,8 @@ if [[ "$AUTHZ_FULL_CHAIN_BENCHMARK" == "1" ]]; then
     --concurrency "$BENCHMARK_CONCURRENCY" \
     --process-file "$PROCESS_FILE" \
     --output "$BENCHMARK_DIR/result.json"
+  "$ROOT/scripts/validate-trusted-load-report.py" \
+    "$BENCHMARK_DIR/result.json"
   curl --fail --silent "http://127.0.0.1:$DIAGNOSTICS_PORT/" \
     --output "$BENCHMARK_DIR/diagnostics.json"
 fi
@@ -510,9 +512,13 @@ if [[ "$AUTHZ_FULL_CHAIN_SOAK" == "1" ]]; then
     --scenario "$ROOT/tests/trusted-ingress/scenarios/mixed.toml" \
     --mode closed-loop \
     --duration "$AUTHZ_FULL_CHAIN_SOAK_DURATION" \
+    --warmup-requests "${AUTHZ_FULL_CHAIN_SOAK_WARMUP_REQUESTS:-500}" \
+    --seed "${AUTHZ_FULL_CHAIN_BENCHMARK_SEED:-0}" \
     --concurrency "${AUTHZ_FULL_CHAIN_BENCHMARK_CONCURRENCY:-100}" \
     --process-file "$PROCESS_FILE" \
     --output "$ROOT/target/authz-full-chain-soak/result.json"
+  "$ROOT/scripts/validate-trusted-load-report.py" \
+    "$ROOT/target/authz-full-chain-soak/result.json"
   curl --fail --silent "http://127.0.0.1:$DIAGNOSTICS_PORT/" \
     --output "$ROOT/target/authz-full-chain-soak/diagnostics.json"
 fi

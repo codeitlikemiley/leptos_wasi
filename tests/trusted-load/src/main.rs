@@ -780,7 +780,7 @@ fn build_report(
         .into_inner()
         .map_err(|_| anyhow::anyhow!("process lock poisoned"))?;
     Ok(Report {
-        schema: 1,
+        schema: 2,
         configuration: ReportConfiguration {
             base_url: config.base_url.clone(),
             scenario: config.scenario_path.display().to_string(),
