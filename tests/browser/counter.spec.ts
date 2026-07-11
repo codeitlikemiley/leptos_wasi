@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const middlewareEnabled = process.env.MIDDLEWARE === "1";
 const authzEnabled = process.env.AUTHZ === "1";
+const persistenceEnabled = process.env.PERSISTENCE === "1";
 const cookieSentinel = "browser-cookie-secret-sentinel";
 const rawQuerySentinel = "browser_raw_query_secret_sentinel";
 
@@ -205,4 +206,28 @@ test("lazy split island loads and handles a server action", async ({ page }) => 
     expect(acceptedResponse.headers()["x-content-type-options"]).toBe("nosniff");
     expectTrustedHeadersStripped(acceptedResponse.headers());
   }
+});
+
+test("SQLite counter survives refresh and runtime changes", async ({ page }) => {
+  test.skip(!persistenceEnabled, "requires the SQLite persistence fixture");
+
+  await page.goto("/");
+  const count = page.locator(".tabular-nums");
+  const status = page.getByTestId("counter-status");
+  const button = page.getByRole("button", { name: "Increment Counter" });
+  await expect(status).toHaveText("Ready");
+  const before = Number(await count.textContent());
+  expect(Number.isSafeInteger(before)).toBe(true);
+
+  const incremented = page.waitForResponse(
+    /\/api\/increment_count(?:\?|$)/,
+  );
+  await button.click();
+  expect((await incremented).status()).toBe(200);
+  await expect(count).toHaveText(String(before + 1));
+  await expect(status).toHaveText("Ready");
+
+  await page.reload();
+  await expect(status).toHaveText("Ready");
+  await expect(count).toHaveText(String(before + 1));
 });

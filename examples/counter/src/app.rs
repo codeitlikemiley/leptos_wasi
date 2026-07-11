@@ -4,6 +4,10 @@ use leptos_meta::*;
 use leptos_router::*;
 
 #[cfg(feature = "ssr")]
+#[path = "counter_store.rs"]
+mod counter_store;
+
+#[cfg(feature = "ssr")]
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
         <!DOCTYPE html>
@@ -95,29 +99,60 @@ fn HomePage() -> impl IntoView {
 
 #[island(lazy)]
 fn CounterIsland() -> impl IntoView {
+    let load_action = ServerAction::<GetCount>::new();
     let increment_action = ServerAction::<IncrementCount>::new();
     let (count, set_count) = signal(0_u32);
+    let (load_finished, set_load_finished) = signal(false);
+    let (operation_id, set_operation_id) = signal(None::<String>);
+    let load_value = load_action.value();
     let action_value = increment_action.value();
+
+    Effect::new(move |_| {
+        load_action.dispatch(GetCount {});
+    });
+
+    Effect::new(move |_| {
+        load_value.with(|result| {
+            if let Some(Ok(stored_count)) = result {
+                set_count.set(*stored_count);
+            }
+            if result.is_some() {
+                set_load_finished.set(true);
+            }
+        });
+    });
 
     Effect::new(move |_| {
         action_value.with(|result| {
             if let Some(Ok(next_count)) = result {
                 set_count.set(*next_count);
+                set_operation_id.set(None);
             }
         });
     });
 
     let increment = move |_| {
+        let operation_id = operation_id
+            .get_untracked()
+            .unwrap_or_else(new_operation_id);
+        set_operation_id.set(Some(operation_id.clone()));
         increment_action.dispatch(IncrementCount {
             current: count.get_untracked(),
+            operation_id,
         });
     };
 
     let action_failed = move || {
-        increment_action
+        load_action
             .value()
             .with(|result| matches!(result, Some(Err(_))))
+            || increment_action
+                .value()
+                .with(|result| matches!(result, Some(Err(_))))
     };
+
+    let pending =
+        move || load_action.pending().get() || increment_action.pending().get();
 
     view! {
         <div class="text-center space-y-8">
@@ -131,7 +166,7 @@ fn CounterIsland() -> impl IntoView {
                     </div>
                 </div>
 
-                <Show when=move || increment_action.pending().get()>
+                <Show when=pending>
                     <div class="absolute inset-0 flex items-center justify-center bg-[#1a2332]/50 rounded-lg">
                         <div class="animate-spin rounded-full h-8 w-8 border-2 border-transparent border-t-[#00d4aa]"></div>
                     </div>
@@ -141,7 +176,7 @@ fn CounterIsland() -> impl IntoView {
             <button
                 type="button"
                 on:click=increment
-                disabled=move || increment_action.pending().get()
+                disabled=pending
                 class="w-full rounded-lg bg-[#00d4aa] px-6 py-3 text-[#1a2332] font-medium transition-all duration-200 hover:bg-[#00b894] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#00d4aa]"
             >
                 {move || if increment_action.pending().get() {
@@ -153,7 +188,7 @@ fn CounterIsland() -> impl IntoView {
 
             <div class="flex items-center justify-center gap-2 text-xs">
                 <div class={move || {
-                    if increment_action.pending().get() {
+                    if pending() {
                         "w-2 h-2 rounded-full bg-[#00d4aa] animate-pulse"
                     } else if action_failed() {
                         "w-2 h-2 rounded-full bg-red-500"
@@ -162,10 +197,15 @@ fn CounterIsland() -> impl IntoView {
                     }
                 }}>
                 </div>
-                <span class="text-[#8b9cb8] uppercase tracking-wider">
+                <span
+                    data-testid="counter-status"
+                    class="text-[#8b9cb8] uppercase tracking-wider"
+                >
                     {move || {
-                        if increment_action.pending().get() {
-                            "Syncing"
+                        if !load_finished.get() || load_action.pending().get() {
+                            "Loading saved count"
+                        } else if increment_action.pending().get() {
+                            "Saving"
                         } else if action_failed() {
                             "Update failed"
                         } else {
@@ -192,11 +232,64 @@ fn NotFound() -> impl IntoView {
     view! { <h1>"Not Found"</h1> }
 }
 
+#[server(prefix = "/api", endpoint = "get_count")]
+pub async fn get_count() -> Result<u32, ServerFnError<String>> {
+    #[cfg(feature = "ssr")]
+    {
+        if let Some(value) = counter_store::read_configured_count()
+            .await
+            .map_err(counter_store_error)?
+        {
+            return Ok(value);
+        }
+    }
+    Ok(0)
+}
+
 #[server(prefix = "/api", endpoint = "increment_count")]
 pub async fn increment_count(
     current: u32,
+    operation_id: String,
 ) -> Result<u32, ServerFnError<String>> {
+    #[cfg(feature = "ssr")]
+    {
+        if let Some(value) =
+            counter_store::increment_configured_count(&operation_id)
+                .await
+                .map_err(counter_store_error)?
+        {
+            return Ok(value);
+        }
+    }
     current.checked_add(1).ok_or_else(|| {
         ServerFnError::ServerError("counter reached its maximum value".into())
     })
+}
+
+fn new_operation_id() -> String {
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        return uuid::Uuid::new_v4().simple().to_string();
+    }
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    {
+        String::new()
+    }
+}
+
+#[cfg(feature = "ssr")]
+fn counter_store_error(
+    error: counter_store::CounterStoreError,
+) -> ServerFnError<String> {
+    eprintln!("counter persistence error: {error}");
+    if let Some(response) =
+        use_context::<leptos_wasi::response::ResponseOptions>()
+    {
+        response.set_status(http::StatusCode::SERVICE_UNAVAILABLE);
+        response.insert_header(
+            http::header::CACHE_CONTROL,
+            http::HeaderValue::from_static("no-store"),
+        );
+    }
+    ServerFnError::ServerError("counter store unavailable".into())
 }

@@ -207,15 +207,19 @@ jobs:
         run: ./run_tests.sh
 
   production-counter-store:
-    name: Production counter state boundary
+    name: Production counter state boundary / Rust ${{ matrix.rust }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: ["1.93.0", stable]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust
+      - name: Install Rust ${{ matrix.rust }}
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.rust }}
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
@@ -260,8 +264,10 @@ jobs:
           cache: npm
           cache-dependency-path: tests/browser/package-lock.json
 
-      - name: Install Cargo Leptos 0.3.7
-        run: cargo install cargo-leptos --version 0.3.7 --locked
+      - name: Install Cargo Leptos 0.3.6 and wasm-bindgen 0.2.126
+        run: |
+          cargo install cargo-leptos --version 0.3.6 --locked
+          cargo install wasm-bindgen-cli --version 0.2.126 --locked
 
       - name: Install Wasmtime 46.0.1
         if: matrix.host == 'wasmtime'
@@ -280,6 +286,11 @@ jobs:
           HOST: ${{ matrix.host }}
           PORT: ${{ matrix.port }}
         run: ./tests/browser/run.sh
+
+      - name: Prove SQLite persistence and fail-closed outage behavior
+        env:
+          PERSISTENCE_HOSTS: wasmtime
+        run: ./scripts/run-counter-persistence-browser.sh
 
       - name: Upload Playwright traces
         if: failure()
@@ -414,11 +425,11 @@ jobs:
         with:
           version: "46.0.1"
 
-      - name: Install Spin 4.0.0
+      - name: Install Spin 4.0.2
         if: matrix.host == 'spin'
         uses: fermyon/actions/spin/setup@8849a6c41270af8e9f60f371982eddf33b8e35c9 # v1
         with:
-          version: "v4.0.0"
+          version: "v4.0.2"
 
       - name: Create immutable 0.3.2 comparison worktree
         run: >-

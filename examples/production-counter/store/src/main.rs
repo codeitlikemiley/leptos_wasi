@@ -1,4 +1,4 @@
-use std::{env, net::SocketAddr};
+use std::{env, net::SocketAddr, str::FromStr, time::Duration};
 
 use axum::{
     Json, Router,
@@ -8,7 +8,10 @@ use axum::{
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::{
+    SqlitePool,
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
+};
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 
@@ -16,7 +19,7 @@ const MAX_IDENTIFIER_LENGTH: usize = 128;
 
 #[derive(Clone)]
 struct AppState {
-    pool: PgPool,
+    pool: SqlitePool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,7 +77,7 @@ async fn read_counter(
 ) -> Result<Json<CounterResponse>, StoreError> {
     validate_identifier(&counter_id)?;
     let value = sqlx::query_scalar::<_, i64>(
-        "SELECT value FROM counters WHERE counter_id = $1",
+        "SELECT value FROM counters WHERE counter_id = ?1",
     )
     .bind(counter_id)
     .fetch_optional(&state.pool)
@@ -92,13 +95,13 @@ async fn increment_counter(
     validate_identifier(&request.operation_id)?;
 
     let mut transaction = state.pool.begin().await?;
-    sqlx::query("INSERT INTO counters (counter_id, value) VALUES ($1, 0) ON CONFLICT DO NOTHING")
+    sqlx::query("INSERT INTO counters (counter_id, value) VALUES (?1, 0) ON CONFLICT DO NOTHING")
         .bind(&counter_id)
         .execute(&mut *transaction)
         .await?;
 
     let reserved = sqlx::query_scalar::<_, i32>(
-        "INSERT INTO counter_operations (counter_id, operation_id) VALUES ($1, $2) \
+        "INSERT INTO counter_operations (counter_id, operation_id) VALUES (?1, ?2) \
          ON CONFLICT DO NOTHING RETURNING 1",
     )
     .bind(&counter_id)
@@ -109,14 +112,14 @@ async fn increment_counter(
 
     let value = if reserved {
         let value = sqlx::query_scalar::<_, i64>(
-            "UPDATE counters SET value = value + 1 WHERE counter_id = $1 RETURNING value",
+            "UPDATE counters SET value = value + 1 WHERE counter_id = ?1 RETURNING value",
         )
         .bind(&counter_id)
         .fetch_one(&mut *transaction)
         .await?;
         sqlx::query(
-            "UPDATE counter_operations SET result_value = $3 \
-             WHERE counter_id = $1 AND operation_id = $2",
+            "UPDATE counter_operations SET result_value = ?3 \
+             WHERE counter_id = ?1 AND operation_id = ?2",
         )
         .bind(&counter_id)
         .bind(&request.operation_id)
@@ -127,7 +130,7 @@ async fn increment_counter(
     } else {
         sqlx::query_scalar::<_, Option<i64>>(
             "SELECT result_value FROM counter_operations \
-             WHERE counter_id = $1 AND operation_id = $2 FOR UPDATE",
+             WHERE counter_id = ?1 AND operation_id = ?2",
         )
         .bind(&counter_id)
         .bind(&request.operation_id)
@@ -150,9 +153,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listen_addr: SocketAddr = env::var("COUNTER_STORE_LISTEN_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:4040".to_owned())
         .parse()?;
-    let pool = PgPoolOptions::new()
-        .max_connections(20)
-        .connect(&database_url)
+    let connect_options = SqliteConnectOptions::from_str(&database_url)?
+        .create_if_missing(true)
+        .foreign_keys(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .busy_timeout(Duration::from_secs(5));
+    // A single connection serializes the reference counter's short write
+    // transactions and avoids turning SQLite lock contention into retries.
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(connect_options)
         .await?;
     sqlx::migrate!().run(&pool).await?;
 
@@ -177,6 +187,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 mod tests {
     use super::*;
 
+    async fn test_state(
+        database_url: &str,
+    ) -> Result<AppState, Box<dyn std::error::Error>> {
+        let options = SqliteConnectOptions::from_str(database_url)?
+            .create_if_missing(true)
+            .foreign_keys(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(Duration::from_secs(5));
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await?;
+        sqlx::migrate!().run(&pool).await?;
+        Ok(AppState { pool })
+    }
+
     #[test]
     fn identifier_validation_accepts_bounded_safe_ascii() {
         assert!(validate_identifier("tenant.counter_1").is_ok());
@@ -187,5 +213,62 @@ mod tests {
         for value in ["", "../counter", "counter/name", "counter\nname"] {
             assert!(validate_identifier(value).is_err(), "accepted {value:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn increments_are_idempotent_concurrent_and_durable()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let database_url = format!(
+            "sqlite://{}",
+            directory.path().join("counter.db").display()
+        );
+        let state = test_state(&database_url).await?;
+        let first = increment_counter(
+            State(state.clone()),
+            Path("demo".to_owned()),
+            Json(IncrementRequest {
+                operation_id: "same-operation".to_owned(),
+            }),
+        )
+        .await?
+        .0
+        .value;
+        let replay = increment_counter(
+            State(state.clone()),
+            Path("demo".to_owned()),
+            Json(IncrementRequest {
+                operation_id: "same-operation".to_owned(),
+            }),
+        )
+        .await?
+        .0
+        .value;
+        assert_eq!((first, replay), (1, 1));
+
+        let mut increments = Vec::new();
+        for index in 0..20 {
+            increments.push(tokio::spawn(increment_counter(
+                State(state.clone()),
+                Path("demo".to_owned()),
+                Json(IncrementRequest {
+                    operation_id: format!("concurrent-{index}"),
+                }),
+            )));
+        }
+        for increment in increments {
+            let _response = increment.await??;
+        }
+        state.pool.close().await;
+
+        let restarted = test_state(&database_url).await?;
+        let value =
+            read_counter(State(restarted.clone()), Path("demo".to_owned()))
+                .await?
+                .0
+                .value;
+        assert_eq!(value, 21);
+        restarted.pool.close().await;
+        Ok(())
     }
 }

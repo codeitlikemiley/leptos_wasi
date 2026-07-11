@@ -13,8 +13,8 @@ executor = { type = "http" }
 
 [component.counter]
 source = "target/wasm32-wasip2/release/counter.wasm"
-allowed_outbound_hosts = []
-environment = { LEPTOS_OUTPUT_NAME = "counter", LEPTOS_SITE_ROOT = "/site", LEPTOS_SITE_PKG_DIR = "pkg" }
+allowed_outbound_hosts = ["http://127.0.0.1:4040"]
+environment = { LEPTOS_OUTPUT_NAME = "counter", LEPTOS_SITE_ROOT = "/site", LEPTOS_SITE_PKG_DIR = "pkg", COUNTER_STORE_URL = "http://127.0.0.1:4040", COUNTER_ID = "demo" }
 files = [
   { source = "target/site", destination = "/site" }
 ]

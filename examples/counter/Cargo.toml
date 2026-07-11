@@ -11,26 +11,38 @@ crate-type = ["cdylib"]
 
 [dependencies]
 console_error_panic_hook = "0.1"
+futures = { version = "0.3.32", optional = true }
+http = { version = "1.4", optional = true }
 leptos = { version = "0.8.20", default-features = false }
 leptos_meta = { version = "0.8.6", default-features = false }
 leptos_router = { version = "0.8.14", default-features = false }
 leptos_wasi = { path = "../..", default-features = false, features = ["wasip3"], optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
 server_fn = { version = "0.8.12", default-features = false, features = ["axum-no-default"] }
+thiserror = { version = "2.0", optional = true }
+uuid = { version = "1.18", features = ["js", "v4"], optional = true }
 wasip3 = { version = "=0.7.0", features = ["http-compat"], optional = true }
-wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen = { version = "=0.2.126", optional = true }
 
 [features]
 hydrate = [
   "leptos/hydrate",
   "leptos/islands",
   "dep:wasm-bindgen",
+  "dep:uuid",
 ]
 ssr = [
   "leptos/ssr",
   "leptos/islands",
   "leptos_meta/ssr",
   "leptos_router/ssr",
+  "dep:futures",
+  "dep:http",
   "dep:leptos_wasi",
+  "dep:serde",
+  "dep:serde_json",
+  "dep:thiserror",
   "dep:wasip3",
 ]
 

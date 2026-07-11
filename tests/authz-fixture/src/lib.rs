@@ -5,7 +5,7 @@ mod app;
 
 use std::sync::{Arc, OnceLock};
 
-use app::{App, IncrementCount, shell};
+use app::{App, GetCount, IncrementCount, shell};
 use bytes::Bytes;
 use http_body_util::Full;
 use leptos::{config::get_configuration, prelude::use_context};
@@ -301,6 +301,7 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
             .map_err(internal_error)?
             .static_files_handler("/pkg", serve_static_files)
             .map_err(internal_error)?
+            .with_server_fn::<GetCount>()
             .with_server_fn::<ProtectedIncrementCount>()
             .with_server_fn::<AuthenticatedIncrementCount>()
             .with_server_fn::<CedarIncrementCount>()

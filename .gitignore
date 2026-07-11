@@ -29,4 +29,7 @@ tests/browser/test-results/
 
 # Rustc ICE crash dumps
 rustc-ice-*.txt
+
+# Local SQLite state used by the persistent counter example.
+/data/
 tests/.spin/

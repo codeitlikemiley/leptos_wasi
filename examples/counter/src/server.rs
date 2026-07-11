@@ -2,7 +2,7 @@ use leptos::config::get_configuration;
 use leptos_wasi::wasip3::prelude::{Handler, init_wasip3_spawner};
 use wasip3::http::types::{ErrorCode, Request, Response};
 
-use crate::app::{App, IncrementCount, shell};
+use crate::app::{App, GetCount, IncrementCount, shell};
 
 struct LeptosServer;
 
@@ -22,6 +22,7 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
         let handler = handler
             .static_files_handler("/pkg", serve_static_files)
             .map_err(internal_error)?
+            .with_server_fn::<GetCount>()
             .with_server_fn::<IncrementCount>()
             .generate_routes(App)
             .map_err(internal_error)?;

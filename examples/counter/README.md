@@ -1,8 +1,8 @@
 # counter
 
 This example demonstrates running a Leptos application using native WASI
-Preview 3 task scheduling and standard HTTP triggers. Wasmtime 46 is the
-blocking production reference. A pinned Spin main revision runs the terminal
+Preview 3 task scheduling and standard HTTP triggers. Wasmtime 46.0.1 is the
+blocking correctness reference. A pinned Spin main revision runs the terminal
 component as an experimental compatibility lane; tagged Spin 4.0.2 still
 cannot link final `wasi:http@0.3.0`.
 
@@ -10,7 +10,8 @@ cannot link final `wasi:http@0.3.0`.
 
 - **Rust Toolchain:** Version 1.93.0 or later.
 - **Rust target:** `rustup target add wasm32-wasip2`
-- **Cargo Leptos:** Version 0.3.7 (`cargo install cargo-leptos --version 0.3.7 --locked`).
+- **Cargo Leptos:** Version 0.3.6 (`cargo install cargo-leptos --version 0.3.6 --locked`).
+- **wasm-bindgen CLI:** Version 0.2.126 (`cargo install wasm-bindgen-cli --version 0.2.126 --locked`).
 - **Spin CLI:** the exact main revision in `components.lock.toml`; `make spin`
   builds it into the repository-local tool cache when needed.
 - **Wasmtime CLI:** Version 46.0.1 (`cargo install wasmtime-cli --version 46.0.1 --locked`).
@@ -61,6 +62,20 @@ starting a runtime:
 make verify-split
 ```
 
+Both runtime targets start the same loopback SQLite state service. The database
+is retained at `../../data/counter.sqlite3`, so the displayed value survives a
+browser refresh and switching between Wasmtime and Spin. Reset it explicitly:
+
+```bash
+make reset-counter
+```
+
+Run the cross-runtime browser persistence proof with:
+
+```bash
+../../scripts/run-counter-persistence-browser.sh
+```
+
 The interactive counter uses `#[island(lazy)]`. The router, page layout,
 headings, and explanatory content are server-only components. The browser first
 loads the small islands runtime and then loads the counter island from its own
@@ -73,16 +88,16 @@ and lazy chunk always describe the same build.
 
 ## Architecture
 
-1. **Session Counter:** Each hydrated island starts at zero. The browser submits its current value to a server function, which performs a checked increment and returns the next value. No count is persisted or shared between browser sessions.
+1. **Persistent Counter:** The island loads the authoritative SQLite value, sends a stable operation ID with each increment, and reuses that ID after an uncertain response. The private store performs the increment atomically and records the result for idempotent replay. When store configuration is absent, test fixtures retain the session-only checked increment.
 2. **Static Files:** Wasmtime maps `./target/site/` to guest `/site`, while Spin serves `./target/site/pkg/` from a dedicated `/pkg/...` file-server component. Both serve every generated split asset.
 3. **Split Manifest:** The server component can read `/site/pkg/__wasm_split_manifest.json`, allowing Leptos SSR to emit preload hints for server-invoked lazy functions and routes. The lazy island itself loads when island hydration runs.
 4. **WASI HTTP:** The server implements `wasip3::exports::http::handler::Guest` and runs as a native WebAssembly component using the Preview 3 async ABI.
 
-The separate [`production-counter`](../production-counter/README.md) example
-defines a private PostgreSQL state service with atomic, idempotent increments.
-It is kept separate because durable storage introduces service identity,
-networking, migration, and recovery responsibilities that do not belong in the
-minimal islands demonstration.
+The [`production-counter`](../production-counter/README.md) directory contains
+the private SQLite service. SQLite is appropriate for this single-writer local
+example and a single state-service replica with a persistent volume. Shared
+regional replicas still require a network database such as PostgreSQL rather
+than mounting one SQLite file from multiple processes.
 
 ## Component middleware
 

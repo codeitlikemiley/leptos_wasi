@@ -20,7 +20,9 @@ leptos_meta = { version = "0.8.6", default-features = false, features = ["ssr"] 
 leptos_router = { version = "0.8.14", default-features = false, features = ["ssr"] }
 leptos_wasi = { path = "../..", default-features = false, features = ["wasip3"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 server_fn = { version = "0.8.12", default-features = false, features = ["axum-no-default"] }
+thiserror = "2"
 wasi-authz-client = { path = "../../../wasi-authz/crates/wasi-authz-client", version = "=0.1.0-alpha.3", features = ["wasip3"] }
 wasi-authz-cedar = { path = "../../../wasi-authz/crates/wasi-authz-cedar", version = "=0.1.0-alpha.3" }
 wasi-authz-contract = { path = "../../../wasi-authz/crates/wasi-authz-contract", version = "=0.1.0-alpha.3" }
