@@ -54,12 +54,6 @@ type ProxyBody = BoxBody<Bytes, BoxError>;
 type HttpClient = Client<HttpConnector, ProxyBody>;
 
 const BROKER_BODY_LIMIT: usize = 64 * 1024;
-const BROKER_TIMEOUT: Duration = Duration::from_secs(2);
-const QUEUE_TIMEOUT: Duration = Duration::from_millis(5);
-const TERMINAL_FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(2);
-const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(2);
-const STREAM_TOTAL_TIMEOUT: Duration = Duration::from_secs(30);
-const HEALTH_INTERVAL: Duration = Duration::from_secs(1);
 const STAGE_COUNT: usize = 10;
 const ERROR_COUNT: usize = 8;
 
@@ -77,7 +71,18 @@ struct Ingress {
     route_policy: Arc<BTreeMap<String, RouteClass>>,
     profile: PolicyProfile,
     gates: Gates,
+    deadlines: Deadlines,
     metrics: Arc<Metrics>,
+}
+
+#[derive(Clone, Copy)]
+struct Deadlines {
+    queue: Duration,
+    authentication: Duration,
+    terminal_first_byte: Duration,
+    stream_idle: Duration,
+    stream_total: Duration,
+    health_interval: Duration,
 }
 
 #[derive(Clone)]
@@ -124,6 +129,7 @@ struct GuardedBody {
     metrics: Arc<Metrics>,
     body_started: Instant,
     request_started: Instant,
+    idle_duration: Duration,
     completed: bool,
 }
 
@@ -318,6 +324,7 @@ impl Ingress {
             route_policy: Arc::new(route_policy),
             profile,
             gates: Gates::from_environment()?,
+            deadlines: Deadlines::from_environment()?,
             metrics: Arc::new(Metrics::new()),
         })
     }
@@ -343,7 +350,7 @@ impl Ingress {
         let route_class = self.route_class(request.uri().path());
         let route_gate = self.gates.for_class(route_class);
         let route_lease = match route_gate
-            .acquire(&self.metrics, Stage::TerminalQueue)
+            .acquire(&self.metrics, Stage::TerminalQueue, self.deadlines.queue)
             .await
         {
             Ok(lease) => lease,
@@ -435,7 +442,7 @@ impl Ingress {
             );
         };
         let terminal_lease = match Arc::clone(&terminal.gate)
-            .acquire(&self.metrics, Stage::TerminalQueue)
+            .acquire(&self.metrics, Stage::TerminalQueue, self.deadlines.queue)
             .await
         {
             Ok(lease) => lease,
@@ -465,7 +472,7 @@ impl Ingress {
         *request.uri_mut() = uri;
         let send_started = Instant::now();
         let response = timeout(
-            TERMINAL_FIRST_BYTE_TIMEOUT,
+            self.deadlines.terminal_first_byte,
             self.terminal_client.request(request.map(box_incoming)),
         )
         .await;
@@ -522,6 +529,8 @@ impl Ingress {
             request_guard,
             Arc::clone(&self.metrics),
             request_started,
+            self.deadlines.stream_idle,
+            self.deadlines.stream_total,
         )
         .boxed();
         Response::from_parts(parts, body)
@@ -569,7 +578,7 @@ impl Ingress {
         };
         let queue_started = Instant::now();
         let _lease = Arc::clone(&self.gates.broker)
-            .acquire(&self.metrics, Stage::AuthnQueue)
+            .acquire(&self.metrics, Stage::AuthnQueue, self.deadlines.queue)
             .await?;
         self.metrics
             .record(Stage::AuthnQueue, queue_started.elapsed());
@@ -610,17 +619,18 @@ impl Ingress {
                 .record(Stage::AuthnBody, body_started.elapsed());
             Ok::<_, Rejection>((status, body))
         };
-        let (status, body) = match timeout(BROKER_TIMEOUT, operation).await {
-            Ok(Ok(value)) => value,
-            Ok(Err(rejection)) => {
-                self.metrics.error(ErrorClass::AuthnTransport);
-                return Err(rejection);
-            }
-            Err(_) => {
-                self.metrics.error(ErrorClass::AuthnTimeout);
-                return Err(Rejection::Unavailable);
-            }
-        };
+        let (status, body) =
+            match timeout(self.deadlines.authentication, operation).await {
+                Ok(Ok(value)) => value,
+                Ok(Err(rejection)) => {
+                    self.metrics.error(ErrorClass::AuthnTransport);
+                    return Err(rejection);
+                }
+                Err(_) => {
+                    self.metrics.error(ErrorClass::AuthnTimeout);
+                    return Err(Rejection::Unavailable);
+                }
+            };
         match parse_authn_response(status, &body) {
             AuthDecision::Allow(claims) => claims
                 .into_context(
@@ -767,7 +777,7 @@ impl Ingress {
         let ingress = self.clone();
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(HEALTH_INTERVAL).await;
+                tokio::time::sleep(ingress.deadlines.health_interval).await;
                 for terminal in &*ingress.terminals {
                     let terminal = terminal.clone();
                     let ingress = ingress.clone();
@@ -801,7 +811,7 @@ impl Ingress {
         else {
             return false;
         };
-        timeout(TERMINAL_FIRST_BYTE_TIMEOUT, async {
+        timeout(self.deadlines.terminal_first_byte, async {
             let response = self.terminal_client.request(request).await?;
             let healthy = response.status().is_success();
             response.into_body().collect().await?;
@@ -826,6 +836,34 @@ impl PolicyProfile {
             Self::EdgeAuthenticated
         } else {
             Self::ProxyBaseline
+        })
+    }
+}
+
+impl Deadlines {
+    fn from_environment() -> Result<Self> {
+        Ok(Self {
+            queue: environment_duration_ms("TRUSTED_INGRESS_QUEUE_WAIT_MS", 5)?,
+            authentication: environment_duration_ms(
+                "TRUSTED_INGRESS_AUTHN_DEADLINE_MS",
+                2_000,
+            )?,
+            terminal_first_byte: environment_duration_ms(
+                "TRUSTED_INGRESS_TERMINAL_FIRST_BYTE_MS",
+                2_000,
+            )?,
+            stream_idle: environment_duration_ms(
+                "TRUSTED_INGRESS_STREAM_IDLE_MS",
+                2_000,
+            )?,
+            stream_total: environment_duration_ms(
+                "TRUSTED_INGRESS_STREAM_TOTAL_MS",
+                30_000,
+            )?,
+            health_interval: environment_duration_ms(
+                "TRUSTED_INGRESS_HEALTH_INTERVAL_MS",
+                1_000,
+            )?,
         })
     }
 }
@@ -878,6 +916,7 @@ impl AdmissionGate {
         self: Arc<Self>,
         metrics: &Metrics,
         stage: Stage,
+        queue_timeout: Duration,
     ) -> Result<AdmissionLease, Rejection> {
         let queued = self.queued.fetch_add(1, Ordering::AcqRel);
         if queued >= self.max_queue {
@@ -887,7 +926,7 @@ impl AdmissionGate {
         }
         let started = Instant::now();
         let permit =
-            timeout(QUEUE_TIMEOUT, Arc::clone(&self.permits).acquire_owned())
+            timeout(queue_timeout, Arc::clone(&self.permits).acquire_owned())
                 .await;
         self.queued.fetch_sub(1, Ordering::AcqRel);
         metrics.record(stage, started.elapsed());
@@ -930,16 +969,19 @@ impl GuardedBody {
         request: RequestGuard,
         metrics: Arc<Metrics>,
         request_started: Instant,
+        idle_duration: Duration,
+        total_duration: Duration,
     ) -> Self {
         Self {
             inner: Box::pin(inner),
-            idle: Box::pin(tokio::time::sleep(STREAM_IDLE_TIMEOUT)),
-            total: Box::pin(tokio::time::sleep(STREAM_TOTAL_TIMEOUT)),
+            idle: Box::pin(tokio::time::sleep(idle_duration)),
+            total: Box::pin(tokio::time::sleep(total_duration)),
             _leases: leases,
             _request: request,
             metrics,
             body_started: Instant::now(),
             request_started,
+            idle_duration,
             completed: false,
         }
     }
@@ -969,9 +1011,10 @@ impl http_body::Body for GuardedBody {
         }
         match self.inner.as_mut().poll_frame(context) {
             Poll::Ready(Some(Ok(frame))) => {
+                let idle_duration = self.idle_duration;
                 self.idle
                     .as_mut()
-                    .reset(tokio::time::Instant::now() + STREAM_IDLE_TIMEOUT);
+                    .reset(tokio::time::Instant::now() + idle_duration);
                 Poll::Ready(Some(Ok(frame)))
             }
             Poll::Ready(Some(Err(error))) => {
@@ -1325,6 +1368,12 @@ fn environment_u64(name: &str, default: u64) -> Result<u64> {
         .map_or(Ok(default), |value| value.parse().context("invalid limit"))?;
     anyhow::ensure!(value > 0 && value <= 65_536);
     Ok(value)
+}
+
+fn environment_duration_ms(name: &str, default: u64) -> Result<Duration> {
+    let milliseconds = environment_u64(name, default)?;
+    anyhow::ensure!(milliseconds > 0 && milliseconds <= 300_000);
+    Ok(Duration::from_millis(milliseconds))
 }
 
 fn validate_origin(value: &str) -> Result<()> {
