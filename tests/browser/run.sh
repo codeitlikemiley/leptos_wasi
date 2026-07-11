@@ -423,7 +423,7 @@ if [[ "$AUTHZ_FULL_CHAIN_SOAK" == "1" ]]; then
   python3 "$ROOT/scripts/load_runtime.py" \
     "$ACTION_URL" \
     --duration "$AUTHZ_FULL_CHAIN_SOAK_DURATION" \
-    --concurrency 100 \
+    --concurrency "${AUTHZ_FULL_CHAIN_BENCHMARK_CONCURRENCY:-100}" \
     --pid "$SERVER_PID" \
     --method POST \
     --header "authorization: Bearer allow" \

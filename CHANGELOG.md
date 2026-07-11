@@ -6,6 +6,20 @@ All notable changes to this project will be documented in this file.
 
 No changes yet.
 
+## [0.5.0-alpha.3] — 2026-07-11
+
+### Added
+
+- Added the executable native trusted-ingress topology, isolated Cedar,
+  SpiceDB, and hybrid authorization scenarios, browser coverage, deployment
+  bypass audits, and promotion benchmark/soak runners.
+
+### Security
+
+- Strip bearer and spoofed trusted metadata at ingress, fail closed with
+  generic no-store responses, and require a concrete private terminal network
+  descriptor for the production profile.
+
 ## [0.5.0-alpha.2] — 2026-07-11
 
 ### Changed
