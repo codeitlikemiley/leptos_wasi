@@ -11,7 +11,8 @@ cannot link final `wasi:http@0.3.0`.
 - **Rust Toolchain:** Version 1.93.0 or later.
 - **Rust target:** `rustup target add wasm32-wasip2`
 - **Cargo Leptos:** Version 0.3.7 (`cargo install cargo-leptos --version 0.3.7 --locked`).
-- **Spin CLI:** the exact main revision in `components.lock.toml`, built with `make bootstrap-spin`.
+- **Spin CLI:** the exact main revision in `components.lock.toml`; `make spin`
+  builds it into the repository-local tool cache when needed.
 - **Wasmtime CLI:** Version 46.0.1 (`cargo install wasmtime-cli --version 46.0.1 --locked`).
 
 ## Build and Run
@@ -25,9 +26,12 @@ make wasmtime
 To compile and run the application on the pinned Spin main revision:
 
 ```bash
-make bootstrap-spin
 make spin
 ```
+
+The first run bootstraps the pinned Spin revision and can take several minutes.
+Later runs reuse that repository-local binary. `make bootstrap-spin` remains
+available when you want to prebuild the runtime without starting the example.
 
 `make spin-stable-canary` separately proves the tagged Spin incompatibility.
 The production-shape trusted-ingress chain can be exercised on pinned Spin

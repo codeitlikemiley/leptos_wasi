@@ -4,8 +4,8 @@
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  make bootstrap-spin - Build the exact pinned Spin main runtime"
-	@echo "  make spin     - Build and run on the exact pinned Spin main runtime"
+	@echo "  make bootstrap-spin - Prebuild the exact pinned Spin main runtime"
+	@echo "  make spin     - Bootstrap, build, and run the exact pinned Spin main runtime"
 	@echo "  make spin-stable-canary - Confirm Spin 4.0.2 cannot host final WASI"
 	@echo "  make trusted-ingress-spin - Run authn/Cedar/SpiceDB through pinned Spin main"
 	@echo "  make wasmtime - Build and run with Wasmtime"
@@ -24,7 +24,7 @@ bootstrap-spin-no-default:
 	../../scripts/bootstrap-spin-main.sh no-default-features
 
 # Build and run on the exact tested Spin main revision.
-spin:
+spin: bootstrap-spin
 	@echo "Building the final-WASI component for pinned Spin main..."
 	@mkdir -p .spin
 	cargo leptos build --release --split --frontend-only --lib-cargo-args=--locked

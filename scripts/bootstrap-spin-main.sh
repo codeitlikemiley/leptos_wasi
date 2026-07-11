@@ -35,12 +35,17 @@ git clone --filter=blob:none --no-checkout "${repository}" "${source_directory}"
 git -C "${source_directory}" fetch --depth 1 origin "${revision}"
 git -C "${source_directory}" checkout --detach "${revision}"
 [[ "$(git -C "${source_directory}" rev-parse HEAD)" == "${revision}" ]]
-cargo build \
-  --locked \
-  --release \
-  --bin spin \
-  "${cargo_features[@]}" \
-  --manifest-path "${source_directory}/Cargo.toml"
+cargo_command=(
+  cargo build
+  --locked
+  --release
+  --bin spin
+)
+if ((${#cargo_features[@]})); then
+  cargo_command+=("${cargo_features[@]}")
+fi
+cargo_command+=(--manifest-path "${source_directory}/Cargo.toml")
+"${cargo_command[@]}"
 install -m 0755 "${source_directory}/target/release/spin" "${binary}"
 "${binary}" --version 2>&1 | grep -Fq "${revision:0:7}"
 printf '%s\n' "${binary}"
