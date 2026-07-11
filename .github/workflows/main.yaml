@@ -195,16 +195,38 @@ jobs:
         with:
           version: "46.0.1"
 
-      - name: Install Spin 4.0.0
+      - name: Install Spin 4.0.2
         uses: fermyon/actions/spin/setup@8849a6c41270af8e9f60f371982eddf33b8e35c9 # v1
         with:
-          version: "v4.0.0"
+          version: "v4.0.2"
 
       - name: Install wasm-tools 1.253.0
         run: cargo install wasm-tools --version 1.253.0 --locked
 
       - name: Build guest test apps and run E2E tests
         run: ./run_tests.sh
+
+  production-counter-store:
+    name: Production counter state boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: examples/production-counter/store -> target
+
+      - name: Test and lint the private persistence service
+        working-directory: examples/production-counter/store
+        run: |
+          cargo fmt --all -- --check
+          cargo test --locked
+          cargo clippy --locked --all-targets -- -D warnings
 
   browser:
     name: Split WASM browser / Wasmtime final WASI
@@ -271,7 +293,7 @@ jobs:
   middleware-contract:
     name: Final WASI middleware contract and Spin canary
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -321,6 +343,22 @@ jobs:
 
       - name: Confirm tagged Spin still lacks the final-WASI terminal ABI
         run: ./scripts/check-spin-final-wasi-canary.sh
+
+      - name: Build exact Spin main compatibility runtime
+        id: spin-main
+        run: |
+          binary="$(./scripts/bootstrap-spin-main.sh)"
+          echo "binary=${binary}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run final-WASI terminal on pinned Spin main
+        env:
+          SPIN_BIN: ${{ steps.spin-main.outputs.binary }}
+        run: ./scripts/check-spin-main-terminal.sh
+
+      - name: Preserve the composed-handler CPU-metrics regression
+        env:
+          SPIN_BIN: ${{ steps.spin-main.outputs.binary }}
+        run: ./scripts/check-spin-main-composed-canary.sh
 
       - name: Report cross-repository middleware promotion gate
         run: |

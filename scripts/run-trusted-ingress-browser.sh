@@ -18,5 +18,5 @@ bash "${repository}/scripts/with-spicedb-pdp-wasmtime.sh" \
   AUTHZ=1 \
   MIDDLEWARE=0 \
   AUTHENTICATION_MODE=trusted_ingress \
-  HOST=wasmtime \
+  HOST="${HOST:-wasmtime}" \
   "${ROOT}/tests/browser/run.sh"

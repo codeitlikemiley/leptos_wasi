@@ -567,6 +567,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--composition-tools", action="store_true")
     parser.add_argument("--spin", action="store_true")
+    parser.add_argument("--spin-main", action="store_true")
     parser.add_argument("--spin-native-canary", action="store_true")
     parser.add_argument("--wasmtime", action="store_true")
     args = parser.parse_args()
@@ -700,6 +701,14 @@ def main() -> int:
         actual = command_version(spin)
         if lock["spin_stable_version"] not in actual:
             raise AssertionError("Spin behavioral runner must use stable Spin 4")
+    if args.spin_main:
+        spin = os.environ.get("SPIN_BIN") or shutil.which("spin") or "spin"
+        actual = command_version(spin)
+        short_revision = lock["spin_main_revision"][:7]
+        if short_revision not in actual:
+            raise AssertionError(
+                "Spin main runner does not match the pinned compatibility revision"
+            )
     if args.spin_native_canary:
         spin = os.environ.get("SPIN_BIN") or shutil.which("spin") or "spin"
         actual = command_version(spin)

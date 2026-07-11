@@ -1,12 +1,15 @@
 # Makefile for building counter app for different WASI runtimes
-.PHONY: help spin wasmtime middleware-spin middleware-wasmtime verify-split clean run
+.PHONY: help bootstrap-spin bootstrap-spin-no-default spin spin-stable-canary wasmtime trusted-ingress-spin middleware-spin middleware-wasmtime verify-split clean run
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  make spin     - Build and confirm the Spin final-WASI canary"
+	@echo "  make bootstrap-spin - Build the exact pinned Spin main runtime"
+	@echo "  make spin     - Build and run on the exact pinned Spin main runtime"
+	@echo "  make spin-stable-canary - Confirm Spin 4.0.2 cannot host final WASI"
+	@echo "  make trusted-ingress-spin - Run authn/Cedar/SpiceDB through pinned Spin main"
 	@echo "  make wasmtime - Build and run with Wasmtime"
-	@echo "  make middleware-spin - Confirm the composed Spin compatibility canary"
+	@echo "  make middleware-spin - Run the explicit no-CPU-metrics Spin diagnostic"
 	@echo "  make middleware-wasmtime - Run a precomposed middleware component"
 	@echo "  make verify-split - Verify lazy WASM split artifacts"
 	@echo "  make clean    - Clean build artifacts"
@@ -14,15 +17,28 @@ help:
 # Run target alias
 run: wasmtime
 
-# Build and confirm Spin's expected final-WASI linker rejection
+bootstrap-spin:
+	../../scripts/bootstrap-spin-main.sh
+
+bootstrap-spin-no-default:
+	../../scripts/bootstrap-spin-main.sh no-default-features
+
+# Build and run on the exact tested Spin main revision.
 spin:
-	@echo "Building the final-WASI component for the Spin compatibility canary..."
+	@echo "Building the final-WASI component for pinned Spin main..."
 	@mkdir -p .spin
 	cargo leptos build --release --split --frontend-only --lib-cargo-args=--locked
 	LEPTOS_OUTPUT_NAME=counter cargo build --locked --lib --target wasm32-wasip2 --release --no-default-features --features ssr
 	@$(MAKE) verify-split
 	@echo "Built: target/wasm32-wasip2/release/counter.wasm"
+	PORT=3000 ../../scripts/run-spin-main.sh "$(CURDIR)/spin.toml"
+
+spin-stable-canary:
 	PORT=3000 ../../scripts/check-spin-final-wasi-canary.sh "$(CURDIR)/spin.toml"
+
+trusted-ingress-spin:
+	@binary="$$(../../scripts/bootstrap-spin-main.sh)"; \
+	SPIN_BIN="$$binary" ../../scripts/run-trusted-ingress-spin-main.sh
 
 # Build and run with Wasmtime
 wasmtime:
@@ -46,8 +62,9 @@ wasmtime:
 		target/wasmtime/wasm32-wasip2/release/counter.wasm
 
 middleware-spin:
-	@echo "Confirming Spin 4's expected final-WASI linker rejection..."
-	MIDDLEWARE=1 HOST=spin ../../tests/browser/run.sh
+	@echo "Running the non-promoting Spin main middleware diagnostic..."
+	@binary="$$(../../scripts/bootstrap-spin-main.sh no-default-features)"; \
+	SPIN_BIN="$$binary" SPIN_DIAGNOSTIC_NO_DEFAULT_FEATURES=1 PORT=3110 MIDDLEWARE=1 HOST=spin ../../tests/browser/run.sh
 
 middleware-wasmtime:
 	@echo "Running the final-WASI composed middleware example on Wasmtime..."

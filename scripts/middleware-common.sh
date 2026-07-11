@@ -36,16 +36,22 @@ resolve_middleware_tool() {
   local command_name="$2"
   local expected_version="$3"
   local configured="${!environment_name:-}"
-  local cache_root="${LEPTOS_WASI_TOOL_ROOT:-${HOME}/.cache/leptos-wasi-tools}"
-  local cached="${cache_root}/${command_name}-${expected_version}/${command_name}"
+  local repo_local="${MIDDLEWARE_ROOT}/target/tools/${command_name}-${expected_version}/${command_name}"
+  local legacy_cache="${LEPTOS_WASI_TOOL_ROOT:-${HOME}/.cache/leptos-wasi-tools}/${command_name}-${expected_version}/${command_name}"
   local selected
 
   if [[ -n "${configured}" ]]; then
     selected="${configured}"
-  elif [[ -x "${cached}" ]]; then
-    selected="${cached}"
-  else
+  elif command -v "${command_name}" >/dev/null 2>&1 \
+    && tool_version_matches "${command_name}" "${expected_version}"; then
     selected="${command_name}"
+  elif [[ -x "${repo_local}" ]]; then
+    selected="${repo_local}"
+  elif [[ -x "${legacy_cache}" ]]; then
+    selected="${legacy_cache}"
+  else
+    echo "${command_name} ${expected_version} is required; install it or set ${environment_name}" >&2
+    return 1
   fi
 
   require_middleware_command "${selected}"
@@ -59,6 +65,45 @@ resolve_middleware_tool() {
     echo "${command_name} version mismatch; expected ${expected_version}, found: ${actual}" >&2
     return 1
   fi
+  printf '%s\n' "${selected}"
+}
+
+tool_version_matches() {
+  local command_name="$1"
+  local expected_version="$2"
+  local actual
+  if [[ "${command_name}" == "cosign" ]]; then
+    actual="$("${command_name}" version 2>&1 || true)"
+  else
+    actual="$("${command_name}" --version 2>&1 || true)"
+  fi
+  [[ "${actual}" == *"${expected_version}"* ]]
+}
+
+resolve_spin_main_tool() {
+  local configured="${SPIN_BIN:-}"
+  local revision
+  revision="$(middleware_lock_value spin_main_revision)"
+  local short_revision="${revision:0:7}"
+  local repo_local="${MIDDLEWARE_ROOT}/target/tools/spin-${revision}/spin"
+  local selected
+
+  if [[ -n "${configured}" ]]; then
+    selected="${configured}"
+  elif command -v spin >/dev/null 2>&1 && tool_version_matches spin "${short_revision}"; then
+    selected="spin"
+  elif [[ -x "${repo_local}" ]]; then
+    selected="${repo_local}"
+  else
+    echo "pinned Spin main ${revision} is required; run scripts/bootstrap-spin-main.sh or set SPIN_BIN" >&2
+    return 1
+  fi
+
+  require_middleware_command "${selected}"
+  tool_version_matches "${selected}" "${short_revision}" || {
+    echo "Spin revision mismatch; expected ${revision}, found: $("${selected}" --version 2>&1)" >&2
+    return 1
+  }
   printf '%s\n' "${selected}"
 }
 

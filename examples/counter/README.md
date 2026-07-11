@@ -2,16 +2,17 @@
 
 This example demonstrates running a Leptos application using native WASI
 Preview 3 task scheduling and standard HTTP triggers. Wasmtime 46 is the
-blocking final-WASI runtime. The Spin manifests are retained as compatibility
-canaries until a tagged Spin release links final `wasi:http@0.3.0`.
+blocking production reference. A pinned Spin main revision runs the terminal
+component as an experimental compatibility lane; tagged Spin 4.0.2 still
+cannot link final `wasi:http@0.3.0`.
 
 ## Prerequisites
 
 - **Rust Toolchain:** Version 1.93.0 or later.
 - **Rust target:** `rustup target add wasm32-wasip2`
-- **Cargo Leptos:** Version 0.3.7 or later (`cargo install --locked cargo-leptos`).
-- **Spin CLI:** Version 4.0.0 or later.
-- **Wasmtime CLI:** Version 46.0.1 or later.
+- **Cargo Leptos:** Version 0.3.7 (`cargo install cargo-leptos --version 0.3.7 --locked`).
+- **Spin CLI:** the exact main revision in `components.lock.toml`, built with `make bootstrap-spin`.
+- **Wasmtime CLI:** Version 46.0.1 (`cargo install wasmtime-cli --version 46.0.1 --locked`).
 
 ## Build and Run
 
@@ -21,11 +22,24 @@ To compile and run the application under Wasmtime:
 make wasmtime
 ```
 
-To compile the application and confirm Spin's pinned expected linker failure:
+To compile and run the application on the pinned Spin main revision:
 
 ```bash
+make bootstrap-spin
 make spin
 ```
+
+`make spin-stable-canary` separately proves the tagged Spin incompatibility.
+The production-shape trusted-ingress chain can be exercised on pinned Spin
+main with:
+
+```bash
+make trusted-ingress-spin
+```
+
+That runner keeps authentication and edge header policy in the native ingress,
+uses the plain Spin terminal, embeds Cedar, calls SpiceDB directly, and covers
+SSR, authorization, islands, and split-WASM loading in Playwright.
 
 To clean up all local build files:
 
@@ -60,15 +74,22 @@ and lazy chunk always describe the same build.
 3. **Split Manifest:** The server component can read `/site/pkg/__wasm_split_manifest.json`, allowing Leptos SSR to emit preload hints for server-invoked lazy functions and routes. The lazy island itself loads when island hydration runs.
 4. **WASI HTTP:** The server implements `wasip3::exports::http::handler::Guest` and runs as a native WebAssembly component using the Preview 3 async ABI.
 
+The separate [`production-counter`](../production-counter/README.md) example
+defines a private PostgreSQL state service with atomic, idempotent increments.
+It is kept separate because durable storage introduces service identity,
+networking, migration, and recovery responsibilities that do not belong in the
+minimal islands demonstration.
+
 ## Component middleware
 
 The local middleware runner verifies the sibling `wasi-http-middleware`
 artifacts and deterministically composes request ID, security headers, CORS,
 and optional authentication around the counter. Wasmtime runs the precomposed
-final `wasi:http@0.3.0` component. Stable Spin 4 cannot link the final HTTP
-resource types, while `spin.middleware-vnext.toml` is a second incompatibility
-canary because Spin's native middleware implementation still hard-codes the
-March RC handler world.
+final `wasi:http@0.3.0` component. Tagged Spin 4.0.2 cannot link the final HTTP
+resource types. Spin main can run the terminal, but its default CPU-metrics
+hook currently panics for any WAC-composed handler. `spin.middleware-vnext.toml`
+is a separate incompatibility canary because native middleware composition
+still hard-codes the March RC handler world.
 
 The `/pkg/...` file-server trigger deliberately has no authentication
 middleware. It must remain public so the browser can load `counter.js`,
@@ -80,10 +101,11 @@ Run the browser-verified example on Wasmtime, or confirm the Spin canary, with:
 ```bash
 make middleware-wasmtime
 # or
-make middleware-spin
+make middleware-spin # diagnostic only; builds Spin without default features
 ```
 
 The exact SDK, Spin runtime, WIT, Wasmtime, and `wac` versions are recorded in
 `../../tests/middleware/components.lock.toml`. Spin is promoted only after a
-tagged release provides final handler, types, and client host support and
-native middleware composition against the final WIT.
+tagged release provides final handler, types, and client host support, fixes
+the composed-handler CPU accounting panic, and composes native middleware
+against the final WIT.

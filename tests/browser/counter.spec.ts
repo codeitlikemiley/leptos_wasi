@@ -122,6 +122,12 @@ test("lazy split island loads and handles a server action", async ({ page }) => 
     await splitGate;
     await route.continue();
   });
+  await page.route(/\/api\/increment_count(?:\?|$)/, async (route) => {
+    // Keep the request pending long enough to observe the UI's disabled state
+    // even when the local runtime completes a server function immediately.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await route.continue();
+  });
   page.on("response", (response) => {
     const url = response.url();
     if (/\/split_[^/]+\.wasm(?:\?|$)/.test(url)) {

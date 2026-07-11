@@ -98,9 +98,13 @@ The dependency list is ordered outermost to innermost. It is not a production
 path until a tagged Spin release supports final WASI HTTP. A second canary uses
 the deterministic WAC-precomposed component through
 [`tests/spin-p3-middleware-composed.toml`](tests/spin-p3-middleware-composed.toml).
-Stable Spin 4 also rejects that component because its host linker does not
-provide the final `wasi:http/types@0.3.0` resource implementation. Wasmtime 46
-is therefore the only blocking final-WASI behavioral runtime in this release.
+Tagged Spin 4.0.2 rejects that component because its host linker does not
+provide the final `wasi:http/types@0.3.0` resource implementation. The pinned
+Spin main revision runs plain final-WASI terminals and outbound HTTP, but its
+default CPU accounting hook panics when a WAC-composed handler is invoked.
+Building that revision without default features proves the component chain but
+is diagnostic only. Wasmtime 46 is therefore the only blocking final-WASI
+behavioral runtime in this release.
 Production deployments must consume versioned artifacts pinned by digest. The
 local runner accepts a sibling checkout only after checking the declared
 compatibility tuple, artifact checksums, component WIT, SBOMs, provenance
@@ -117,8 +121,8 @@ recorded in
 Do not replace those revisions with a floating branch. The local runners reject
 a Spin middleware commit, stable Spin, Wasmtime, `wac`, or `wasm-tools` version
 that does not match this lock. Spin support is promoted only after a tagged
-release contains final handler, types, and client host support and composes
-native middleware against final-WASI WIT.
+release contains final handler, types, and client host support, fixes composed
+handler CPU accounting, and composes native middleware against final-WASI WIT.
 
 ## Wasmtime composition
 
@@ -330,12 +334,13 @@ MIDDLEWARE=1 HOST=wasmtime ./tests/browser/run.sh
 ./scripts/run-authz-lifecycle-e2e.sh
 ./scripts/run-authz-wasip2-lifecycle-e2e.sh
 ./scripts/run-trusted-ingress-browser.sh
+./scripts/run-trusted-ingress-spin-main.sh
 ./scripts/benchmark-trusted-ingress.sh
 DURATION=600 CONCURRENCY=100 ./scripts/soak-trusted-ingress.sh
 HOST=spin ./scripts/run-middleware-tests.sh
 ```
 
-Wasmtime 46 runs the final precomposed chain as the behavioral gate. Stable
-Spin's precomposed lane and the exact-commit native middleware lane are
-non-blocking incompatibility canaries until Spin publishes tagged final-WASI
-host and middleware support.
+Wasmtime 46 runs the final precomposed chain as the behavioral gate. Tagged
+Spin's linker lane, pinned Spin main's CPU-metrics regression lane, and the
+exact-commit native middleware lane remain incompatibility canaries until Spin
+publishes tagged final-WASI host and middleware support.

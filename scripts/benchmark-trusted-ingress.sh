@@ -6,11 +6,12 @@ RESULTS="${RESULTS:-$ROOT/target/trusted-ingress-benchmark}"
 REPETITIONS="${REPETITIONS:-5}"
 TERMINAL_REPLICAS="${TERMINAL_REPLICAS:-1}"
 BENCHMARK_SEED="${BENCHMARK_SEED:-20260711}"
+HOST="${HOST:-wasmtime}"
 mkdir -p "$RESULTS"
 
 run_profile() {
   local profile="$1" scenario="$2" ingress_profile="$3" repetition="$4"
-  AUTHENTICATION_MODE=trusted_ingress AUTHZ=1 MIDDLEWARE=0 HOST=wasmtime \
+  AUTHENTICATION_MODE=trusted_ingress AUTHZ=1 MIDDLEWARE=0 HOST="$HOST" \
     TRUSTED_INGRESS_HEALTH_CHECKS=0 \
     TERMINAL_REPLICAS="$TERMINAL_REPLICAS" \
     TRUSTED_INGRESS_PROFILE="$ingress_profile" \

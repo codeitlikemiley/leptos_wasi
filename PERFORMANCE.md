@@ -47,10 +47,12 @@ This quick probe is not the ten-minute release soak. It establishes that the
 final component serves successfully and provides a concrete point for the
 longer paired evidence.
 
-Spin 4.0.0 produced no final-WASI measurement: it rejects the component because
+The original Spin 4.0.0 run produced no final-WASI measurement: it rejects the component because
 the `wasi:http/types@0.3.0` resource implementation is missing. Its native
 middleware commit also hard-codes the March RC handler world. Both Spin paths
-are expected-failure canaries; only Wasmtime 46 is a blocking final-WASI
+are expected-failure canaries. Tagged Spin 4.0.2 has the same ABI limitation.
+Pinned Spin main now runs plain final-WASI terminals, but composed middleware
+is blocked by its default CPU-metrics panic; only Wasmtime 46 is a blocking final-WASI
 runtime. Release evidence must include generated comparison JSON rather than
 reusing the historical RC-era table above.
 
@@ -196,3 +198,21 @@ removed one redundant host lookup and improved all three measurements, but the
 remaining cost is not an artifact-pin or high-concurrency-only failure; it is
 the immutable WASIp3 request/response header reconstruction boundary documented
 above.
+
+## Pinned Spin-main trusted-ingress measurement
+
+The production topology can be measured with a plain Spin terminal while
+keeping request ID, CORS, security headers, and authentication in native
+trusted ingress:
+
+```bash
+./scripts/benchmark-trusted-ingress-spin-main.sh
+DURATION=600 CONCURRENCY=100 ./scripts/soak-trusted-ingress-spin-main.sh
+```
+
+This avoids the guest-composition CPU-metrics panic and exercises Spin's final
+outbound HTTP path to SpiceDB. Results remain experimental until the matching
+runtime support appears in a tagged release. The existing guest-middleware
+regression was measured on loopback without a broker or database call, so
+regional database placement cannot explain that separate header-reconstruction
+cost.

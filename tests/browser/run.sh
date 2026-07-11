@@ -134,16 +134,18 @@ if [[ "$PORTABLE_COMPONENT" == "1" ]]; then
     "${MIDDLEWARE_COMPONENTS[@]}"
 fi
 
-if [[ "$HOST" == "spin" ]]; then
+if [[ "$HOST" == "spin" && "$TRUSTED_INGRESS" != "1" ]]; then
   if [[ "$PORTABLE_COMPONENT" == "1" ]]; then
-    "$ROOT/scripts/audit-middleware-manifests.py" --spin
+    "$ROOT/scripts/audit-middleware-manifests.py" --spin-main
     manifest="$PWD/spin.middleware-composed.toml"
   else
     manifest="$PWD/spin.toml"
   fi
-  PORT="$PORT" "$ROOT/scripts/check-spin-final-wasi-canary.sh" "$manifest"
-  echo "Spin browser E2E is blocked until a tagged runtime links final wasi:http@0.3.0"
-  exit 0
+  SPIN_MANIFEST="$manifest" \
+  PORT="$PORT" \
+  MIDDLEWARE="$MIDDLEWARE" \
+  AUTHZ="$AUTHZ" \
+    exec "$ROOT/tests/browser/run-spin-main.sh"
 fi
 
 WASMTIME_BIN="$(resolve_middleware_tool WASMTIME_BIN wasmtime "$(middleware_lock_value wasmtime_version)")"
@@ -163,6 +165,7 @@ SERVER_PID=""
 TERMINAL_PIDS=()
 TERMINAL_PORTS=()
 TERMINAL_LOGS=()
+SPIN_RUNTIME_VERSION=""
 APP_LOG="$ROOT/tests/browser/app.log"
 PDP_LOG="$ROOT/tests/browser/cedar-pdp.log"
 BROKER_LOG="$ROOT/tests/browser/authn-broker.log"
@@ -172,11 +175,11 @@ cleanup() {
   status=$?
   trap - EXIT
   [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null || true
-  for pid in "${TERMINAL_PIDS[@]}"; do kill "$pid" 2>/dev/null || true; done
+  for pid in ${TERMINAL_PIDS[@]+"${TERMINAL_PIDS[@]}"}; do kill "$pid" 2>/dev/null || true; done
   [[ -n "$BROKER_PID" ]] && kill "$BROKER_PID" 2>/dev/null || true
   [[ -n "$PDP_PID" ]] && kill "$PDP_PID" 2>/dev/null || true
   [[ -n "$SERVER_PID" ]] && wait "$SERVER_PID" 2>/dev/null || true
-  for pid in "${TERMINAL_PIDS[@]}"; do wait "$pid" 2>/dev/null || true; done
+  for pid in ${TERMINAL_PIDS[@]+"${TERMINAL_PIDS[@]}"}; do wait "$pid" 2>/dev/null || true; done
   [[ -n "$BROKER_PID" ]] && wait "$BROKER_PID" 2>/dev/null || true
   [[ -n "$PDP_PID" ]] && wait "$PDP_PID" 2>/dev/null || true
   for sentinel in \
@@ -402,6 +405,113 @@ case "$HOST" in
         --addr "127.0.0.1:$PORT" "$SERVER_COMPONENT" >"$APP_LOG" 2>&1 &
     fi
     ;;
+  spin)
+    [[ "$TRUSTED_INGRESS" == "1" && "$AUTHZ" == "1" ]] || {
+      echo "Spin main is supported here only as a trusted-ingress authorization terminal" >&2
+      exit 2
+    }
+    SPIN_BIN="$(resolve_spin_main_tool)"
+    SPIN_RUNTIME_VERSION="$("$SPIN_BIN" --version 2>&1)"
+    SPIN_TERMINAL_MANIFEST="$PWD/target/spin-trusted-ingress.toml"
+    SPIN_SERVER_COMPONENT="$PWD/target/spin-trusted-terminal.wasm"
+    mkdir -p "$(dirname "$SPIN_TERMINAL_MANIFEST")"
+    install -m 0644 "$SERVER_COMPONENT" "$SPIN_SERVER_COMPONENT"
+    SERVER_COMPONENT="$SPIN_SERVER_COMPONENT" \
+    SITE_ROOT="$PWD/target/site" \
+    SPICEDB_URL="$SPICEDB_URL" \
+    SPICEDB_TOKEN="$SPICEDB_TOKEN" \
+    SPICEDB_POLICY_REVISION="$SPICEDB_POLICY_REVISION" \
+    SPICEDB_MODEL_VERSION="$SPICEDB_MODEL_VERSION" \
+    SPIN_TERMINAL_MANIFEST="$SPIN_TERMINAL_MANIFEST" \
+      python3 - <<'PY'
+import json
+import os
+from urllib.parse import urlsplit
+
+endpoint = urlsplit(os.environ["SPICEDB_URL"])
+origin = f"{endpoint.scheme}://{endpoint.netloc}"
+quote = json.dumps
+document = f'''spin_manifest_version = 2
+
+[application]
+name = "leptos-wasi-trusted-terminal"
+version = "0.5.0-alpha.3"
+
+[[trigger.http]]
+route = "/..."
+component = "terminal"
+executor = {{ type = "http" }}
+
+[component.terminal]
+source = {quote(os.environ["SERVER_COMPONENT"])}
+allowed_outbound_hosts = [{quote(origin)}]
+files = [{{ source = {quote(os.environ["SITE_ROOT"])}, destination = "/site" }}]
+
+[component.terminal.environment]
+LEPTOS_OUTPUT_NAME = "counter"
+LEPTOS_SITE_ROOT = "/site"
+LEPTOS_SITE_PKG_DIR = "pkg"
+WASI_AUTHZ_SPICEDB_ENDPOINT = {quote(os.environ["SPICEDB_URL"])}
+WASI_AUTHZ_SPICEDB_BEARER_TOKEN = {quote(os.environ["SPICEDB_TOKEN"])}
+WASI_AUTHZ_SPICEDB_POLICY_REVISION = {quote(os.environ["SPICEDB_POLICY_REVISION"])}
+WASI_AUTHZ_SPICEDB_MODEL_VERSION = {quote(os.environ["SPICEDB_MODEL_VERSION"])}
+'''
+with open(os.environ["SPIN_TERMINAL_MANIFEST"], "w", encoding="utf-8") as output:
+    output.write(document)
+PY
+    for replica in $(seq 1 "$TERMINAL_REPLICAS"); do
+      if [[ "$replica" == "1" ]]; then
+        replica_port="$TERMINAL_PORT"
+      else
+        replica_port="$(available_port)"
+      fi
+      replica_log="$ROOT/tests/browser/terminal-${replica}.log"
+      TERMINAL_PORTS+=("$replica_port")
+      TERMINAL_LOGS+=("$replica_log")
+      LOG_FILES+=("$replica_log")
+      "$SPIN_BIN" up --file "$SPIN_TERMINAL_MANIFEST" \
+        --listen "127.0.0.1:$replica_port" >"$replica_log" 2>&1 &
+      TERMINAL_PIDS+=("$!")
+    done
+    for replica_index in "${!TERMINAL_PIDS[@]}"; do
+      terminal_pid="${TERMINAL_PIDS[$replica_index]}"
+      replica_port="${TERMINAL_PORTS[$replica_index]}"
+      replica_log="${TERMINAL_LOGS[$replica_index]}"
+      status=000
+      for _ in $(seq 1 200); do
+        if ! kill -0 "$terminal_pid" 2>/dev/null; then
+          cat "$replica_log" >&2 || true
+          echo "Spin terminal replica $((replica_index + 1)) exited before readiness" >&2
+          exit 1
+        fi
+        status="$(curl --silent --max-time 1 --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:$replica_port/" || true)"
+        [[ "$status" == "503" ]] && break
+        sleep 0.05
+      done
+      [[ "$status" == "503" ]] || {
+        echo "direct Spin terminal replica $((replica_index + 1)) did not fail closed" >&2
+        exit 1
+      }
+    done
+    terminal_origins=""
+    for replica_port in "${TERMINAL_PORTS[@]}"; do
+      terminal_origins="${terminal_origins:+${terminal_origins},}http://127.0.0.1:${replica_port}"
+    done
+    rtk cargo build --locked --release \
+      --manifest-path "$ROOT/tests/trusted-ingress/Cargo.toml"
+    TRUSTED_INGRESS_LISTEN_ADDR="127.0.0.1:$PORT" \
+    TRUSTED_INGRESS_DIAGNOSTICS_ADDR="127.0.0.1:$DIAGNOSTICS_PORT" \
+    TRUSTED_INGRESS_TERMINAL_ORIGINS="$terminal_origins" \
+    TRUSTED_INGRESS_AUTHN_BROKER_URL="http://127.0.0.1:$BROKER_PORT/authenticate" \
+    TRUSTED_INGRESS_SERVICE_ID=leptos-wasi-counter \
+    TRUSTED_INGRESS_AUDIENCES=api://leptos-wasi-counter \
+    TRUSTED_INGRESS_CORS_ORIGIN="http://127.0.0.1:$PORT" \
+    TRUSTED_INGRESS_ROUTE_POLICY="$ROOT/tests/trusted-ingress/routes.toml" \
+    TRUSTED_INGRESS_PROFILE="${TRUSTED_INGRESS_PROFILE:-edge-authenticated}" \
+    TRUSTED_INGRESS_POLICY_ENABLED="${TRUSTED_INGRESS_POLICY_ENABLED:-true}" \
+      "$ROOT/tests/trusted-ingress/target/release/leptos-wasi-trusted-ingress" \
+      >"$APP_LOG" 2>&1 &
+    ;;
   *)
     echo "unsupported HOST: $HOST" >&2
     exit 2
@@ -424,6 +534,8 @@ if [[ "$TRUSTED_INGRESS" == "1" ]]; then
   AUTHZEN_PDP_PID="${WASI_AUTHZ_TEST_AUTHZEN_PDP_PID:-}" \
   TERMINAL_REPLICAS="$TERMINAL_REPLICAS" \
   INGRESS_PROFILE="${TRUSTED_INGRESS_PROFILE:-edge-authenticated}" \
+  TERMINAL_RUNTIME="$HOST" \
+  SPIN_RUNTIME_VERSION="$SPIN_RUNTIME_VERSION" \
   WASMTIME_VERSION="$(middleware_lock_value wasmtime_version)" \
   SPICEDB_VERSION="${WASI_AUTHZ_TEST_SPICEDB_VERSION:-unknown}" \
     python3 -c '
@@ -443,9 +555,11 @@ with open(os.environ["PROCESS_FILE"], "w", encoding="utf-8") as output:
         "diagnostics_url": "http://127.0.0.1:" + os.environ["DIAGNOSTICS_PORT"] + "/",
         "versions": {
             "wasmtime": os.environ["WASMTIME_VERSION"],
+            "spin": os.environ["SPIN_RUNTIME_VERSION"] or None,
             "spicedb": os.environ["SPICEDB_VERSION"],
         },
         "configuration": {
+            "terminal_runtime": os.environ["TERMINAL_RUNTIME"],
             "terminal_replicas": int(os.environ["TERMINAL_REPLICAS"]),
             "profile": os.environ["INGRESS_PROFILE"],
             "route_policy": "tests/trusted-ingress/routes.toml",
