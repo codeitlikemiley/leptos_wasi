@@ -414,23 +414,44 @@ if [[ "$TRUSTED_INGRESS" == "1" ]]; then
   mkdir -p "$(dirname "$PROCESS_FILE")"
   PROCESS_FILE="$PROCESS_FILE" \
   INGRESS_PID="$SERVER_PID" \
+  INGRESS_PORT="$PORT" \
+  DIAGNOSTICS_PORT="$DIAGNOSTICS_PORT" \
   BROKER_PID="$BROKER_PID" \
+  BROKER_PORT="$BROKER_PORT" \
   TERMINAL_PIDS="${TERMINAL_PIDS[*]}" \
+  TERMINAL_PORTS="${TERMINAL_PORTS[*]}" \
   SPICEDB_PID="${WASI_AUTHZ_TEST_SPICEDB_PID:-}" \
   AUTHZEN_PDP_PID="${WASI_AUTHZ_TEST_AUTHZEN_PDP_PID:-}" \
+  TERMINAL_REPLICAS="$TERMINAL_REPLICAS" \
+  INGRESS_PROFILE="${TRUSTED_INGRESS_PROFILE:-edge-authenticated}" \
+  WASMTIME_VERSION="$(middleware_lock_value wasmtime_version)" \
+  SPICEDB_VERSION="${WASI_AUTHZ_TEST_SPICEDB_VERSION:-unknown}" \
     python3 -c '
 import json, os
 processes = [
-    {"name": "ingress", "pid": int(os.environ["INGRESS_PID"])},
-    {"name": "authentication-broker", "pid": int(os.environ["BROKER_PID"])},
+    {"name": "ingress", "pid": int(os.environ["INGRESS_PID"]), "port": int(os.environ["INGRESS_PORT"])},
+    {"name": "authentication-broker", "pid": int(os.environ["BROKER_PID"]), "port": int(os.environ["BROKER_PORT"])},
 ]
-for index, pid in enumerate(os.environ["TERMINAL_PIDS"].split(), 1):
-    processes.append({"name": f"terminal-{index}", "pid": int(pid)})
+for index, (pid, port) in enumerate(zip(os.environ["TERMINAL_PIDS"].split(), os.environ["TERMINAL_PORTS"].split()), 1):
+    processes.append({"name": f"terminal-{index}", "pid": int(pid), "port": int(port)})
 for name, key in (("spicedb", "SPICEDB_PID"), ("authzen-pdp", "AUTHZEN_PDP_PID")):
     if os.environ.get(key):
         processes.append({"name": name, "pid": int(os.environ[key])})
 with open(os.environ["PROCESS_FILE"], "w", encoding="utf-8") as output:
-    json.dump({"schema": 1, "processes": processes}, output, indent=2)
+    json.dump({
+        "schema": 1,
+        "diagnostics_url": "http://127.0.0.1:" + os.environ["DIAGNOSTICS_PORT"] + "/",
+        "versions": {
+            "wasmtime": os.environ["WASMTIME_VERSION"],
+            "spicedb": os.environ["SPICEDB_VERSION"],
+        },
+        "configuration": {
+            "terminal_replicas": int(os.environ["TERMINAL_REPLICAS"]),
+            "profile": os.environ["INGRESS_PROFILE"],
+            "route_policy": "tests/trusted-ingress/routes.toml",
+        },
+        "processes": processes,
+    }, output, indent=2)
 '
 fi
 
@@ -478,6 +499,8 @@ if [[ "$AUTHZ_FULL_CHAIN_BENCHMARK" == "1" ]]; then
     --concurrency "$BENCHMARK_CONCURRENCY" \
     --process-file "$PROCESS_FILE" \
     --output "$BENCHMARK_DIR/result.json"
+  curl --fail --silent "http://127.0.0.1:$DIAGNOSTICS_PORT/" \
+    --output "$BENCHMARK_DIR/diagnostics.json"
 fi
 
 if [[ "$AUTHZ_FULL_CHAIN_SOAK" == "1" ]]; then
@@ -497,6 +520,8 @@ if [[ "$AUTHZ_FULL_CHAIN_SOAK" == "1" ]]; then
     --concurrency "${AUTHZ_FULL_CHAIN_BENCHMARK_CONCURRENCY:-100}" \
     --process-file "$PROCESS_FILE" \
     --output "$ROOT/target/authz-full-chain-soak/result.json"
+  curl --fail --silent "http://127.0.0.1:$DIAGNOSTICS_PORT/" \
+    --output "$ROOT/target/authz-full-chain-soak/diagnostics.json"
 fi
 
 if [[ "$AUTHZ_FULL_CHAIN_BENCHMARK_ONLY" == "1" ]]; then
