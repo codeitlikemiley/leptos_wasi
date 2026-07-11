@@ -82,6 +82,8 @@ struct Config {
     requests: Option<u64>,
     rate: Option<u64>,
     timeout: Duration,
+    warmup_requests: u64,
+    seed: u64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -103,7 +105,8 @@ struct Report {
     statuses: BTreeMap<u16, u64>,
     errors: BTreeMap<String, u64>,
     latency_ms: LatencyGroups,
-    first_byte_ms: HistogramSummary,
+    response_headers_ms: HistogramSummary,
+    first_body_byte_ms: HistogramSummary,
     routes: BTreeMap<String, RouteReport>,
     processes: BTreeMap<String, Vec<ProcessSample>>,
 }
@@ -119,6 +122,8 @@ struct ReportConfiguration {
     requests: Option<u64>,
     rate: Option<u64>,
     timeout_seconds: f64,
+    warmup_requests: u64,
+    seed: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -176,6 +181,7 @@ struct Metrics {
     successful: Histogram<u64>,
     failed: Histogram<u64>,
     first_byte: Histogram<u64>,
+    response_headers: Histogram<u64>,
     routes: BTreeMap<String, RouteMetrics>,
 }
 
@@ -191,7 +197,8 @@ enum AttemptOutcome {
     Response {
         status: StatusCode,
         expected: bool,
-        first_byte: Duration,
+        response_headers: Duration,
+        first_body_byte: Duration,
         elapsed: Duration,
         bytes: u64,
     },
@@ -205,6 +212,19 @@ enum AttemptOutcome {
 async fn main() -> Result<()> {
     let config = Config::parse()?;
     let scenario = Scenario::load(&config.scenario_path)?;
+    let mut connector = HttpConnector::new();
+    connector.set_nodelay(true);
+    let client = Client::builder(TokioExecutor::new())
+        .pool_max_idle_per_host(config.concurrency)
+        .pool_idle_timeout(Duration::from_secs(30))
+        .build(connector);
+    if config.warmup_requests != 0 {
+        let warmup_metrics = Arc::new(Mutex::new(Metrics::new(&scenario)?));
+        let mut warmup = config.clone();
+        warmup.mode = LoadMode::Fixed;
+        warmup.requests = Some(config.warmup_requests);
+        run_load(&warmup, &scenario, client.clone(), warmup_metrics).await?;
+    }
     let metrics = Arc::new(Mutex::new(Metrics::new(&scenario)?));
     let processes = Arc::new(Mutex::new(BTreeMap::new()));
     let sampling = Arc::new(AtomicBool::new(true));
@@ -215,11 +235,6 @@ async fn main() -> Result<()> {
         Arc::clone(&sampling),
         started,
     )?;
-    let client = Client::builder(TokioExecutor::new())
-        .pool_max_idle_per_host(config.concurrency)
-        .pool_idle_timeout(Duration::from_secs(30))
-        .build(HttpConnector::new());
-
     run_load(&config, &scenario, client, Arc::clone(&metrics)).await?;
     let measured_elapsed = started.elapsed();
     sampling.store(false, Ordering::Release);
@@ -308,6 +323,8 @@ impl Config {
             requests,
             rate,
             timeout: Duration::from_secs(parsed("--timeout", "10")?),
+            warmup_requests: parsed("--warmup-requests", "0")?,
+            seed: parsed("--seed", "0")?,
         })
     }
 }
@@ -396,6 +413,7 @@ impl Metrics {
             successful: histogram()?,
             failed: histogram()?,
             first_byte: histogram()?,
+            response_headers: histogram()?,
             routes,
         })
     }
@@ -412,7 +430,8 @@ impl Metrics {
             AttemptOutcome::Response {
                 status,
                 expected,
-                first_byte,
+                response_headers,
+                first_body_byte,
                 elapsed,
                 bytes,
             } => {
@@ -420,7 +439,8 @@ impl Metrics {
                 self.totals.bytes += bytes;
                 *self.statuses.entry(status.as_u16()).or_default() += 1;
                 record_duration(&mut self.all, elapsed);
-                record_duration(&mut self.first_byte, first_byte);
+                record_duration(&mut self.response_headers, response_headers);
+                record_duration(&mut self.first_byte, first_body_byte);
                 if let Some(route_metrics) = self.routes.get_mut(route) {
                     route_metrics.completed += 1;
                     *route_metrics
@@ -460,7 +480,7 @@ async fn run_load(
     metrics: Arc<Mutex<Metrics>>,
 ) -> Result<()> {
     let scenario = Arc::new(scenario.clone());
-    let sequence = Arc::new(AtomicU64::new(0));
+    let sequence = Arc::new(AtomicU64::new(config.seed));
     let deadline = Instant::now() + config.duration;
     let semaphore = Arc::new(Semaphore::new(config.concurrency));
     let mut tasks = JoinSet::new();
@@ -622,39 +642,44 @@ async fn execute(
             };
         }
     };
-    let response =
-        match tokio::time::timeout(config.timeout, client.request(request))
-            .await
-        {
-            Ok(Ok(response)) => response,
-            Ok(Err(error)) => {
-                return AttemptOutcome::Transport {
-                    class: classify_transport(&error.to_string()),
-                    elapsed: started.elapsed(),
-                };
-            }
-            Err(_) => {
-                return AttemptOutcome::Transport {
-                    class: "timeout",
-                    elapsed: started.elapsed(),
-                };
-            }
-        };
-    collect_response(route, response, started, config.timeout).await
+    let deadline = tokio::time::Instant::now() + config.timeout;
+    let response = match tokio::time::timeout_at(
+        deadline,
+        client.request(request),
+    )
+    .await
+    {
+        Ok(Ok(response)) => response,
+        Ok(Err(error)) => {
+            return AttemptOutcome::Transport {
+                class: classify_transport(&error.to_string()),
+                elapsed: started.elapsed(),
+            };
+        }
+        Err(_) => {
+            return AttemptOutcome::Transport {
+                class: "timeout",
+                elapsed: started.elapsed(),
+            };
+        }
+    };
+    let response_headers = started.elapsed();
+    collect_response(route, response, started, response_headers, deadline).await
 }
 
 async fn collect_response(
     route: &Route,
     response: http::Response<Incoming>,
     started: Instant,
-    timeout: Duration,
+    response_headers: Duration,
+    deadline: tokio::time::Instant,
 ) -> AttemptOutcome {
     let status = response.status();
     let expected = route.expected_status.contains(&status.as_u16());
     let mut body = response.into_body();
     let mut first_byte = None;
     let mut bytes = 0_u64;
-    let collected = tokio::time::timeout(timeout, async {
+    let collected = tokio::time::timeout_at(deadline, async {
         while let Some(frame) = body.frame().await {
             let frame = frame.map_err(|_| ())?;
             if let Some(data) = frame.data_ref() {
@@ -671,7 +696,8 @@ async fn collect_response(
         Ok(Ok(())) => AttemptOutcome::Response {
             status,
             expected,
-            first_byte: first_byte.unwrap_or_else(|| started.elapsed()),
+            response_headers,
+            first_body_byte: first_byte.unwrap_or(response_headers),
             elapsed: started.elapsed(),
             bytes,
         },
@@ -765,6 +791,8 @@ fn build_report(
             requests: config.requests,
             rate: config.rate,
             timeout_seconds: config.timeout.as_secs_f64(),
+            warmup_requests: config.warmup_requests,
+            seed: config.seed,
         },
         totals: metrics.totals,
         statuses: metrics.statuses,
@@ -774,7 +802,8 @@ fn build_report(
             successful: summarize(&metrics.successful),
             failed: summarize(&metrics.failed),
         },
-        first_byte_ms: summarize(&metrics.first_byte),
+        response_headers_ms: summarize(&metrics.response_headers),
+        first_body_byte_ms: summarize(&metrics.first_byte),
         routes,
         processes: process_samples,
     })
@@ -806,7 +835,7 @@ fn spawn_process_sampler(
                     .or_default()
                     .push(sample);
             }
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
         Ok(())
     })))

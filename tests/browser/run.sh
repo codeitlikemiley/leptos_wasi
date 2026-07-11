@@ -486,16 +486,9 @@ if [[ "$AUTHZ_FULL_CHAIN_BENCHMARK" == "1" ]]; then
     --base-url "http://127.0.0.1:$PORT" \
     --scenario "$AUTHZ_FULL_CHAIN_SCENARIO" \
     --mode fixed \
-    --requests "$BENCHMARK_WARMUP_REQUESTS" \
-    --concurrency "$BENCHMARK_CONCURRENCY" \
-    --process-file "$PROCESS_FILE" \
-    --output "$BENCHMARK_DIR/warmup.json"
-  TRUSTED_LOAD_CREDENTIAL_ALLOW="Bearer allow" \
-    "$ROOT/tests/trusted-load/target/release/trusted-load" \
-    --base-url "http://127.0.0.1:$PORT" \
-    --scenario "$AUTHZ_FULL_CHAIN_SCENARIO" \
-    --mode fixed \
     --requests "$BENCHMARK_REQUESTS" \
+    --warmup-requests "$BENCHMARK_WARMUP_REQUESTS" \
+    --seed "${AUTHZ_FULL_CHAIN_BENCHMARK_SEED:-0}" \
     --concurrency "$BENCHMARK_CONCURRENCY" \
     --process-file "$PROCESS_FILE" \
     --output "$BENCHMARK_DIR/result.json"

@@ -108,6 +108,8 @@ struct AdmissionGate {
     permits: Arc<Semaphore>,
     active: AtomicU64,
     queued: AtomicU64,
+    max_active_observed: AtomicU64,
+    max_queued_observed: AtomicU64,
     max_queue: u64,
 }
 
@@ -252,6 +254,9 @@ async fn main() -> Result<()> {
     loop {
         let (stream, _) =
             listener.accept().await.context("ingress accept failed")?;
+        stream
+            .set_nodelay(true)
+            .context("failed to enable TCP_NODELAY")?;
         let ingress = ingress.clone();
         tokio::spawn(async move {
             let service = service_fn(move |request| {
@@ -908,6 +913,8 @@ impl AdmissionGate {
             permits: Arc::new(Semaphore::new(limit)),
             active: AtomicU64::new(0),
             queued: AtomicU64::new(0),
+            max_active_observed: AtomicU64::new(0),
+            max_queued_observed: AtomicU64::new(0),
             max_queue,
         })
     }
@@ -919,6 +926,8 @@ impl AdmissionGate {
         queue_timeout: Duration,
     ) -> Result<AdmissionLease, Rejection> {
         let queued = self.queued.fetch_add(1, Ordering::AcqRel);
+        self.max_queued_observed
+            .fetch_max(queued.saturating_add(1), Ordering::Relaxed);
         if queued >= self.max_queue {
             self.queued.fetch_sub(1, Ordering::AcqRel);
             metrics.overload();
@@ -934,7 +943,9 @@ impl AdmissionGate {
             metrics.overload();
             return Err(Rejection::Overloaded);
         };
-        self.active.fetch_add(1, Ordering::AcqRel);
+        let active = self.active.fetch_add(1, Ordering::AcqRel) + 1;
+        self.max_active_observed
+            .fetch_max(active, Ordering::Relaxed);
         Ok(AdmissionLease {
             gate: self,
             _permit: permit,
@@ -945,6 +956,8 @@ impl AdmissionGate {
         serde_json::json!({
             "active": self.active.load(Ordering::Relaxed),
             "queued": self.queued.load(Ordering::Relaxed),
+            "max_active_observed": self.max_active_observed.load(Ordering::Relaxed),
+            "max_queued_observed": self.max_queued_observed.load(Ordering::Relaxed),
             "available_permits": self.permits.available_permits(),
         })
     }
@@ -1239,6 +1252,7 @@ async fn serve_diagnostics(
         .context("failed to bind diagnostics listener")?;
     loop {
         let (stream, _) = listener.accept().await?;
+        stream.set_nodelay(true)?;
         let metrics = Arc::clone(&metrics);
         let gates = gates.clone();
         let terminals = Arc::clone(&terminals);
@@ -1330,10 +1344,12 @@ fn parse_route_policy(source: &str) -> Result<BTreeMap<String, RouteClass>> {
 }
 
 fn pooled_client(max_idle: usize) -> HttpClient {
+    let mut connector = HttpConnector::new();
+    connector.set_nodelay(true);
     Client::builder(TokioExecutor::new())
         .pool_max_idle_per_host(max_idle.max(1))
         .pool_idle_timeout(Duration::from_secs(30))
-        .build(HttpConnector::new())
+        .build(connector)
 }
 
 fn optional_bool(name: &str) -> Result<bool> {
