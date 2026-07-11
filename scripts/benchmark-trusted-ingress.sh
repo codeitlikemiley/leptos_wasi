@@ -11,6 +11,7 @@ mkdir -p "$RESULTS"
 run_profile() {
   local profile="$1" scenario="$2" ingress_profile="$3" repetition="$4"
   AUTHENTICATION_MODE=trusted_ingress AUTHZ=1 MIDDLEWARE=0 HOST=wasmtime \
+    TRUSTED_INGRESS_HEALTH_CHECKS=0 \
     TERMINAL_REPLICAS="$TERMINAL_REPLICAS" \
     TRUSTED_INGRESS_PROFILE="$ingress_profile" \
     AUTHZ_FULL_CHAIN_BENCHMARK=1 AUTHZ_FULL_CHAIN_BENCHMARK_ONLY=1 \

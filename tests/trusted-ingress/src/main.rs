@@ -229,7 +229,9 @@ impl Rejection {
 #[tokio::main]
 async fn main() -> Result<()> {
     let ingress = Ingress::from_environment()?;
-    ingress.spawn_health_checks();
+    if optional_bool("TRUSTED_INGRESS_HEALTH_CHECKS")? {
+        ingress.spawn_health_checks();
+    }
     if let Some(address) = diagnostics_address()? {
         let metrics = Arc::clone(&ingress.metrics);
         let gates = ingress.gates.clone();
