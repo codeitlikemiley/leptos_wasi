@@ -6,6 +6,6 @@ rust-version = "1.93.0"
 publish = false
 
 [dependencies]
-leptos_wasi = { path = "../../..", default-features = false, features = ["wasip2", "wasip3", "islands-router"] }
+leptos_wasi = { package = "leptos-wasi-runtime", path = "../../..", default-features = false, features = ["wasip2", "wasip3", "islands-router"] }
 http = "1.4.1"
 wasip3 = { version = "=0.7.0", features = ["http-compat"] }

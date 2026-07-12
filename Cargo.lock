@@ -1075,6 +1075,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "leptos-wasi-runtime"
+version = "0.4.2-rc.1"
+dependencies = [
+ "any_spawner",
+ "anyhow",
+ "async-stream",
+ "axum-core",
+ "bytes",
+ "futures",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hydration_context",
+ "leptos",
+ "leptos_macro",
+ "leptos_meta",
+ "leptos_router",
+ "mime_guess",
+ "parking_lot",
+ "reactive_graph",
+ "reqwest",
+ "routefinder",
+ "serde_json",
+ "server_fn",
+ "tachys",
+ "thiserror 2.0.18",
+ "throw_error",
+ "tokio",
+ "tracing",
+ "wasi 0.14.7+wasi-0.2.4",
+ "wasip3",
+]
+
+[[package]]
 name = "leptos_config"
 version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1214,40 +1248,6 @@ dependencies = [
  "serde_json",
  "server_fn",
  "tachys",
-]
-
-[[package]]
-name = "leptos_wasi"
-version = "0.4.2-alpha.3"
-dependencies = [
- "any_spawner",
- "anyhow",
- "async-stream",
- "axum-core",
- "bytes",
- "futures",
- "http",
- "http-body",
- "http-body-util",
- "hydration_context",
- "leptos",
- "leptos_macro",
- "leptos_meta",
- "leptos_router",
- "mime_guess",
- "parking_lot",
- "reactive_graph",
- "reqwest",
- "routefinder",
- "serde_json",
- "server_fn",
- "tachys",
- "thiserror 2.0.18",
- "throw_error",
- "tokio",
- "tracing",
- "wasi 0.14.7+wasi-0.2.4",
- "wasip3",
 ]
 
 [[package]]

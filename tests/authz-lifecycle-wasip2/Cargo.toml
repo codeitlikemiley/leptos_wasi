@@ -11,7 +11,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-leptos_wasi = { path = "../..", default-features = false, features = ["wasip2"] }
+leptos_wasi = { package = "leptos-wasi-runtime", path = "../..", default-features = false, features = ["wasip2"] }
 thiserror = "2.0"
 wasi = "=0.14.7"
 wasi-authz-client = { path = "../../../wasi-auth/crates/wasi-authz-client", default-features = false, features = ["wasip2"] }

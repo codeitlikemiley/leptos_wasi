@@ -18,11 +18,11 @@ https://github.com/user-attachments/assets/6596e0f3-80c0-4258-a4e3-f85c41b328b4
 
 - Rust 1.93.0 or newer
 - `wasm32-wasip2` (`rustup target add wasm32-wasip2`)
-- Cargo Leptos 0.3.6 for the included islands example
+- Cargo Leptos 0.3.7 for the included islands example
 - `wasm-bindgen-cli` 0.2.126, matching the counter's locked browser crate
 - Wasmtime 46.0.1 as the final-WASI correctness reference; tagged Spin 4.0.2
-  for Preview 2; or Spin `4.1.0-pre0` at `c34c584...` for experimental final
-  Preview 3
+  for Preview 2; or the maintained Spin `4.1.0-pre0` fork at `c34c584...` for
+  the final Preview 3 release-candidate lane
 
 The Rust target name is `wasm32-wasip2` for both component models. The
 `wasip2` and `wasip3` crate features select the host bindings and executor, not
@@ -41,25 +41,30 @@ Preview 2:
 
 ```toml
 [dependencies]
-leptos_wasi = "0.4.2-alpha.3"
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1" }
 ```
 
 Preview 3:
 
 ```toml
 [dependencies]
-leptos_wasi = { version = "0.4.2-alpha.3", default-features = false, features = ["wasip3"] }
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1", default-features = false, features = ["wasip3"] }
 ```
 
 Both adapters in one build:
 
 ```toml
 [dependencies]
-leptos_wasi = { version = "0.4.2-alpha.3", features = ["wasip3", "islands-router"] }
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1", features = ["wasip3", "islands-router"] }
 ```
 
 The features are additive. Enabling `wasip3` does not disable or replace the
 `wasip2` API.
+
+The release candidate uses the crates.io package name `leptos-wasi-runtime`
+because publication access to the upstream `leptos_wasi` package is not
+available. The dependency alias and library target remain `leptos_wasi`, so
+Rust import paths are unchanged.
 
 ## Runtime-specific API
 

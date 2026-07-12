@@ -1157,6 +1157,21 @@ macro_rules! common_handler_methods {
             )
         }
 
+        /// Compatibility alias for route-discovery context.
+        ///
+        /// This method has always applied `context` while discovering routes;
+        /// request-dependent context belongs in [`Self::handle_with_context`].
+        pub fn generate_routes_with_context<IV>(
+            self,
+            app: impl Fn() -> IV + 'static + Send + Clone,
+            context: impl Fn() + 'static + Send + Clone,
+        ) -> Result<Self, RegistrationError>
+        where
+            IV: IntoView + 'static,
+        {
+            self.generate_routes_with_discovery_context(app, context)
+        }
+
         /// Generates routes with exclusions and deterministic discovery context.
         ///
         /// Route discovery is cached per concrete application/context closure
@@ -1181,6 +1196,24 @@ macro_rules! common_handler_methods {
                     app, excluded, context,
                 )?;
             Ok(self)
+        }
+
+        /// Compatibility alias for exclusions plus route-discovery context.
+        ///
+        /// This method has always applied `context` while discovering routes;
+        /// request-dependent context belongs in [`Self::handle_with_context`].
+        pub fn generate_routes_with_exclusions_and_context<IV>(
+            self,
+            app: impl Fn() -> IV + 'static + Send + Clone,
+            excluded: Option<Vec<String>>,
+            context: impl Fn() + 'static + Send + Clone,
+        ) -> Result<Self, RegistrationError>
+        where
+            IV: IntoView + 'static,
+        {
+            self.generate_routes_with_exclusions_and_discovery_context(
+                app, excluded, context,
+            )
         }
     };
 }

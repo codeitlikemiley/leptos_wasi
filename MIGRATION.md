@@ -1,9 +1,10 @@
 # `leptos_wasi` migration guide
 
-## Migrating from 0.4.1 to 0.4.2-alpha.3
+## Migrating from 0.4.1 to 0.4.2-rc.1
 
-The 0.4.2 alpha makes one deliberate public API break: route-generation context
-has been renamed to make its lifecycle explicit.
+The 0.4.2 release candidate gives route-generation context lifecycle-explicit
+names. The previous methods remain as forwarding aliases, so the
+patch release is source compatible while applications migrate.
 
 | Previous method | Replacement |
 |---|---|
@@ -26,10 +27,10 @@ versioned `leptos-wasi-authz` crate with the trusted
 `leptos_wasi` itself does not establish trust in that header; an application
 that exposes its terminal component directly must not install the bridge.
 
-The 0.4.2 alpha is intentionally not a stable production promotion: current
-Wasmtime middleware transport performance and stable Spin final-WASI component
-support remain release gates. See [PRODUCTION.md](./PRODUCTION.md) and
-[MIDDLEWARE.md](./MIDDLEWARE.md) before enabling the integration.
+The 0.4.2 release candidate supports the native terminal path on the maintained
+Spin fork. Portable WAC-composed middleware and an upstream tagged Spin runtime
+remain separate promotion gates. See [PRODUCTION.md](./PRODUCTION.md) and
+[MIDDLEWARE.md](./MIDDLEWARE.md) before enabling experimental composition.
 
 ## Migrating from `leptos_wasi` 0.3 to 0.4
 
@@ -56,13 +57,13 @@ with Preview 2:
 
 ```toml
 # Preview 2 only
-leptos_wasi = "0.4"
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1" }
 
 # Preview 3 only
-leptos_wasi = { version = "0.4", default-features = false, features = ["wasip3"] }
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1", default-features = false, features = ["wasip3"] }
 
 # Both public adapters
-leptos_wasi = { version = "0.4", features = ["wasip3"] }
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1", features = ["wasip3"] }
 ```
 
 Code that enables neither runtime now receives a compile-time error.

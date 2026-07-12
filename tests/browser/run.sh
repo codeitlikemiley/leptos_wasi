@@ -435,7 +435,7 @@ document = f'''spin_manifest_version = 2
 
 [application]
 name = "leptos-wasi-trusted-terminal"
-version = "0.4.2-alpha.3"
+version = "0.4.2-rc.1"
 
 [[trigger.http]]
 route = "/..."

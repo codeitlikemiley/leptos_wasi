@@ -1,7 +1,7 @@
 # Tested compatibility
 
-This is the reproducible tool and ABI tuple for the current `0.4.2-alpha.3`
-development line. The machine-readable source is
+This is the reproducible tool and ABI tuple for the current `0.4.2-rc.1`
+release-candidate line. The machine-readable source is
 [`tests/middleware/components.lock.toml`](./tests/middleware/components.lock.toml).
 
 | Layer | Tested version | Contract |
@@ -9,11 +9,11 @@ development line. The machine-readable source is
 | Rust MSRV | 1.93.0 | Library and example minimum |
 | Rust targets | `wasm32-wasip2`, `wasm32-unknown-unknown` | WASI server and browser hydration |
 | `wasip3` crate | 0.7.0 | Final `wasi:http@0.3.0` bindings |
-| Cargo Leptos | 0.3.6 | Islands and lazy WASM splitting |
+| Cargo Leptos | 0.3.7 | Islands and lazy WASM splitting |
 | `wasm-bindgen` crate/CLI | 0.2.126 | Browser artifacts; crate and CLI must match |
 | Wasmtime | 46.0.1 | Blocking final-WASI correctness reference |
 | Tagged Spin | 4.0.2 | Preview 2 supported; final WASI 0.3 expected to fail |
-| Experimental Spin | 4.1.0-pre0 at `c34c584dbf77b3a3528ad0536aa9ce4761b9f772` | Final terminal and outbound HTTP compatibility |
+| Maintained Spin RC fork | 4.1.0-pre0 at `c34c584dbf77b3a3528ad0536aa9ce4761b9f772` | Final terminal and outbound HTTP compatibility |
 | Spin SDK | 6.0.0 | Component fixture SDK |
 | `wit-bindgen` | 0.59.0 | Middleware component generation |
 | `wasm-tools` | 1.253.0 | Component inspection and composition support |
@@ -23,10 +23,10 @@ Install the developer-facing tools:
 
 ```bash
 rustup target add wasm32-wasip2 wasm32-unknown-unknown
-cargo install cargo-leptos --version 0.3.6 --locked
+cargo install cargo-leptos --version 0.3.7 --locked
 cargo install wasm-bindgen-cli --version 0.2.126 --locked
 cargo install wasmtime-cli --version 46.0.1 --locked
-cargo install --git https://github.com/spinframework/spin \
+cargo install --git https://github.com/codeitlikemiley/spin \
   --rev c34c584dbf77b3a3528ad0536aa9ce4761b9f772 \
   --locked --force spin-cli
 ```

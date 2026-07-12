@@ -149,8 +149,8 @@ jobs:
       - name: Install cargo-semver-checks 0.48.0
         run: cargo install cargo-semver-checks --version 0.48.0 --locked
 
-      - name: Check intentional 0.5 API breaks
-        run: cargo semver-checks check-release --baseline-rev fa5a983
+      - name: Check 0.4.1 compatibility through the package-name fallback
+        run: bash scripts/check-semver.sh
 
   package:
     name: Package and publish dry run

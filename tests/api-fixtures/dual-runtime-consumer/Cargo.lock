@@ -893,7 +893,36 @@ name = "leptos-wasi-dual-runtime-consumer"
 version = "0.0.0"
 dependencies = [
  "http",
- "leptos_wasi",
+ "leptos-wasi-runtime",
+ "wasip3",
+]
+
+[[package]]
+name = "leptos-wasi-runtime"
+version = "0.4.2-rc.1"
+dependencies = [
+ "any_spawner",
+ "async-stream",
+ "axum-core",
+ "bytes",
+ "futures",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hydration_context",
+ "leptos",
+ "leptos_macro",
+ "leptos_meta",
+ "leptos_router",
+ "mime_guess",
+ "parking_lot",
+ "reactive_graph",
+ "routefinder",
+ "server_fn",
+ "tachys",
+ "thiserror 2.0.18",
+ "throw_error",
+ "wasi",
  "wasip3",
 ]
 
@@ -941,21 +970,6 @@ dependencies = [
  "serde",
  "syn",
  "walkdir",
-]
-
-[[package]]
-name = "leptos_integration_utils"
-version = "0.8.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c097f89cd9aa606297672f56fa5bdda09f01609a9f4eefaccdbb5ab5afea4279"
-dependencies = [
- "futures",
- "hydration_context",
- "leptos",
- "leptos_config",
- "leptos_meta",
- "leptos_router",
- "reactive_graph",
 ]
 
 [[package]]
@@ -1052,35 +1066,6 @@ dependencies = [
  "serde_json",
  "server_fn",
  "tachys",
-]
-
-[[package]]
-name = "leptos_wasi"
-version = "0.4.2-alpha.3"
-dependencies = [
- "any_spawner",
- "async-stream",
- "axum-core",
- "bytes",
- "futures",
- "http",
- "http-body",
- "http-body-util",
- "hydration_context",
- "leptos",
- "leptos_integration_utils",
- "leptos_macro",
- "leptos_meta",
- "leptos_router",
- "mime_guess",
- "parking_lot",
- "routefinder",
- "server_fn",
- "tachys",
- "thiserror 2.0.18",
- "throw_error",
- "wasi",
- "wasip3",
 ]
 
 [[package]]

@@ -1,10 +1,10 @@
 [package]
-name = "leptos_wasi"
+name = "leptos-wasi-runtime"
 authors = ["Enzo Nocera", "Uriah Galang"]
 license = "MIT"
-repository = "https://github.com/leptos-rs/leptos_wasi"
+repository = "https://github.com/codeitlikemiley/leptos_wasi"
 description = "WASI integrations for the Leptos web framework."
-version = "0.4.2-alpha.3"
+version = "0.4.2-rc.1"
 edition = "2024"
 rust-version = "1.93.0"
 include = [
@@ -19,6 +19,9 @@ include = [
     "/README.md",
     "/SPIN_COMPATIBILITY.md",
 ]
+
+[lib]
+name = "leptos_wasi"
 
 [dependencies]
 throw_error = "0.3.1"

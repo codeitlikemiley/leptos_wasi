@@ -892,12 +892,40 @@ dependencies = [
 name = "leptos-wasi-authz-wasip2-lifecycle"
 version = "0.0.0"
 dependencies = [
- "leptos_wasi",
+ "leptos-wasi-runtime",
  "serde_json",
  "thiserror 2.0.18",
  "wasi",
  "wasi-authz-client",
  "wasi-authz-contract",
+]
+
+[[package]]
+name = "leptos-wasi-runtime"
+version = "0.4.2-rc.1"
+dependencies = [
+ "any_spawner",
+ "async-stream",
+ "axum-core",
+ "bytes",
+ "futures",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hydration_context",
+ "leptos",
+ "leptos_macro",
+ "leptos_meta",
+ "leptos_router",
+ "mime_guess",
+ "parking_lot",
+ "reactive_graph",
+ "routefinder",
+ "server_fn",
+ "tachys",
+ "thiserror 2.0.18",
+ "throw_error",
+ "wasi",
 ]
 
 [[package]]
@@ -1040,34 +1068,6 @@ dependencies = [
  "serde_json",
  "server_fn",
  "tachys",
-]
-
-[[package]]
-name = "leptos_wasi"
-version = "0.4.2-alpha.3"
-dependencies = [
- "any_spawner",
- "async-stream",
- "axum-core",
- "bytes",
- "futures",
- "http",
- "http-body",
- "http-body-util",
- "hydration_context",
- "leptos",
- "leptos_macro",
- "leptos_meta",
- "leptos_router",
- "mime_guess",
- "parking_lot",
- "reactive_graph",
- "routefinder",
- "server_fn",
- "tachys",
- "thiserror 2.0.18",
- "throw_error",
- "wasi",
 ]
 
 [[package]]

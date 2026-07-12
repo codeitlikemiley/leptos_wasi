@@ -18,7 +18,7 @@ leptos = { version = "0.8.20", default-features = false, features = ["islands", 
 leptos-wasi-authz = { path = "../../../wasi-auth/crates/leptos-wasi-authz", version = "=0.1.0-alpha.4" }
 leptos_meta = { version = "0.8.6", default-features = false, features = ["ssr"] }
 leptos_router = { version = "0.8.14", default-features = false, features = ["ssr"] }
-leptos_wasi = { path = "../..", default-features = false, features = ["wasip3"] }
+leptos_wasi = { package = "leptos-wasi-runtime", path = "../..", default-features = false, features = ["wasip3"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 server_fn = { version = "0.8.12", default-features = false, features = ["axum-no-default"] }

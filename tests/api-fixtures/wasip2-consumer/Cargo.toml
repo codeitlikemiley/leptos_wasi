@@ -6,4 +6,4 @@ rust-version = "1.93.0"
 publish = false
 
 [dependencies]
-leptos_wasi = { path = "../../..", default-features = false, features = ["wasip2"] }
+leptos_wasi = { package = "leptos-wasi-runtime", path = "../../..", default-features = false, features = ["wasip2"] }

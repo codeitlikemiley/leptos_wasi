@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.2-rc.1] — 2026-07-12
+
 ### Added
 
 - Restored durable counter state through one private SQLite service shared by
@@ -12,13 +14,16 @@ All notable changes to this project will be documented in this file.
   fail-closed outage behavior.
 - Added a checked compatibility guide and executable toolchain validation for
   Rust 1.93, final `wasip3` 0.7.0, Wasmtime 46.0.1, pinned Spin
-  `4.1.0-pre0`, Cargo Leptos 0.3.6, and `wasm-bindgen` 0.2.126.
+  `4.1.0-pre0`, Cargo Leptos 0.3.7, and `wasm-bindgen` 0.2.126.
 - Added a machine-readable trusted-ingress soak gate covering configured
   duration, status/transport/cancellation accounting, three p99 budgets,
   process liveness, and bounded final-quarter RSS growth.
 
 ### Changed
 
+- Retained the previous route-context method names as compatibility aliases so
+  `0.4.2` remains source compatible with `0.4.1` while documenting their
+  route-discovery-only lifecycle.
 - Replaced the disconnected PostgreSQL counter-store example with the
   SQLite-backed service used by the supported counter Make targets.
 - Documented that the `wasm-bindgen` WASI regression was fixed in 0.2.123, so
