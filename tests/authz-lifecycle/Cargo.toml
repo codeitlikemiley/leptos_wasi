@@ -14,7 +14,7 @@ http = "1.4"
 http-body-util = "0.1"
 serde_json = "1.0"
 wasip3 = { version = "=0.7.0", features = ["http-compat"] }
-wasi-http-middleware-component-support = { path = "../../../wasi-http-middleware/crates/component-support" }
+wasi-http-middleware-component-support = { path = "../../../wasi-auth/legacy/wasi-http-middleware/crates/component-support" }
 wit-bindgen = { version = "=0.59.0", features = ["async-spawn"] }
 
 [workspace.lints.rust]

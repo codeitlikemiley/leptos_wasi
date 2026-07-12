@@ -15,7 +15,7 @@ use wasip3::{wit_future, wit_stream};
 #[allow(unknown_lints, missing_docs, clippy::same_length_and_capacity)]
 mod bindings {
     wasi_http_middleware_component_support::generate_middleware_bindings!(
-        "../../../../wasi-http-middleware/wit"
+        "../../../../wasi-auth/legacy/wasi-http-middleware/wit"
     );
 }
 

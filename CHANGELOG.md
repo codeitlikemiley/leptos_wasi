@@ -13,6 +13,9 @@ All notable changes to this project will be documented in this file.
 - Added a checked compatibility guide and executable toolchain validation for
   Rust 1.93, final `wasip3` 0.7.0, Wasmtime 46.0.1, pinned Spin
   `4.1.0-pre0`, Cargo Leptos 0.3.6, and `wasm-bindgen` 0.2.126.
+- Added a machine-readable trusted-ingress soak gate covering configured
+  duration, status/transport/cancellation accounting, three p99 budgets,
+  process liveness, and bounded final-quarter RSS growth.
 
 ### Changed
 
@@ -20,8 +23,11 @@ All notable changes to this project will be documented in this file.
   SQLite-backed service used by the supported counter Make targets.
 - Documented that the `wasm-bindgen` WASI regression was fixed in 0.2.123, so
   the temporary 0.2.114 workaround is no longer required.
+- Hardened terminal selection against concurrent health-state changes and
+  corrected the closed-loop load driver so its drain timeout begins after the
+  configured load duration instead of truncating long soaks at 30 seconds.
 
-## [0.5.0-alpha.3] — 2026-07-11
+## [0.4.2-alpha.3] — 2026-07-11
 
 ### Added
 
@@ -35,7 +41,7 @@ All notable changes to this project will be documented in this file.
   generic no-store responses, and require a concrete private terminal network
   descriptor for the production profile.
 
-## [0.5.0-alpha.2] — 2026-07-11
+## [0.4.2-alpha.2] — 2026-07-11
 
 ### Changed
 
@@ -51,7 +57,7 @@ All notable changes to this project will be documented in this file.
 - Added deployment-policy checks for private terminal exposure, explicit
   authentication mode, direct bypass, and public split-asset exemptions.
 
-## [0.5.0-alpha.1] — 2026-07-10
+## [0.4.2-alpha.1] — 2026-07-10
 
 ### Breaking
 

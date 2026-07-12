@@ -1121,21 +1121,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "leptos_integration_utils"
-version = "0.8.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c097f89cd9aa606297672f56fa5bdda09f01609a9f4eefaccdbb5ab5afea4279"
-dependencies = [
- "futures",
- "hydration_context",
- "leptos",
- "leptos_config",
- "leptos_meta",
- "leptos_router",
- "reactive_graph",
-]
-
-[[package]]
 name = "leptos_macro"
 version = "0.8.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1233,7 +1218,7 @@ dependencies = [
 
 [[package]]
 name = "leptos_wasi"
-version = "0.5.0-alpha.3"
+version = "0.4.2-alpha.3"
 dependencies = [
  "any_spawner",
  "anyhow",
@@ -1246,12 +1231,12 @@ dependencies = [
  "http-body-util",
  "hydration_context",
  "leptos",
- "leptos_integration_utils",
  "leptos_macro",
  "leptos_meta",
  "leptos_router",
  "mime_guess",
  "parking_lot",
+ "reactive_graph",
  "reqwest",
  "routefinder",
  "serde_json",

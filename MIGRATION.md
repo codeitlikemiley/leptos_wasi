@@ -1,8 +1,8 @@
 # `leptos_wasi` migration guide
 
-## Migrating from 0.4.1 to 0.5.0-alpha.3
+## Migrating from 0.4.1 to 0.4.2-alpha.3
 
-The 0.5 alpha makes one deliberate public API break: route-generation context
+The 0.4.2 alpha makes one deliberate public API break: route-generation context
 has been renamed to make its lifecycle explicit.
 
 | Previous method | Replacement |
@@ -26,7 +26,7 @@ versioned `leptos-wasi-authz` crate with the trusted
 `leptos_wasi` itself does not establish trust in that header; an application
 that exposes its terminal component directly must not install the bridge.
 
-The 0.5 alpha is intentionally not a stable production promotion: current
+The 0.4.2 alpha is intentionally not a stable production promotion: current
 Wasmtime middleware transport performance and stable Spin final-WASI component
 support remain release gates. See [PRODUCTION.md](./PRODUCTION.md) and
 [MIDDLEWARE.md](./MIDDLEWARE.md) before enabling the integration.

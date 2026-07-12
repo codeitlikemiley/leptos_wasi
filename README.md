@@ -41,21 +41,21 @@ Preview 2:
 
 ```toml
 [dependencies]
-leptos_wasi = "0.5.0-alpha.3"
+leptos_wasi = "0.4.2-alpha.3"
 ```
 
 Preview 3:
 
 ```toml
 [dependencies]
-leptos_wasi = { version = "0.5.0-alpha.3", default-features = false, features = ["wasip3"] }
+leptos_wasi = { version = "0.4.2-alpha.3", default-features = false, features = ["wasip3"] }
 ```
 
 Both adapters in one build:
 
 ```toml
 [dependencies]
-leptos_wasi = { version = "0.5.0-alpha.3", features = ["wasip3", "islands-router"] }
+leptos_wasi = { version = "0.4.2-alpha.3", features = ["wasip3", "islands-router"] }
 ```
 
 The features are additive. Enabling `wasip3` does not disable or replace the
@@ -97,12 +97,13 @@ but its default CPU-metrics hook currently panics for WAC-composed handlers and
 its native middleware path remains RC-only. Those paths are compatibility
 canaries, not deployment claims. See [WASIp3 HTTP
 Middleware](./MIDDLEWARE.md) for the boundary between component middleware,
-server-function middleware, and ingress policy. The reusable implementation is
-independently versioned as `wasi-http-middleware 0.2.0-alpha.3`; this repository
-consumes its checksum-pinned local artifacts. Typed AuthZEN/Cedar/SpiceDB
-authorization lives in the separately versioned `wasi-authz 0.1.0-alpha.3`
-workspace; its `leptos-wasi-authz` bridge is intentionally an application
-dependency, not a `leptos_wasi` handler API.
+server-function middleware, and ingress policy. The private compatibility
+implementation and its imported history now live under
+`wasi-auth/legacy/wasi-http-middleware`; this repository consumes its
+checksum-pinned local artifacts. Typed authentication, Cedar/SpiceDB
+authorization, and trusted ingress are consolidated in `wasi-auth
+0.1.0-alpha.4`. Its private `leptos-wasi-authz` compatibility bridge remains an
+application dependency, not a `leptos_wasi` handler API.
 
 See [Spin final-WASI compatibility](./SPIN_COMPATIBILITY.md) for the exact
 terminal, trusted-ingress, composed-handler, and native-middleware gates.

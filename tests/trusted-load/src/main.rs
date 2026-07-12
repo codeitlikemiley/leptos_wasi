@@ -121,6 +121,7 @@ struct ReportConfiguration {
     concurrency: usize,
     requests: Option<u64>,
     rate: Option<u64>,
+    scheduled_latency_correction: bool,
     timeout_seconds: f64,
     warmup_requests: u64,
     seed: u64,
@@ -513,6 +514,7 @@ async fn run_load(
                     Arc::clone(&metrics),
                     Arc::clone(&sequence),
                     permit,
+                    None,
                 );
             }
         }
@@ -527,21 +529,23 @@ async fn run_load(
             while Instant::now() < deadline
                 && config.requests.is_none_or(|limit| scheduled < limit)
             {
-                sleep_until(
-                    (started + interval.mul_f64(scheduled as f64)).into(),
-                )
-                .await;
+                let scheduled_at = started + interval.mul_f64(scheduled as f64);
+                sleep_until(scheduled_at.into()).await;
                 let Ok(permit) = Arc::clone(&semaphore).try_acquire_owned()
                 else {
                     let mut metrics = metrics
                         .lock()
                         .map_err(|_| anyhow::anyhow!("metrics lock"))?;
-                    metrics.totals.attempted += 1;
-                    metrics.totals.transport_failures += 1;
-                    *metrics
-                        .errors
-                        .entry("client_saturated".to_owned())
-                        .or_default() += 1;
+                    let index = sequence.fetch_add(1, Ordering::Relaxed);
+                    let route = scenario.select(index);
+                    metrics.record_attempt(&route.name);
+                    metrics.record(
+                        &route.name,
+                        AttemptOutcome::Transport {
+                            class: "client_saturated",
+                            elapsed: scheduled_at.elapsed(),
+                        },
+                    );
                     scheduled += 1;
                     continue;
                 };
@@ -553,18 +557,24 @@ async fn run_load(
                     Arc::clone(&metrics),
                     Arc::clone(&sequence),
                     permit,
+                    Some(scheduled_at),
                 );
                 scheduled += 1;
             }
         }
     }
 
-    let drain_deadline = tokio::time::Instant::now() + config.drain;
+    let drain_deadline = task_drain_deadline(
+        config.mode,
+        deadline,
+        Instant::now(),
+        config.drain,
+    );
     loop {
         if tasks.is_empty() {
             break;
         }
-        if tokio::time::timeout_at(drain_deadline, tasks.join_next())
+        if tokio::time::timeout_at(drain_deadline.into(), tasks.join_next())
             .await
             .is_err()
         {
@@ -581,6 +591,18 @@ async fn run_load(
     Ok(())
 }
 
+fn task_drain_deadline(
+    mode: LoadMode,
+    load_deadline: Instant,
+    scheduling_finished: Instant,
+    drain: Duration,
+) -> Instant {
+    match mode {
+        LoadMode::ClosedLoop => load_deadline + drain,
+        LoadMode::OpenLoop | LoadMode::Fixed => scheduling_finished + drain,
+    }
+}
+
 async fn closed_loop_worker(
     config: Config,
     scenario: Arc<Scenario>,
@@ -590,7 +612,8 @@ async fn closed_loop_worker(
     deadline: Instant,
 ) {
     while Instant::now() < deadline {
-        run_attempt(&config, &scenario, &client, &metrics, &sequence).await;
+        run_attempt(&config, &scenario, &client, &metrics, &sequence, None)
+            .await;
     }
 }
 
@@ -602,10 +625,19 @@ fn spawn_attempt(
     metrics: Arc<Mutex<Metrics>>,
     sequence: Arc<AtomicU64>,
     permit: tokio::sync::OwnedSemaphorePermit,
+    scheduled_at: Option<Instant>,
 ) {
     tasks.spawn(async move {
         let _permit = permit;
-        run_attempt(&config, &scenario, &client, &metrics, &sequence).await;
+        run_attempt(
+            &config,
+            &scenario,
+            &client,
+            &metrics,
+            &sequence,
+            scheduled_at,
+        )
+        .await;
     });
 }
 
@@ -615,13 +647,14 @@ async fn run_attempt(
     client: &HttpClient,
     metrics: &Mutex<Metrics>,
     sequence: &AtomicU64,
+    scheduled_at: Option<Instant>,
 ) {
     let index = sequence.fetch_add(1, Ordering::Relaxed);
     let route = scenario.select(index);
     if let Ok(mut metrics) = metrics.lock() {
         metrics.record_attempt(&route.name);
     }
-    let outcome = execute(config, route, client).await;
+    let outcome = execute(config, route, client, scheduled_at).await;
     if let Ok(mut metrics) = metrics.lock() {
         metrics.record(&route.name, outcome);
     }
@@ -631,14 +664,16 @@ async fn execute(
     config: &Config,
     route: &Route,
     client: &HttpClient,
+    scheduled_at: Option<Instant>,
 ) -> AttemptOutcome {
     let started = Instant::now();
+    let latency_origin = scheduled_at.unwrap_or(started);
     let request = match build_request(config, route) {
         Ok(request) => request,
         Err(_) => {
             return AttemptOutcome::Transport {
                 class: "protocol",
-                elapsed: started.elapsed(),
+                elapsed: latency_origin.elapsed(),
             };
         }
     };
@@ -653,18 +688,25 @@ async fn execute(
         Ok(Err(error)) => {
             return AttemptOutcome::Transport {
                 class: classify_transport(&error.to_string()),
-                elapsed: started.elapsed(),
+                elapsed: latency_origin.elapsed(),
             };
         }
         Err(_) => {
             return AttemptOutcome::Transport {
                 class: "timeout",
-                elapsed: started.elapsed(),
+                elapsed: latency_origin.elapsed(),
             };
         }
     };
-    let response_headers = started.elapsed();
-    collect_response(route, response, started, response_headers, deadline).await
+    let response_headers = latency_origin.elapsed();
+    collect_response(
+        route,
+        response,
+        latency_origin,
+        response_headers,
+        deadline,
+    )
+    .await
 }
 
 async fn collect_response(
@@ -790,6 +832,10 @@ fn build_report(
             concurrency: config.concurrency,
             requests: config.requests,
             rate: config.rate,
+            scheduled_latency_correction: matches!(
+                config.mode,
+                LoadMode::OpenLoop
+            ),
             timeout_seconds: config.timeout.as_secs_f64(),
             warmup_requests: config.warmup_requests,
             seed: config.seed,
@@ -960,6 +1006,33 @@ mod tests {
     #[test]
     fn transport_classification_should_not_expose_error_text() {
         assert_eq!(classify_transport("connection reset by peer"), "reset");
+    }
+
+    #[test]
+    fn closed_loop_drain_should_start_after_the_load_deadline() {
+        let started = Instant::now();
+        let load_deadline = started + Duration::from_secs(600);
+        let scheduling_finished = started + Duration::from_millis(10);
+        let drain = Duration::from_secs(30);
+
+        assert_eq!(
+            task_drain_deadline(
+                LoadMode::ClosedLoop,
+                load_deadline,
+                scheduling_finished,
+                drain,
+            ),
+            started + Duration::from_secs(630)
+        );
+        assert_eq!(
+            task_drain_deadline(
+                LoadMode::Fixed,
+                load_deadline,
+                scheduling_finished,
+                drain,
+            ),
+            scheduling_finished + drain
+        );
     }
 
     fn fixture_route(name: &str, weight: u64) -> Route {

@@ -20,9 +20,13 @@ if [[ "${WASI_AUTHZ_BUILD:-0}" == "1" ]]; then
 fi
 
 bash "${SCRIPT_DIR}/check-authz-companion.sh"
-python3 "${LEPTOS_WASI_ROOT}/scripts/verify-artifact-set.py" authorization \
-  --repository "${repository}" \
-  --cosign "${cosign_bin}"
+if [[ "${AUTHZ_COMPANION_ALLOW_DIRTY:-0}" == "1" ]]; then
+  echo "warning: skipping signed authorization artifact-set verification for non-release diagnostics" >&2
+else
+  python3 "${LEPTOS_WASI_ROOT}/scripts/verify-artifact-set.py" authorization \
+    --repository "${repository}" \
+    --cosign "${cosign_bin}"
+fi
 mkdir -p "${destination}"
 while IFS= read -r component; do
   source_path="${artifact_root}/components/${component}.wasm"

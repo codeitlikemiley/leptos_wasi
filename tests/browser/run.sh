@@ -435,7 +435,7 @@ document = f'''spin_manifest_version = 2
 
 [application]
 name = "leptos-wasi-trusted-terminal"
-version = "0.5.0-alpha.3"
+version = "0.4.2-alpha.3"
 
 [[trigger.http]]
 route = "/..."
@@ -592,24 +592,51 @@ if [[ "$AUTHZ_FULL_CHAIN_BENCHMARK" == "1" ]]; then
   BENCHMARK_REQUESTS="${AUTHZ_FULL_CHAIN_BENCHMARK_REQUESTS:-5000}"
   BENCHMARK_WARMUP_REQUESTS="${AUTHZ_FULL_CHAIN_BENCHMARK_WARMUP_REQUESTS:-500}"
   BENCHMARK_CONCURRENCY="${AUTHZ_FULL_CHAIN_BENCHMARK_CONCURRENCY:-100}"
+  BENCHMARK_MODE="${AUTHZ_FULL_CHAIN_BENCHMARK_MODE:-fixed}"
+  BENCHMARK_DURATION="${AUTHZ_FULL_CHAIN_BENCHMARK_DURATION:-60}"
   mkdir -p "$BENCHMARK_DIR"
   rtk cargo build --locked --release \
     --manifest-path "$ROOT/tests/trusted-load/Cargo.toml"
+  benchmark_status=0
+  benchmark_load_args=(
+    --base-url "http://127.0.0.1:$PORT"
+    --scenario "$AUTHZ_FULL_CHAIN_SCENARIO"
+    --mode "$BENCHMARK_MODE"
+    --warmup-requests "$BENCHMARK_WARMUP_REQUESTS"
+    --seed "${AUTHZ_FULL_CHAIN_BENCHMARK_SEED:-0}"
+    --concurrency "$BENCHMARK_CONCURRENCY"
+    --process-file "$PROCESS_FILE"
+    --output "$BENCHMARK_DIR/result.json"
+  )
+  case "$BENCHMARK_MODE" in
+    fixed)
+      benchmark_load_args+=(--requests "$BENCHMARK_REQUESTS")
+      ;;
+    open-loop)
+      [[ -n "${AUTHZ_FULL_CHAIN_BENCHMARK_RATE:-}" ]] || {
+        echo "open-loop benchmark requires AUTHZ_FULL_CHAIN_BENCHMARK_RATE" >&2
+        exit 2
+      }
+      benchmark_load_args+=(
+        --duration "$BENCHMARK_DURATION"
+        --rate "$AUTHZ_FULL_CHAIN_BENCHMARK_RATE"
+      )
+      ;;
+    *)
+      echo "AUTHZ_FULL_CHAIN_BENCHMARK_MODE must be fixed or open-loop" >&2
+      exit 2
+      ;;
+  esac
   TRUSTED_LOAD_CREDENTIAL_ALLOW="Bearer allow" \
     "$ROOT/tests/trusted-load/target/release/trusted-load" \
-    --base-url "http://127.0.0.1:$PORT" \
-    --scenario "$AUTHZ_FULL_CHAIN_SCENARIO" \
-    --mode fixed \
-    --requests "$BENCHMARK_REQUESTS" \
-    --warmup-requests "$BENCHMARK_WARMUP_REQUESTS" \
-    --seed "${AUTHZ_FULL_CHAIN_BENCHMARK_SEED:-0}" \
-    --concurrency "$BENCHMARK_CONCURRENCY" \
-    --process-file "$PROCESS_FILE" \
-    --output "$BENCHMARK_DIR/result.json"
+    "${benchmark_load_args[@]}" || benchmark_status=$?
   "$ROOT/scripts/validate-trusted-load-report.py" \
     "$BENCHMARK_DIR/result.json"
   curl --fail --silent "http://127.0.0.1:$DIAGNOSTICS_PORT/" \
     --output "$BENCHMARK_DIR/diagnostics.json"
+  if [[ "$benchmark_status" -ne 0 ]]; then
+    exit "$benchmark_status"
+  fi
 fi
 
 if [[ "$AUTHZ_FULL_CHAIN_SOAK" == "1" ]]; then
@@ -617,9 +644,11 @@ if [[ "$AUTHZ_FULL_CHAIN_SOAK" == "1" ]]; then
     echo "the full-chain soak requires AUTHZ=1" >&2
     exit 2
   }
-  mkdir -p "$ROOT/target/authz-full-chain-soak"
+  SOAK_DIR="${AUTHZ_FULL_CHAIN_SOAK_DIR:-$ROOT/target/authz-full-chain-soak}"
+  mkdir -p "$SOAK_DIR"
   rtk cargo build --locked --release \
     --manifest-path "$ROOT/tests/trusted-load/Cargo.toml"
+  soak_status=0
   TRUSTED_LOAD_CREDENTIAL_ALLOW="Bearer allow" \
     "$ROOT/tests/trusted-load/target/release/trusted-load" \
     --base-url "http://127.0.0.1:$PORT" \
@@ -630,11 +659,14 @@ if [[ "$AUTHZ_FULL_CHAIN_SOAK" == "1" ]]; then
     --seed "${AUTHZ_FULL_CHAIN_BENCHMARK_SEED:-0}" \
     --concurrency "${AUTHZ_FULL_CHAIN_BENCHMARK_CONCURRENCY:-100}" \
     --process-file "$PROCESS_FILE" \
-    --output "$ROOT/target/authz-full-chain-soak/result.json"
+    --output "$SOAK_DIR/result.json" || soak_status=$?
   "$ROOT/scripts/validate-trusted-load-report.py" \
-    "$ROOT/target/authz-full-chain-soak/result.json"
+    "$SOAK_DIR/result.json"
   curl --fail --silent "http://127.0.0.1:$DIAGNOSTICS_PORT/" \
-    --output "$ROOT/target/authz-full-chain-soak/diagnostics.json"
+    --output "$SOAK_DIR/diagnostics.json"
+  if [[ "$soak_status" -ne 0 ]]; then
+    exit "$soak_status"
+  fi
 fi
 
 if [[ "$AUTHZ_FULL_CHAIN_BENCHMARK_ONLY" == "1" ]]; then

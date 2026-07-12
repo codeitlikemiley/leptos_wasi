@@ -1,6 +1,6 @@
 # Production Support
 
-This document defines the supported `leptos_wasi` 0.5 alpha contract and the
+This document defines the supported `leptos_wasi` 0.4.2 alpha contract and the
 release gate for calling a future stable build production-ready. It does not
 replace the Wasmtime or Spin host security model.
 
@@ -31,7 +31,7 @@ tagged runtime cannot link the final application ABI.
 Both runtime features may be enabled in one dependency graph. The application
 still exports a host entrypoint for the component model it intends to run.
 Axum-compatible generated server-function body types remain an internal
-dependency in the 0.5 alpha. A native Axum-free WASI backend is experimental and outside
+dependency in the 0.4.2 alpha. A native Axum-free WASI backend is experimental and outside
 this support matrix.
 
 ## Request and response contract
@@ -157,7 +157,7 @@ otherwise generate or assign correlation at the ingress. Alerts should cover:
 Every release runs `cargo audit` and `cargo deny check`. The checked
 [`deny.toml`](./deny.toml) restricts registry sources, rejects yanked crates and
 wildcard requirements, makes duplicate versions visible, and permits only the
-reviewed license set. The 0.5 alpha dependency graph currently contains two
+reviewed license set. The 0.4.2 alpha dependency graph currently contains two
 transitive crates with unmaintained advisories, not known vulnerability
 advisories:
 

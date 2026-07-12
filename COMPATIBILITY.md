@@ -1,6 +1,6 @@
 # Tested compatibility
 
-This is the reproducible tool and ABI tuple for the current `0.5.0-alpha.3`
+This is the reproducible tool and ABI tuple for the current `0.4.2-alpha.3`
 development line. The machine-readable source is
 [`tests/middleware/components.lock.toml`](./tests/middleware/components.lock.toml).
 

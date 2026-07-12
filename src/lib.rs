@@ -13,6 +13,7 @@ compile_error!("enable at least one of the `wasip2` or `wasip3` features");
 
 mod executor;
 mod handler;
+mod integration;
 mod request;
 pub mod response;
 mod static_files;

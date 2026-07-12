@@ -35,11 +35,11 @@ const SPICEDB_BEARER_ENV: &str = "WASI_AUTHZ_SPICEDB_BEARER_TOKEN";
 const SPICEDB_POLICY_REVISION_ENV: &str = "WASI_AUTHZ_SPICEDB_POLICY_REVISION";
 const SPICEDB_MODEL_VERSION_ENV: &str = "WASI_AUTHZ_SPICEDB_MODEL_VERSION";
 const CEDAR_POLICY: &str =
-    include_str!("../../../../wasi-authz/fixtures/cedar/http_policy.cedar");
+    include_str!("../../../../wasi-auth/fixtures/cedar/http_policy.cedar");
 const CEDAR_SCHEMA: &str =
-    include_str!("../../../../wasi-authz/fixtures/cedar/http_schema.json");
+    include_str!("../../../../wasi-auth/fixtures/cedar/http_schema.json");
 const CEDAR_ENTITIES: &str =
-    include_str!("../../../../wasi-authz/fixtures/cedar/http_entities.json");
+    include_str!("../../../../wasi-auth/fixtures/cedar/http_entities.json");
 
 type AxumRequest = http::Request<axum_core::body::Body>;
 type AxumResponse = http::Response<axum_core::body::Body>;

@@ -3,7 +3,6 @@
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
-use leptos_integration_utils::ExtendResponse;
 use parking_lot::RwLock;
 use server_fn::response::generic::Body as ServerFnBody;
 use std::{pin::Pin, sync::Arc};
@@ -11,6 +10,8 @@ use std::{pin::Pin, sync::Arc};
 use thiserror::Error;
 #[cfg(feature = "wasip2")]
 use wasi::http::types::{HeaderError, Headers};
+
+use crate::integration::ExtendResponse;
 
 /// Represents a platform-agnostic HTTP response wrapped with a WASI-compatible [`Body`].
 ///

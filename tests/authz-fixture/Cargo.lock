@@ -272,9 +272,9 @@ checksum = "5f2d30e4173c4026932d51d31d6b0613b1fd3014bf3f9f8943d4ba139c437ba0"
 
 [[package]]
 name = "cc"
-version = "1.2.66"
+version = "1.2.67"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5d6cac793997bd970000024b2934968efe83b382de4fdcf4fcb46b6ee4ad996"
+checksum = "e17dd265a7d0f31ef544e1b20e03add05d3b45b491b633b10d67145d2acc1a38"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -1258,7 +1258,7 @@ dependencies = [
 
 [[package]]
 name = "leptos-wasi-authz"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "axum-core",
  "bytes",
@@ -1343,21 +1343,6 @@ dependencies = [
  "serde",
  "syn",
  "walkdir",
-]
-
-[[package]]
-name = "leptos_integration_utils"
-version = "0.8.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c097f89cd9aa606297672f56fa5bdda09f01609a9f4eefaccdbb5ab5afea4279"
-dependencies = [
- "futures",
- "hydration_context",
- "leptos",
- "leptos_config",
- "leptos_meta",
- "leptos_router",
- "reactive_graph",
 ]
 
 [[package]]
@@ -1458,7 +1443,7 @@ dependencies = [
 
 [[package]]
 name = "leptos_wasi"
-version = "0.5.0-alpha.3"
+version = "0.4.2-alpha.3"
 dependencies = [
  "any_spawner",
  "async-stream",
@@ -1470,12 +1455,12 @@ dependencies = [
  "http-body-util",
  "hydration_context",
  "leptos",
- "leptos_integration_utils",
  "leptos_macro",
  "leptos_meta",
  "leptos_router",
  "mime_guess",
  "parking_lot",
+ "reactive_graph",
  "routefinder",
  "server_fn",
  "tachys",
@@ -1978,9 +1963,9 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "rand"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44c5af06bb1b7d3216d91932aed5265164bf384dc89cd6ba05cf59a35f5f76ea"
+checksum = "b9ef1d0d795eb7d84685bca4f72f3649f064e6641543d3a8c415898726a57b41"
 dependencies = [
  "rand_chacha",
  "rand_core",
@@ -2907,7 +2892,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-cedar"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "base64",
  "cedar-policy",
@@ -2919,7 +2904,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-client"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "bytes",
  "futures",
@@ -2932,7 +2917,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-contract"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -2941,7 +2926,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-http"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "http",
  "wasi-authz-client",
@@ -2952,7 +2937,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-spicedb"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "base64",
  "http",

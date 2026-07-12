@@ -115,6 +115,14 @@ manifest before copying a component. The checked
 files; its ephemeral development key is evidence for this local build, not a
 production release identity.
 
+The checked authorization bundle is still the signed pre-consolidation
+`wasi-authz 0.1.0-alpha.3` set. `AUTHZ_COMPANION_ALLOW_DIRTY=1` may bypass its
+name/version comparison only for explicit local diagnostics. A release build
+must use a clean `wasi-auth 0.1.0-alpha.4` revision, regenerate every component,
+checksum, SBOM, WIT report, OCI manifest, provenance statement, and signature,
+and update the artifact-set digest; the default audit intentionally fails
+until that work is complete.
+
 The exact experimental runtime, SDK, WIT, and composition-tool revisions are
 recorded in
 [`tests/middleware/components.lock.toml`](tests/middleware/components.lock.toml).
@@ -310,6 +318,13 @@ SpiceDB, Cedar-first hybrid, and Cedar-denial profiles. `trusted-load` uses
 persistent Hyper connections and accounts for every success, status failure,
 transport failure, cancellation, and hung request. The old Python soak client
 is not promotion evidence.
+
+The soak runner stores `result.json`, ingress `diagnostics.json`, and a
+machine-readable `summary.json` under `AUTHZ_FULL_CHAIN_SOAK_DIR` (default
+`target/authz-full-chain-soak`). The summary gate rejects a truncated run,
+unexpected status or transport outcome, cancellation or hang, any p99 above
+25 ms, a process missing at the final sample, or per-process final-quarter RSS
+growth above `max(32 MiB, 10%)`.
 
 Ingress admission is bounded by route class and holds permits until the body
 finishes or is dropped. Healthy terminal replicas are chosen by least active

@@ -30,7 +30,6 @@ use leptos::{
     hydration::IslandsRouterNavigation,
     prelude::{Owner, ScopedFuture, provide_context},
 };
-use leptos_integration_utils::{ExtendResponse, PinnedStream};
 use leptos_meta::ServerMetaContext;
 use leptos_router::{
     ExpandOptionals, PathSegment, RouteList, RouteListing, SsrMode,
@@ -47,6 +46,7 @@ use thiserror::Error;
 
 use crate::{
     __private::ServerWithBody,
+    integration::{ExtendResponse, PinnedStream},
     response::{Body, Response, ResponseOptions},
     utils::redirect,
 };

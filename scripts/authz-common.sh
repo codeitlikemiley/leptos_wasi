@@ -20,6 +20,11 @@ PY
 }
 
 authz_repository() {
+  if [[ -n "${WASI_AUTH_DIR:-}" ]]; then
+    printf '%s\n' "${WASI_AUTH_DIR}"
+    return
+  fi
+  # WASI_AUTHZ_DIR remains a compatibility override for older CI jobs.
   if [[ -n "${WASI_AUTHZ_DIR:-}" ]]; then
     printf '%s\n' "${WASI_AUTHZ_DIR}"
     return

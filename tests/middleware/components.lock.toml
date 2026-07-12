@@ -30,7 +30,7 @@ cosign_version = "3.1.1"
 [middleware]
 name = "wasi-http-middleware"
 version = "0.2.0-alpha.3"
-relative_path = "../wasi-http-middleware"
+relative_path = "../wasi-auth/legacy/wasi-http-middleware"
 baseline_revision = "6977a75c4d2cb1558158341c109e419189dc2c52"
 source_revision = "42db2e18c94a4e9734bdf39465f6a9f0bb1f396a"
 artifact_revision = "ff8c6b102bf13df25dda79a5ccf775fdd93bbdfe"
@@ -43,15 +43,17 @@ components = [
 ]
 
 [authorization]
-name = "wasi-authz"
-version = "0.1.0-alpha.3"
-relative_path = "../wasi-authz"
+name = "wasi-auth"
+version = "0.1.0-alpha.4"
+relative_path = "../wasi-auth"
 leptos_package = "leptos-wasi-authz"
 leptos_crate_path = "crates/leptos-wasi-authz"
 client_package = "wasi-authz-client"
 client_crate_path = "crates/wasi-authz-client"
-baseline_revision = "043f5b66073bb8e941a29410029a8b9ba26d6c5f"
-source_revision = "642bfdf7af992eeb3ff1ec8c3369a8fe84c6c388"
+baseline_revision = "27689e087af7946ff280102dbec94fb9b2fe0590"
+source_revision = "1bf80347b2fdff65408f3d239ff6f02b1033658e"
+# Last signed pre-consolidation bundle. Release promotion must regenerate and
+# attest an alpha.4 wasi-auth bundle from a clean consolidated revision.
 artifact_revision = "d4a755e7a4a5abe3b38868a71b063bf33592254c"
 fixture_manifest = "tests/authz-fixture/Cargo.toml"
 components = [

@@ -11,15 +11,23 @@ mkdir -p "$RESULTS"
 
 run_profile() {
   local profile="$1" scenario="$2" ingress_profile="$3" repetition="$4"
-  AUTHENTICATION_MODE=trusted_ingress AUTHZ=1 MIDDLEWARE=0 HOST="$HOST" \
-    TRUSTED_INGRESS_HEALTH_CHECKS=0 \
-    TERMINAL_REPLICAS="$TERMINAL_REPLICAS" \
-    TRUSTED_INGRESS_PROFILE="$ingress_profile" \
-    AUTHZ_FULL_CHAIN_BENCHMARK=1 AUTHZ_FULL_CHAIN_BENCHMARK_ONLY=1 \
-    AUTHZ_FULL_CHAIN_SCENARIO="$ROOT/tests/trusted-ingress/scenarios/$scenario.toml" \
-    AUTHZ_FULL_CHAIN_BENCHMARK_DIR="$RESULTS/$profile/$repetition" \
-    AUTHZ_FULL_CHAIN_BENCHMARK_SEED="$((BENCHMARK_SEED + repetition))" \
-    "$ROOT/scripts/run-trusted-ingress-browser.sh"
+  local report="$RESULTS/$profile/$repetition/result.json"
+  if ! AUTHENTICATION_MODE=trusted_ingress AUTHZ=1 MIDDLEWARE=0 HOST="$HOST" \
+      TRUSTED_INGRESS_HEALTH_CHECKS=0 \
+      TERMINAL_REPLICAS="$TERMINAL_REPLICAS" \
+      TRUSTED_INGRESS_PROFILE="$ingress_profile" \
+      AUTHZ_FULL_CHAIN_BENCHMARK=1 AUTHZ_FULL_CHAIN_BENCHMARK_ONLY=1 \
+      AUTHZ_FULL_CHAIN_SCENARIO="$ROOT/tests/trusted-ingress/scenarios/$scenario.toml" \
+      AUTHZ_FULL_CHAIN_BENCHMARK_DIR="$RESULTS/$profile/$repetition" \
+      AUTHZ_FULL_CHAIN_BENCHMARK_SEED="$((BENCHMARK_SEED + repetition))" \
+      "$ROOT/scripts/run-trusted-ingress-browser.sh"; then
+    if [[ ! -f "$report" ]]; then
+      echo "benchmark infrastructure failed before producing $report" >&2
+      return 1
+    fi
+    python3 "$ROOT/scripts/validate-trusted-load-report.py" "$report"
+    echo "warning: $profile repetition $repetition produced a valid failing performance sample" >&2
+  fi
 }
 
 for repetition in $(seq 1 "$REPETITIONS"); do

@@ -118,6 +118,60 @@ driver replaces `urllib` for this gate and reports per-process CPU/RSS,
 successful and failed latency histograms, first-byte latency, status classes,
 and hangs.
 
+The 2026-07-12 consolidated-source matrix completed all five 5,000-request,
+concurrency-100 repetitions per profile on Wasmtime 46.0.1. It was a dirty-tree
+diagnostic run, so signed artifact-set verification was intentionally not
+claimed. Every profile failed because at least one request had an unexpected
+status or transport outcome; only two of five paired anonymous-edge samples
+met both unchanged 10% regression limits.
+
+| Profile | Median requests/s | Median p99 | Worst p99 | Failures across five runs |
+|---|---:|---:|---:|---:|
+| Proxy baseline | 19,684.38 | 13.431 ms | 16.687 ms | 108 |
+| Anonymous edge | 18,390.11 | 15.431 ms | 47.647 ms | 114 |
+| Authentication only | 14,892.11 | 21.151 ms | 24.255 ms | 354 |
+| Embedded Cedar | 10,590.42 | 25.471 ms | 45.407 ms | 630 |
+| Direct relationship | 6,813.00 | 38.015 ms | 299.775 ms | 6,534 |
+| Direct hybrid | 5,893.07 | 54.495 ms | 102.911 ms | 8,265 |
+| Cedar-first denial | 10,503.41 | 21.407 ms | 152.447 ms | 1,260 |
+
+The same audit found and fixed two defects in the evidence harness. Terminal
+health could change between two selection passes and leave an empty candidate
+set, causing a modulo-by-zero worker panic. Terminal selection now uses one
+health/load snapshot and returns a controlled unavailable response if none are
+healthy. The closed-loop driver also started its 30-second drain deadline
+immediately after spawning workers, truncating every requested ten-minute run
+at 30 seconds. Its drain deadline now begins after the configured load
+deadline. Regression tests cover both cases, and failed load runs retain the
+structurally validated report plus ingress diagnostics.
+
+The ingress diagnostics now distinguish an unfinished downstream response body
+(`response_body_aborts`) from an observed request cancellation and an observed
+client disconnect. Dropping `GuardedBody` alone is not sufficient evidence of
+a client disconnect, so it no longer increments all three counters. Historical
+soak values that reported identical cancellation and disconnect counts must not
+be used as client-behavior evidence.
+
+The load driver also supports scheduled open-loop arrivals. Open-loop latency
+is measured from the intended arrival time, including client scheduling delay
+and saturation, so overload is not hidden by coordinated omission. Run
+`scripts/benchmark-trusted-ingress-open-loop.sh` after the five-sample capacity
+matrix; it exercises 50%, 70%, and 90% of each profile's measured median
+capacity and preserves the unchanged 25 ms gate.
+
+After those fixes, a two-terminal, 600.009-second, concurrency-100 soak
+completed 2,586,955 responses (4,311.53 responses/s) with zero canceled or
+hung requests. It still failed promotion: 1,005,636 responses had unexpected
+statuses, 42,793 attempts had transport failures, successful-response total
+p99 was 81.407 ms, response-header p99 was 72.767 ms, and first-body-byte p99
+was 73.023 ms. All five sampled processes passed the final-quarter RSS gate;
+the largest positive final-quarter change was 992 KiB in the authentication
+broker, while ingress changed by -192 KiB. Diagnostics localize the remaining
+failure to sustained terminal/native transport pressure, not an admission
+queue leak. `scripts/check-trusted-load-soak.py` now writes `summary.json` and
+enforces duration, failures, all three 25 ms p99 limits, final process
+liveness, and `max(32 MiB, 10%)` per-process final-quarter RSS growth.
+
 A 2026-07-11 two-terminal, 500-request concurrency-100 diagnostic completed
 with zero failures. The direct hybrid path measured 54.975 ms first-byte and
 total p99, so it still fails the unchanged 25 ms gate. This short run proves

@@ -947,21 +947,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "leptos_integration_utils"
-version = "0.8.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c097f89cd9aa606297672f56fa5bdda09f01609a9f4eefaccdbb5ab5afea4279"
-dependencies = [
- "futures",
- "hydration_context",
- "leptos",
- "leptos_config",
- "leptos_meta",
- "leptos_router",
- "reactive_graph",
-]
-
-[[package]]
 name = "leptos_macro"
 version = "0.8.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1059,7 +1044,7 @@ dependencies = [
 
 [[package]]
 name = "leptos_wasi"
-version = "0.5.0-alpha.3"
+version = "0.4.2-alpha.3"
 dependencies = [
  "any_spawner",
  "async-stream",
@@ -1071,12 +1056,12 @@ dependencies = [
  "http-body-util",
  "hydration_context",
  "leptos",
- "leptos_integration_utils",
  "leptos_macro",
  "leptos_meta",
  "leptos_router",
  "mime_guess",
  "parking_lot",
+ "reactive_graph",
  "routefinder",
  "server_fn",
  "tachys",
@@ -1403,9 +1388,9 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "rand"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44c5af06bb1b7d3216d91932aed5265164bf384dc89cd6ba05cf59a35f5f76ea"
+checksum = "b9ef1d0d795eb7d84685bca4f72f3649f064e6641543d3a8c415898726a57b41"
 dependencies = [
  "rand_chacha",
  "rand_core",
@@ -2098,7 +2083,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-client"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "futures",
  "http",
@@ -2109,7 +2094,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-contract"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "serde",
  "serde_json",

@@ -5,8 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FIXTURE_ROOT="${ROOT}/tests/authz-lifecycle"
 LOCK="${ROOT}/tests/middleware/components.lock.toml"
-MIDDLEWARE_REPOSITORY="${WASI_HTTP_MIDDLEWARE_DIR:-$(dirname "${ROOT}")/wasi-http-middleware}"
-AUTHZ_REPOSITORY="${WASI_AUTHZ_DIR:-$(dirname "${ROOT}")/wasi-authz}"
+MIDDLEWARE_REPOSITORY="${WASI_HTTP_MIDDLEWARE_DIR:-$(dirname "${ROOT}")/wasi-auth/legacy/wasi-http-middleware}"
+AUTHZ_REPOSITORY="${WASI_AUTH_DIR:-${WASI_AUTHZ_DIR:-$(dirname "${ROOT}")/wasi-auth}}"
 ALLOW_DIRTY="${AUTHZ_LIFECYCLE_ALLOW_DIRTY_COMPANIONS:-0}"
 
 available_port() {

@@ -16,6 +16,13 @@ The exact main revision is recorded in
 `tests/middleware/components.lock.toml`. It is an experimental compatibility
 input, not a floating branch or production support claim.
 
+Final-WASI describes the exported component world, not the Rust codegen target.
+Until Rust distributes self-contained libraries for `wasm32-wasip3`, release
+artifacts use the supported `wasm32-wasip2` Rust target and must be inspected
+with `wasm-tools component wit`: they must export
+`wasi:http/handler@0.3.0` and must not retain `wasi_snapshot_preview1`
+imports. The `wasm32-wasip3 -Zbuild-std` lane is a canary only.
+
 ## Reproduce
 
 ```bash

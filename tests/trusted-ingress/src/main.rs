@@ -140,6 +140,7 @@ struct Metrics {
     overload_rejections: AtomicU64,
     cancellations: AtomicU64,
     client_disconnects: AtomicU64,
+    response_body_aborts: AtomicU64,
     stages: [LatencyMetric; STAGE_COUNT],
     errors: [AtomicU64; ERROR_COUNT],
 }
@@ -699,18 +700,19 @@ impl Ingress {
     }
 
     fn select_terminal(&self) -> Option<Terminal> {
-        let minimum = self
-            .terminals
-            .iter()
-            .filter(|terminal| terminal.healthy.load(Ordering::Acquire))
-            .map(|terminal| terminal.gate.active.load(Ordering::Relaxed))
-            .min()?;
         let candidates = self
             .terminals
             .iter()
-            .filter(|terminal| {
-                terminal.healthy.load(Ordering::Acquire)
-                    && terminal.gate.active.load(Ordering::Relaxed) == minimum
+            .filter(|terminal| terminal.healthy.load(Ordering::Acquire))
+            .map(|terminal| {
+                (terminal, terminal.gate.active.load(Ordering::Relaxed))
+            })
+            .collect::<Vec<_>>();
+        let minimum = candidates.iter().map(|(_, active)| *active).min()?;
+        let candidates = candidates
+            .into_iter()
+            .filter_map(|(terminal, active)| {
+                (active == minimum).then_some(terminal)
             })
             .collect::<Vec<_>>();
         let cursor = self.terminal_cursor.fetch_add(1, Ordering::Relaxed);
@@ -1069,9 +1071,8 @@ impl http_body::Body for GuardedBody {
 impl Drop for GuardedBody {
     fn drop(&mut self) {
         if !self.completed {
-            self.metrics.cancellations.fetch_add(1, Ordering::Relaxed);
             self.metrics
-                .client_disconnects
+                .response_body_aborts
                 .fetch_add(1, Ordering::Relaxed);
             self.metrics
                 .record(Stage::TerminalBody, self.body_started.elapsed());
@@ -1088,6 +1089,7 @@ impl Metrics {
             overload_rejections: AtomicU64::new(0),
             cancellations: AtomicU64::new(0),
             client_disconnects: AtomicU64::new(0),
+            response_body_aborts: AtomicU64::new(0),
             stages: array::from_fn(|_| LatencyMetric::new()),
             errors: array::from_fn(|_| AtomicU64::new(0)),
         }
@@ -1153,6 +1155,7 @@ impl Metrics {
             "overload_rejections": self.overload_rejections.load(Ordering::Relaxed),
             "cancellations": self.cancellations.load(Ordering::Relaxed),
             "client_disconnects": self.client_disconnects.load(Ordering::Relaxed),
+            "response_body_aborts": self.response_body_aborts.load(Ordering::Relaxed),
             "stages": stages,
             "errors": errors,
         })
@@ -1484,5 +1487,58 @@ class = "relationship"
             Rejection::Overloaded.status(),
             StatusCode::SERVICE_UNAVAILABLE
         );
+    }
+
+    #[test]
+    fn terminal_selection_should_return_none_when_all_terminals_are_unhealthy()
+    {
+        let terminal = Terminal {
+            origin: "http://127.0.0.1:3001".into(),
+            gate: AdmissionGate::shared(1, 1),
+            healthy: Arc::new(AtomicBool::new(false)),
+            failures: Arc::new(AtomicU64::new(3)),
+            successes: Arc::new(AtomicU64::new(0)),
+        };
+        let terminals: Arc<[Terminal]> = vec![terminal].into();
+        let ingress = Ingress {
+            authn_client: pooled_client(1),
+            terminal_client: pooled_client(1),
+            terminals,
+            broker_uri: "http://127.0.0.1:3002/authenticate"
+                .parse()
+                .expect("broker URI"),
+            service_id: "test-service".into(),
+            audiences: vec!["api://test".to_owned()].into(),
+            cors: CorsConfig::new(
+                ["http://127.0.0.1:3000"],
+                ["GET"],
+                ["content-type"],
+                false,
+            )
+            .expect("CORS configuration"),
+            request_ids: Arc::new(AtomicU64::new(1)),
+            terminal_cursor: Arc::new(AtomicU64::new(0)),
+            route_policy: Arc::new(BTreeMap::new()),
+            profile: PolicyProfile::EdgeAuthenticated,
+            gates: Gates {
+                public: AdmissionGate::shared(1, 1),
+                authn_only: AdmissionGate::shared(1, 1),
+                cedar: AdmissionGate::shared(1, 1),
+                relationship: AdmissionGate::shared(1, 1),
+                hybrid: AdmissionGate::shared(1, 1),
+                broker: AdmissionGate::shared(1, 1),
+            },
+            deadlines: Deadlines {
+                queue: Duration::from_millis(1),
+                authentication: Duration::from_millis(1),
+                terminal_first_byte: Duration::from_millis(1),
+                stream_idle: Duration::from_millis(1),
+                stream_total: Duration::from_millis(1),
+                health_interval: Duration::from_millis(1),
+            },
+            metrics: Arc::new(Metrics::new()),
+        };
+
+        assert!(ingress.select_terminal().is_none());
     }
 }
