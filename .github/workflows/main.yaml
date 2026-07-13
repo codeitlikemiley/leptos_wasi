@@ -346,8 +346,10 @@ jobs:
           cargo build --locked --manifest-path tests/test-app/Cargo.toml \
             --target wasm32-wasip2 --release --no-default-features \
             --features wasip3,islands-router
+          cp tests/test-app/target/wasm32-wasip2/release/test_app.wasm \
+            tests/test-app-p3.wasm
           wasm-tools component wit \
-            tests/test-app/target/wasm32-wasip2/release/test_app.wasm \
+            tests/test-app-p3.wasm \
             | grep -F 'export wasi:http/handler@0.3.0;'
 
       - name: Confirm native Spin middleware remains an RC incompatibility canary
