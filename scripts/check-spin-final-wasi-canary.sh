@@ -17,6 +17,26 @@ PORT="${PORT:-0}"
 log="$(mktemp -t leptos-wasi-spin-final-wasi.XXXXXX)"
 pid=""
 
+matches_text() {
+  local pattern="$1"
+  local text="$2"
+  if command -v rg >/dev/null 2>&1; then
+    rg -q -- "${pattern}" <<<"${text}"
+  else
+    grep -Eq -- "${pattern}" <<<"${text}"
+  fi
+}
+
+matches_file() {
+  local pattern="$1"
+  local path="$2"
+  if command -v rg >/dev/null 2>&1; then
+    rg -q -- "${pattern}" "${path}"
+  else
+    grep -Eq -- "${pattern}" "${path}"
+  fi
+}
+
 wit="$("${WASM_TOOLS_BIN}" component wit "$(dirname "${manifest}")/$(python3 - "${manifest}" <<'PY'
 import pathlib
 import sys
@@ -29,11 +49,11 @@ trigger = value["trigger"]["http"][0]
 print(value["component"][trigger["component"]]["source"])
 PY
 )")"
-if printf '%s\n' "${wit}" | rg -q '0\.3\.0-rc'; then
+if matches_text '0\.3\.0-rc' "${wit}"; then
   echo "Spin canary input is stale and still contains an RC WASI interface" >&2
   exit 2
 fi
-printf '%s\n' "${wit}" | rg -q 'export wasi:http/handler@0\.3\.0;' || {
+matches_text 'export wasi:http/handler@0\.3\.0;' "${wit}" || {
   echo "Spin canary input does not export final wasi:http/handler@0.3.0" >&2
   exit 2
 }
@@ -79,12 +99,12 @@ if [[ "${status}" -eq 0 ]]; then
   exit 1
 fi
 
-rg -q 'wasi:http/types@0\.3\.0' "${log}" || {
+matches_file 'wasi:http/types@0\.3\.0' "${log}" || {
   echo "Spin failed for an unexpected reason; final wasi:http/types@0.3.0 was not mentioned" >&2
   cat "${log}" >&2
   exit 1
 }
-rg -q 'resource implementation is missing' "${log}" || {
+matches_file 'resource implementation is missing' "${log}" || {
   echo "Spin final-WASI failure changed; update the compatibility evidence before promotion" >&2
   cat "${log}" >&2
   exit 1
