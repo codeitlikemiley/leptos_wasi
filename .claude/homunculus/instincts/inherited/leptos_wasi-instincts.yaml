@@ -1,0 +1,744 @@
+# Instincts generated from https://github.com/codeitlikemiley/leptos_wasi
+# Generated: 2026-07-13T02:04:41.374Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: leptos_wasi-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: test, chore, docs, fix, refactor
+
+## Evidence
+
+- 72 commits analyzed
+- Detected conventional commit pattern
+- Examples: feat: add Leptos islands and split WASM support, refactor!: harden additive WASI runtime adapters
+
+---
+id: leptos_wasi-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Commit Length
+
+## Action
+
+Write moderate-length commit messages (~50 characters)
+
+## Evidence
+
+- Average commit message length: 50 chars
+- Based on 72 commits
+
+---
+id: leptos_wasi-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: leptos_wasi-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: leptos_wasi-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Export Style
+
+## Action
+
+Prefer default exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: default
+
+---
+id: leptos_wasi-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: leptos_wasi-test-framework
+trigger: "when writing tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Test Framework
+
+## Action
+
+Use playwright as the test framework
+
+## Evidence
+
+- Test framework detected: playwright
+- File pattern: *.spec.ts
+
+---
+id: leptos_wasi-test-naming
+trigger: "when creating a test file"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Test Naming
+
+## Action
+
+Name test files using the pattern: *.spec.ts
+
+## Evidence
+
+- File pattern: *.spec.ts
+- Consistent across test files
+
+---
+id: leptos_wasi-test-types
+trigger: "when planning tests for a feature"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Test Types
+
+## Action
+
+Write unit, e2e tests to match project standards
+
+## Evidence
+
+- Test types detected: unit, e2e
+- Coverage config: no
+
+---
+id: leptos_wasi-workflow-database-migration
+trigger: "when modifying the database schema or adding tables"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Workflow Database Migration
+
+## Action
+
+Follow the database-migration workflow:
+1. Create migration file
+2. Update schema definitions
+3. Generate/update types
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: 
+
+---
+id: leptos_wasi-workflow-feature-development
+trigger: "when implementing a new feature"
+confidence: 0.75
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Workflow Feature Development
+
+## Action
+
+Follow the feature-development workflow:
+1. Add feature implementation
+2. Add tests for feature
+3. Update documentation
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~5x per month
+- Files: scripts/*, tests/middleware/*, tests/browser/*
+
+---
+id: leptos_wasi-workflow-test-driven-development
+trigger: "when adding new functionality"
+confidence: 0.7
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Workflow Test Driven Development
+
+## Action
+
+Follow the test-driven-development workflow:
+1. Write failing test
+2. Implement code to pass test
+3. Refactor if needed
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~4x per month
+- Files: **/*.test.*, **/*.spec.*, src/**/*
+
+---
+id: leptos_wasi-workflow-refactoring
+trigger: "when refactoring code"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Workflow Refactoring
+
+## Action
+
+Follow the refactoring workflow:
+1. Ensure tests pass before refactor
+2. Refactor code structure
+3. Verify tests still pass
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: src/**/*
+
+---
+id: leptos_wasi-workflow-release-version-bump
+trigger: "when doing release version bump"
+confidence: 0.7
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Workflow Release Version Bump
+
+## Action
+
+Follow the release-version-bump workflow:
+1. Update version in Cargo.toml
+2. Update version in CHANGELOG.md (if present)
+3. Update Cargo.lock in main crate and all test/example fixtures
+4. Commit with a release message
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~4x per month
+- Files: Cargo.toml, Cargo.lock, CHANGELOG.md
+
+---
+id: leptos_wasi-workflow-add-or-update-middleware-or-authz-artifacts
+trigger: "when doing add or update middleware or authz artifacts"
+confidence: 0.85
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Workflow Add Or Update Middleware Or Authz Artifacts
+
+## Action
+
+Follow the add-or-update-middleware-or-authz-artifacts workflow:
+1. Update tests/middleware/artifact-sets.toml
+2. Update tests/middleware/components.lock.toml
+3. Update tests/middleware/deployment-policy.toml
+4. Commit with a pin/refresh/correct message
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~7x per month
+- Files: tests/middleware/artifact-sets.toml, tests/middleware/components.lock.toml, tests/middleware/deployment-policy.toml
+
+---
+id: leptos_wasi-workflow-add-new-test-fixture-or-scenario
+trigger: "when doing add new test fixture or scenario"
+confidence: 0.8
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Workflow Add New Test Fixture Or Scenario
+
+## Action
+
+Follow the add-new-test-fixture-or-scenario workflow:
+1. Create new test directory (e.g., tests/authz-lifecycle-wasip2/ or tests/trusted-ingress/)
+2. Add Cargo.toml and Cargo.lock
+3. Add source files (src/lib.rs or src/main.rs, README.md, etc.)
+4. Add supporting scripts if needed
+5. Commit with a test: add/cover/prove message
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~6x per month
+- Files: tests/*/Cargo.toml, tests/*/Cargo.lock, tests/*/src/lib.rs
+
+---
+id: leptos_wasi-workflow-add-or-update-browser-e2e-tests
+trigger: "when doing add or update browser e2e tests"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Workflow Add Or Update Browser E2e Tests
+
+## Action
+
+Follow the add-or-update-browser-e2e-tests workflow:
+1. Add or update tests/browser/*.spec.ts
+2. Update tests/browser/run.sh
+3. Update tests/browser/package.json and lockfile if needed
+4. Commit with a test: cover/preserve message
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: tests/browser/counter.spec.ts, tests/browser/run.sh, tests/browser/package.json
+
+---
+id: leptos_wasi-workflow-documentation-update-for-feature-or-release
+trigger: "when doing documentation update for feature or release"
+confidence: 0.75
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Workflow Documentation Update For Feature Or Release
+
+## Action
+
+Follow the documentation-update-for-feature-or-release workflow:
+1. Edit one or more of README.md, MIGRATION.md, MIDDLEWARE.md, PERFORMANCE.md, PRODUCTION.md, CHANGELOG.md
+2. Commit with a docs: message
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~5x per month
+- Files: README.md, MIGRATION.md, MIDDLEWARE.md
+
+---
+id: leptos_wasi-workflow-ci-policy-or-workflow-update
+trigger: "when doing ci policy or workflow update"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Workflow Ci Policy Or Workflow Update
+
+## Action
+
+Follow the ci-policy-or-workflow-update workflow:
+1. Edit .github/workflows/main.yaml
+2. Edit Makefile.toml or deny.toml if needed
+3. Commit with a ci: message
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: .github/workflows/main.yaml, Makefile.toml, deny.toml
+
+---
+id: leptos_wasi-camelCase-files
+trigger: "When creating or renaming a file in the codebase."
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi CamelCase Files
+
+## Action
+
+Name the file using camelCase.
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.files: camelCase
+
+---
+id: leptos_wasi-camelCase-functions
+trigger: "When defining a function."
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi CamelCase Functions
+
+## Action
+
+Name the function using camelCase.
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.functions: camelCase
+
+---
+id: leptos_wasi-PascalCase-classes
+trigger: "When defining a class or struct."
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi PascalCase Classes
+
+## Action
+
+Name the class or struct using PascalCase.
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.classes: PascalCase
+
+---
+id: leptos_wasi-SCREAMING_SNAKE_CASE-constants
+trigger: "When defining a constant."
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi SCREAMING_SNAKE_CASE Constants
+
+## Action
+
+Name the constant using SCREAMING_SNAKE_CASE.
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.constants: SCREAMING_SNAKE_CASE
+
+---
+id: leptos_wasi-relative-imports
+trigger: "When importing modules."
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Relative Imports
+
+## Action
+
+Use relative import paths.
+
+## Evidence
+
+- Pattern in codeStyle.importStyle: relative
+
+---
+id: leptos_wasi-default-exports
+trigger: "When exporting modules or components."
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Default Exports
+
+## Action
+
+Use default export style.
+
+## Evidence
+
+- Pattern in codeStyle.exportStyle: default
+
+---
+id: leptos_wasi-playwright-e2e-tests
+trigger: "When writing browser-based end-to-end tests."
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Playwright E2e Tests
+
+## Action
+
+Use Playwright with test files matching *.spec.ts.
+
+## Evidence
+
+- Pattern in testing.framework: playwright
+- Pattern in testing.filePattern: *.spec.ts
+
+---
+id: leptos_wasi-separate-tests-folder
+trigger: "When adding new tests."
+confidence: 0.85
+domain: architecture
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Separate Tests Folder
+
+## Action
+
+Place test files in the 'tests' directory, separate from source code.
+
+## Evidence
+
+- Pattern in architecture.folderStructure.commonFolders: tests
+
+---
+id: leptos_wasi-test-driven-development
+trigger: "When developing new features or fixing bugs."
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Test Driven Development
+
+## Action
+
+Write a failing test before implementing the code (TDD).
+
+## Evidence
+
+- Workflow: test-driven-development
+- Example commits: test: add tests for user validation, feat: implement user validation
+
+---
+id: leptos_wasi-conventional-commits
+trigger: "When writing a commit message."
+confidence: 0.95
+domain: git
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Conventional Commits
+
+## Action
+
+Use the Conventional Commits format (e.g., feat:, fix:, chore:, docs:, refactor:, test:, ci:, perf:).
+
+## Evidence
+
+- Pattern in commits.prefixes
+- Examples: feat: add Leptos islands and split WASM support
+
+---
+id: leptos_wasi-release-version-bump
+trigger: "When preparing a new release or pre-release of leptos_wasi."
+confidence: 0.98
+domain: workflow
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Release Version Bump
+
+## Action
+
+Update version in Cargo.toml, CHANGELOG.md, all Cargo.lock files, and commit with a release message.
+
+## Evidence
+
+- Workflow: release-version-bump
+- Example files: Cargo.toml, Cargo.lock, CHANGELOG.md
+
+---
+id: leptos_wasi-refresh-artifacts
+trigger: "When middleware or authorization artifacts are regenerated, repinned, or updated."
+confidence: 0.99
+domain: workflow
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Refresh Artifacts
+
+## Action
+
+Update tests/middleware/artifact-sets.toml, components.lock.toml, deployment-policy.toml, and commit with a pin/refresh/correct message.
+
+## Evidence
+
+- Workflow: add-or-update-middleware-or-authz-artifacts
+- Example files: tests/middleware/artifact-sets.toml
+
+---
+id: leptos_wasi-add-new-test-fixture
+trigger: "When adding a new test scenario or fixture."
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Add New Test Fixture
+
+## Action
+
+Create a new test directory, add Cargo.toml, Cargo.lock, source files, supporting scripts, and commit with a test: add/cover/prove message.
+
+## Evidence
+
+- Workflow: add-new-test-fixture-or-scenario
+- Example files: tests/*/Cargo.toml, tests/*/src/lib.rs
+
+---
+id: leptos_wasi-add-update-browser-e2e
+trigger: "When adding or updating browser E2E test coverage."
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Add Update Browser E2e
+
+## Action
+
+Add or update tests/browser/*.spec.ts, run.sh, package.json, and commit with a test: cover/preserve message.
+
+## Evidence
+
+- Workflow: add-or-update-browser-e2e-tests
+- Example files: tests/browser/counter.spec.ts
+
+---
+id: leptos_wasi-update-documentation
+trigger: "When a new feature, migration, or release requires documentation changes."
+confidence: 0.93
+domain: workflow
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Update Documentation
+
+## Action
+
+Edit one or more of README.md, MIGRATION.md, MIDDLEWARE.md, PERFORMANCE.md, PRODUCTION.md, CHANGELOG.md, and commit with a docs: message.
+
+## Evidence
+
+- Workflow: documentation-update-for-feature-or-release
+- Example files: README.md, MIGRATION.md
+
+---
+id: leptos_wasi-update-ci-policy
+trigger: "When CI workflows or dependency policies need to be updated."
+confidence: 0.88
+domain: workflow
+source: repo-analysis
+source_repo: codeitlikemiley/leptos_wasi
+---
+
+# Leptos_wasi Update Ci Policy
+
+## Action
+
+Edit .github/workflows/main.yaml, Makefile.toml, or deny.toml, and commit with a ci: message.
+
+## Evidence
+
+- Workflow: ci-policy-or-workflow-update
+- Example files: .github/workflows/main.yaml
+
