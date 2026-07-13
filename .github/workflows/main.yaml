@@ -375,9 +375,15 @@ jobs:
         run: ./scripts/check-spin-main-terminal.sh
 
       - name: Preserve the composed-handler CPU-metrics regression
+        if: ${{ hashFiles('tests/test-app-p3-middleware.wasm') != '' }}
         env:
           SPIN_BIN: ${{ steps.spin-main.outputs.binary }}
         run: ./scripts/check-spin-main-composed-canary.sh
+
+      - name: Record unavailable composed-handler canary
+        if: ${{ hashFiles('tests/test-app-p3-middleware.wasm') == '' }}
+        run: >-
+          echo "::warning title=Composed middleware canary unavailable::No immutable composed middleware artifact is authorized in this checkout; the experimental component-middleware lane remains unpromoted."
 
       - name: Report cross-repository middleware promotion gate
         run: |
