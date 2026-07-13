@@ -399,10 +399,13 @@ jobs:
         include:
           - host: wasmtime
             preview: p2
+            historical_baseline: true
           - host: wasmtime
             preview: p3
+            historical_baseline: false
           - host: spin
             preview: p2
+            historical_baseline: true
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -433,11 +436,13 @@ jobs:
           version: "v4.0.2"
 
       - name: Create immutable 0.3.2 comparison worktree
+        if: matrix.historical_baseline
         run: >-
           git worktree add --detach
           "${RUNNER_TEMP}/leptos-wasi-v0.3.2" 9689c68
 
       - name: Run 0.3.2 sustained baseline
+        if: matrix.historical_baseline
         env:
           PROJECT_ROOT: ${{ runner.temp }}/leptos-wasi-v0.3.2
           CHECK_POLLABLES: "0"
@@ -461,10 +466,19 @@ jobs:
         run: ./scripts/soak-test-app.sh
 
       - name: Enforce latency and memory gates
+        if: matrix.historical_baseline
         run: >-
           python3 scripts/compare_performance.py
           soak-${{ matrix.host }}-${{ matrix.preview }}-baseline.json
           soak-${{ matrix.host }}-${{ matrix.preview }}-candidate.json
+          | tee soak-${{ matrix.host }}-${{ matrix.preview }}-comparison.json
+
+      - name: Enforce absolute final-WASI latency and memory gates
+        if: ${{ !matrix.historical_baseline }}
+        run: >-
+          python3 scripts/check_soak_candidate.py
+          soak-${{ matrix.host }}-${{ matrix.preview }}-candidate.json
+          --max-p99-ms 25
           | tee soak-${{ matrix.host }}-${{ matrix.preview }}-comparison.json
 
       - name: Retain soak evidence
