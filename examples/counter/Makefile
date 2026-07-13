@@ -1,50 +1,81 @@
 # Makefile for building counter app for different WASI runtimes
-.PHONY: help spin wasmtime clean run
+.PHONY: help bootstrap-spin bootstrap-spin-no-default spin spin-stable-canary wasmtime trusted-ingress-spin middleware-spin middleware-wasmtime verify-split reset-counter clean run
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  make spin     - Build and run with Spin"
+	@echo "  make bootstrap-spin - Prebuild the exact pinned Spin main runtime"
+	@echo "  make spin     - Bootstrap, build, and run the exact pinned Spin main runtime"
+	@echo "  make spin-stable-canary - Confirm Spin 4.0.2 cannot host final WASI"
+	@echo "  make trusted-ingress-spin - Run authn/Cedar/SpiceDB through pinned Spin main"
 	@echo "  make wasmtime - Build and run with Wasmtime"
+	@echo "  make middleware-spin - Run the explicit no-CPU-metrics Spin diagnostic"
+	@echo "  make middleware-wasmtime - Run a precomposed middleware component"
+	@echo "  make verify-split - Verify lazy WASM split artifacts"
+	@echo "  make reset-counter - Delete the persistent local SQLite counter"
 	@echo "  make clean    - Clean build artifacts"
 
 # Run target alias
 run: wasmtime
 
-# Build and run with Spin
-spin:
-	@echo "Building for Spin runtime..."
+bootstrap-spin:
+	../../scripts/bootstrap-spin-main.sh
+
+bootstrap-spin-no-default:
+	../../scripts/bootstrap-spin-main.sh no-default-features
+
+# Build and run on the exact tested Spin main revision.
+spin: bootstrap-spin
+	../../scripts/check-counter-toolchain.sh spin
+	@echo "Building the final-WASI component for pinned Spin main..."
 	@mkdir -p .spin
-	WASI_RUNTIME=spin cargo leptos build --release
-	WASI_RUNTIME=spin LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr
-	@echo "Built: target/wasm32-wasip2/release/counter.wasm (for Spin)"
-	@echo "Starting Spin..."
-	spin up
+	cargo leptos build --release --split --frontend-only --lib-cargo-args=--locked
+	LEPTOS_OUTPUT_NAME=counter cargo build --locked --lib --target wasm32-wasip2 --release --no-default-features --features ssr
+	@$(MAKE) verify-split
+	@echo "Built: target/wasm32-wasip2/release/counter.wasm"
+	PORT=3000 ../../scripts/run-counter-with-store.sh spin "$(CURDIR)"
+
+spin-stable-canary:
+	PORT=3000 ../../scripts/check-spin-final-wasi-canary.sh "$(CURDIR)/spin.toml"
+
+trusted-ingress-spin:
+	@binary="$$(../../scripts/bootstrap-spin-main.sh)"; \
+	SPIN_BIN="$$binary" ../../scripts/run-trusted-ingress-spin-main.sh
 
 # Build and run with Wasmtime
 wasmtime:
+	../../scripts/check-counter-toolchain.sh wasmtime
 	@echo "Building for Wasmtime runtime..."
-	WASI_RUNTIME=wasmtime cargo leptos build --release
-	WASI_RUNTIME=wasmtime LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr --target-dir target/wasmtime
+	cargo leptos build --release --split --frontend-only --lib-cargo-args=--locked
+	LEPTOS_OUTPUT_NAME=counter cargo build --locked --lib --target wasm32-wasip2 --release --no-default-features --features ssr --target-dir target/wasmtime
+	@$(MAKE) verify-split
 	@echo "Built: target/wasmtime/wasm32-wasip2/release/counter.wasm (for Wasmtime)"
 	@echo "Starting Wasmtime serve..."
 	@echo "Serving at http://127.0.0.1:3000"
-	@mkdir -p ./data
-	wasmtime serve \
-		-W component-model-async=y \
-		-S p3=y \
-		-S cli=y \
-		-S http=y \
-		--dir=./target/site/pkg::/ \
-		--dir=./data::/data \
-		--env=LEPTOS_OUTPUT_NAME=counter \
-		--env=LEPTOS_SITE_ROOT=/ \
-		--env=LEPTOS_SITE_PKG_DIR=pkg \
-		--addr 127.0.0.1:3000 \
-		target/wasmtime/wasm32-wasip2/release/counter.wasm
+	PORT=3000 ../../scripts/run-counter-with-store.sh wasmtime "$(CURDIR)"
+
+middleware-spin:
+	@echo "Running the non-promoting Spin main middleware diagnostic..."
+	@binary="$$(../../scripts/bootstrap-spin-main.sh no-default-features)"; \
+	SPIN_BIN="$$binary" SPIN_DIAGNOSTIC_NO_DEFAULT_FEATURES=1 PORT=3110 MIDDLEWARE=1 HOST=spin ../../tests/browser/run.sh
+
+middleware-wasmtime:
+	@echo "Running the final-WASI composed middleware example on Wasmtime..."
+	MIDDLEWARE=1 HOST=wasmtime ../../tests/browser/run.sh
+
+verify-split:
+	@test -f target/site/pkg/counter.js
+	@test -f target/site/pkg/counter.wasm
+	@test -f target/site/pkg/__wasm_split_manifest.json
+	@test -f target/site/pkg/__wasm_split.______________________.js
+	@test -n "$$(find target/site/pkg -maxdepth 1 -name 'split_*.wasm' -print -quit)"
+	@echo "Verified islands entrypoint and lazy WASM split artifacts in target/site/pkg."
+
+reset-counter:
+	rm -f ../../data/counter.sqlite3 ../../data/counter.sqlite3-shm ../../data/counter.sqlite3-wal
 
 # Clean target
 clean:
 	cargo clean
-	rm -rf target/site target/wasmtime ./data
+	rm -rf target/site target/wasmtime
 	rm -rf .spin

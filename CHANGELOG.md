@@ -2,6 +2,218 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [0.4.2-rc.1] — 2026-07-12
+
+### Added
+
+- Restored durable counter state through one private SQLite service shared by
+  Wasmtime and pinned Spin main, including idempotent operation replay,
+  cross-runtime browser verification, restart persistence, and controlled
+  fail-closed outage behavior.
+- Added a checked compatibility guide and executable toolchain validation for
+  Rust 1.93, final `wasip3` 0.7.0, Wasmtime 46.0.1, pinned Spin
+  `4.1.0-pre0`, Cargo Leptos 0.3.7, and `wasm-bindgen` 0.2.126.
+- Added a machine-readable trusted-ingress soak gate covering configured
+  duration, status/transport/cancellation accounting, three p99 budgets,
+  process liveness, and bounded final-quarter RSS growth.
+
+### Changed
+
+- Retained the previous route-context method names as compatibility aliases so
+  `0.4.2` remains source compatible with `0.4.1` while documenting their
+  route-discovery-only lifecycle.
+- Replaced the disconnected PostgreSQL counter-store example with the
+  SQLite-backed service used by the supported counter Make targets.
+- Documented that the `wasm-bindgen` WASI regression was fixed in 0.2.123, so
+  the temporary 0.2.114 workaround is no longer required.
+- Hardened terminal selection against concurrent health-state changes and
+  corrected the closed-loop load driver so its drain timeout begins after the
+  configured load duration instead of truncating long soaks at 30 seconds.
+
+## [0.4.2-alpha.3] — 2026-07-11
+
+### Added
+
+- Added the executable native trusted-ingress topology, isolated Cedar,
+  SpiceDB, and hybrid authorization scenarios, browser coverage, deployment
+  bypass audits, and promotion benchmark/soak runners.
+
+### Security
+
+- Strip bearer and spoofed trusted metadata at ingress, fail closed with
+  generic no-store responses, and require a concrete private terminal network
+  descriptor for the production profile.
+
+## [0.4.2-alpha.2] — 2026-07-11
+
+### Changed
+
+- Made private trusted ingress the production authentication profile and kept
+  guest component middleware as an experimental portability fallback.
+- Promoted validated authentication into typed request extensions before
+  `Handler::build` without changing the public handler API.
+- Embedded Cedar for local RBAC/ABAC evaluation and retained SpiceDB only for
+  relationship-sensitive authorization.
+
+### Security
+
+- Added deployment-policy checks for private terminal exposure, explicit
+  authentication mode, direct bypass, and public split-asset exemptions.
+
+## [0.4.2-alpha.1] — 2026-07-10
+
+### Breaking
+
+- Rename `generate_routes_with_context` to
+  `generate_routes_with_discovery_context`, and
+  `generate_routes_with_exclusions_and_context` to
+  `generate_routes_with_exclusions_and_discovery_context`. Discovery context
+  is deterministic and request-independent; `handle_with_context` remains the
+  sole per-request context hook.
+
+### Added
+
+- Final `wasi:http@0.3.0` component integration fixtures that pin
+  `wasi-http-middleware 0.2.0-alpha.1` and `wasi-authz 0.1.0-alpha.1` by exact
+  source revision, checksums, SBOMs, WIT reports, provenance, OCI manifests,
+  public keys, and detached signature bundles.
+- Real Wasmtime browser coverage for public SSR, initially unhydrated islands,
+  lazy `split_*.wasm` retrieval, hydration, anonymous rejection, authenticated
+  mutation, and Cedar RBAC/ABAC plus SpiceDB ReBAC denials.
+- Final-artifact WASIp3 lifecycle coverage for delayed first bytes, trailers,
+  terminal stream errors, timeouts, disconnects, saturation, outage/recovery,
+  exact downstream invocation, and sensitive-data log scans; plus a real-host
+  WASIp2 `WaitPoll` authorization timeout/recovery fixture.
+- Deployment-policy verification that rejects terminal exposure without its
+  required middleware stack, artifact set, exact component order, or protected
+  terminal identity.
+
+### Changed
+
+- Upgrade Preview 3 bindings to final `wasi:http@0.3.0` through exact
+  `wasip3` 0.7.0 bindings, and validate the service component with Wasmtime
+  46.0.1.
+- Replace the protocol-only middleware probe with checksum-pinned artifacts
+  from the independently versioned `wasi-http-middleware` workspace. Wasmtime
+  46 is the blocking final-WASI middleware/browser runtime; stable Spin 4 and
+  the pinned native middleware commit are explicit incompatibility canaries
+  until a tagged Spin release implements final HTTP host resources and WIT.
+- Harden browser and lifecycle runners with isolated dynamic listener ports and
+  child-process readiness checks so a bind failure cannot be masked by an
+  unrelated local HTTP service.
+
+### Known alpha promotion blockers
+
+- The final-WASI composed authorization path does not meet the local
+  broker/PDP c100 25 ms p99 target and exhibits sustained controlled 503s under
+  the current stress profile. The runner preserves this as a failing gate.
+- The fused `secure-defaults` middleware profile still exceeds its fixed 10%
+  p99/throughput budget on the representative Leptos workload.
+- Stable Spin 4 and the pinned native middleware commit cannot host the final
+  WASI HTTP resource world. Both remain expected-failure canaries.
+- The sibling alpha repositories have no authorized remote or published
+  artifacts, so hosted CI cannot reproduce the local cross-repository chain.
+
+## [0.4.1] — 2026-07-10
+
+### Added
+
+- Framework-neutral WASIp3 HTTP component-middleware documentation, a pinned
+  experimental Spin vNext manifest, Wasmtime precomposition runner,
+  E2E/browser coverage, deterministic unauthenticated/authorized
+  server-action checks, and an explicit public `/pkg` split-asset boundary.
+  This adds no `leptos_wasi::Handler` API or Spin runtime dependency.
+
+## [0.4.0] — 2026-07-10
+
+### Added
+
+- Additive `leptos_wasi::wasip2` and `leptos_wasi::wasip3` runtime namespaces,
+  each with a runtime-specific prelude and handler.
+- `HandlerConfig` and `build_with_config` with a configurable buffered request
+  limit. The default remains 16 MiB.
+- Non-exhaustive `RegistrationError` values for invalid static prefixes,
+  repeated or colliding generated routes, invalid route patterns, and
+  unsupported static SSR.
+- Optional `tracing` instrumentation for request lifecycle spans and completion
+  events without installing a subscriber.
+- Preview 2 pollable registration IDs, cancellation cleanup, stalled-executor
+  detection, and native cancellation unit tests.
+- `init_wasip2_executor`, which installs and reuses one thread-local executor
+  while persistently reporting task-spawner or mode conflicts.
+- A migration guide, production support contract, explicit MSRV/current-stable
+  CI, and independent WASIp2, WASIp3, and dual-feature verification lanes.
+- A recorded 0.3.2 performance baseline and ten-minute CI soak matrix for
+  Wasmtime/Spin and Preview 2/Preview 3.
+
+### Changed
+
+- The root prelude now exports only shared response, configuration, status, and
+  redirect types. Import `Handler` and executor types from a runtime namespace.
+- `static_files_handler` and all route-generation builders now return
+  `Result<Self, RegistrationError>` instead of panicking on invalid input.
+- Preview 2 `Executor::new` and `run_until` are fallible, and
+  `init_wasip3_spawner` persistently returns the first initialization outcome.
+- `Mode::Premptive` is corrected to `Mode::Preemptive`.
+- `ResponseParts` is non-exhaustive with private fields and supported accessor
+  and `ResponseOptions` mutation methods.
+- The counter example is session-scoped and focuses on SSR, lazy islands,
+  split browser WASM, typed server functions, Wasmtime, and Spin.
+- WASIp2 and WASIp3 features are additive. Enabling both exposes both adapters
+  rather than silently selecting Preview 3.
+
+### Fixed
+
+- Server-function middleware now executes in Leptos layer order, including
+  authentication rejection, response mutation, and middleware error encoding.
+- Static asset paths are decoded once and confined to normalized relative
+  paths. Encoded separators, absolute paths, dot segments, NUL, malformed
+  escapes, and double-encoded control sequences are rejected.
+- Static routes now implement GET/HEAD semantics, return 405 for other methods,
+  and add `X-Content-Type-Options: nosniff`.
+- SSR `RequestUrl` preserves the query string and standard Leptos contexts are
+  installed before application-provided context.
+- Request and host failures that can be handled before response commitment no
+  longer trap through request-reachable `expect`/`panic` paths.
+- Preview 3 response frames no longer require `Vec::drain`, and Preview 2 no
+  longer flushes after every 8 KiB write.
+
+### Removed
+
+- `with_server_fn_axum` and `with_server_fn_generic`; use the canonical
+  `with_server_fn::<T>()` method.
+- The ambiguous root `prelude::Handler`, public `WasiBuf`, and unused Preview 3
+  request wrapper.
+- The obsolete `examples/spin-counter` application.
+
+### Known limitations
+
+- Incoming request bodies remain buffered. WebSockets, request-body streaming,
+  HTTP trailers, static SSR generation, byte ranges, and automatic
+  precompressed asset negotiation are not supported. A native Axum-free
+  server-function backend also remains post-0.4 experimental. See
+  `PRODUCTION.md`.
+
+## [0.3.2] — 2026-07-10
+
+### Added
+
+- A dual-runtime `examples/counter` implementation of Leptos islands with a
+  lazy `#[island(lazy)]` browser chunk and `cargo leptos --split` build flow.
+- Split-asset verification and runtime mounts that make the browser package and
+  split manifest available under both Wasmtime and Spin.
+
+### Fixed
+
+- The `islands-router` integration now mirrors Leptos's request contract under
+  WASIp2 and WASIp3: it detects the `Islands-Router` header, provides
+  `IslandsRouterNavigation`, and disables out-of-order rendering for navigation
+  responses.
+
+---
+
 ## [0.3.1] — 2026-05-29
 
 ### Changed
@@ -76,4 +288,3 @@ All notable changes to this project will be documented in this file.
 - Initial server function registration with single type parameter API: `.with_server_fn::<T>()`.
 - WASIp2 cooperative polling executor.
 - Basic static file serving and SSR support.
-

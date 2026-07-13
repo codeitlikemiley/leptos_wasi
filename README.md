@@ -2,212 +2,363 @@
   <h1><code>leptos_wasi</code></h1>
 
   <p>
-    <strong>Run your Leptos Server-Side in
-    <a href="https://webassembly.org/">WebAssembly</a>
-    using WASI standards.
-    </strong>
+    <strong>Run a Leptos server as a <code>wasi:http</code> WebAssembly
+    component on Wasmtime or Spin.</strong>
   </p>
 </div>
 
-## Overview
-
-[Leptos](https://leptos.dev) gives you tools to build web applications with
-best-in-class performance using WebAssembly in the browser.
-
-This crate takes it further — it lets you also run your
-[Leptos Server](https://book.leptos.dev/server/index.html) as a
-[WebAssembly Component][wasm-component] targeting the
-[`wasi:http`](https://github.com/WebAssembly/wasi-http) proposal. Deploy your
-server on any WASI-compatible runtime:
-
-- **[Wasmtime](https://wasmtime.dev)** — the reference runtime from the
-  [Bytecode Alliance](https://bytecodealliance.org/)
-- **[Spin](https://developer.fermyon.com/spin/v3)** — Fermyon's serverless
-  application platform
-
-### Demo
+`leptos_wasi` connects Leptos server functions, routing, streaming SSR,
+islands, and static assets to WASI HTTP. It has additive adapters for WASI
+Preview 2 and Preview 3, so one dependency graph can compile either or both
+component entrypoints.
 
 https://github.com/user-attachments/assets/6596e0f3-80c0-4258-a4e3-f85c41b328b4
 
-## Prerequisites
+## Requirements
 
-- **Rust:** ≥ 1.93.0 (required by `spin-sdk` v6.0.0)
-- **Target:** `rustup target add wasm32-wasip2`
-- **Cargo Leptos:** `cargo install --locked cargo-leptos`
-- **Wasmtime:** ≥ 45.0.0 *(if serving under Wasmtime)*
-- **Spin:** ≥ 4.0.0 *(if serving under Spin)*
+- Rust 1.93.0 or newer
+- `wasm32-wasip2` (`rustup target add wasm32-wasip2`)
+- Cargo Leptos 0.3.7 for the included islands example
+- `wasm-bindgen-cli` 0.2.126, matching the counter's locked browser crate
+- Wasmtime 46.0.1 as the final-WASI correctness reference; tagged Spin 4.0.2
+  for Preview 2; or the maintained Spin `4.1.0-pre0` fork at `c34c584...` for
+  the final Preview 3 release-candidate lane
 
-## Compatibility
+The Rust target name is `wasm32-wasip2` for both component models. The
+`wasip2` and `wasip3` crate features select the host bindings and executor, not
+the Rust compilation target.
 
-| Dependency | Version | Notes |
-|------------|---------|-------|
-| Leptos | `0.8.9` | Fully tested |
-| Spin SDK | `6.0.0` | WASIp3 native HTTP triggers |
-| `wasi` | `0.14.7` | WASIp2 types and polling interfaces |
-| `wasip3` | `0.6.0` | WASIp3 core types, host spawner, HTTP compatibility |
-| `http-body` | `1.0.0` | Standard streaming response frames |
+## Features
 
-## Feature Flags
+| Feature | Default | Purpose |
+|---|---:|---|
+| `wasip2` | Yes | Preview 2 incoming handler and cooperative pollable executor |
+| `wasip3` | No | Preview 3 async HTTP adapter and host task spawner |
+| `islands-router` | No | Request-aware Leptos islands-router SSR |
+| `tracing` | No | Structured request spans without installing a subscriber |
+
+Preview 2:
 
 ```toml
 [dependencies]
-# WASI Preview 2 (default) — cooperative polling executor:
-leptos_wasi = "0.3.1"
-
-# WASI Preview 3 — native host-level task spawning:
-leptos_wasi = { version = "0.3.1", default-features = false, features = ["wasip3"] }
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1" }
 ```
 
-> [!NOTE]
-> Both features can be enabled simultaneously (`--all-features`). When both
-> `wasip2` and `wasip3` are active, the `wasip3` pipeline takes precedence.
+Preview 3:
 
-## Quick Start
+```toml
+[dependencies]
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1", default-features = false, features = ["wasip3"] }
+```
 
-### WASIp3 with Wasmtime
+Both adapters in one build:
+
+```toml
+[dependencies]
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1", features = ["wasip3", "islands-router"] }
+```
+
+The features are additive. Enabling `wasip3` does not disable or replace the
+`wasip2` API.
+
+The release candidate uses the crates.io package name `leptos-wasi-runtime`
+because publication access to the upstream `leptos_wasi` package is not
+available. The dependency alias and library target remain `leptos_wasi`, so
+Rust import paths are unchanged.
+
+## Runtime-specific API
+
+Import the handler from the runtime namespace. The root prelude contains only
+shared response, configuration, and redirect types.
+
+```rust
+// Preview 2
+use leptos_wasi::wasip2::prelude::{
+    Handler, IncomingRequest, Mode, ResponseOutparam, WasiExecutor,
+};
+
+// Preview 3
+use leptos_wasi::wasip3::prelude::{Handler, init_wasip3_spawner};
+```
+
+Every typed server function uses the single canonical registration API:
+
+```rust
+handler
+    .with_server_fn::<CreateTodo>()
+    .with_server_fn::<DeleteTodo>();
+```
+
+The 0.3 aliases `with_server_fn_axum` and `with_server_fn_generic` were
+removed. Axum-compatible body types remain an internal compatibility detail of
+the code generated by Leptos; `leptos_wasi` does not run an Axum server.
+
+Whole-service HTTP middleware is a separate deployment concern. A WASIp3
+middleware component can wrap this terminal service through standard component
+composition; it does not require another Handler builder method. Wasmtime
+serves the WAC-precomposed chain. Tagged Spin 4.0.2 cannot link final
+`wasi:http@0.3.0`. Pinned Spin main runs the terminal and final outbound HTTP,
+but its default CPU-metrics hook currently panics for WAC-composed handlers and
+its native middleware path remains RC-only. Those paths are compatibility
+canaries, not deployment claims. See [WASIp3 HTTP
+Middleware](./MIDDLEWARE.md) for the boundary between component middleware,
+server-function middleware, and ingress policy. The private compatibility
+implementation and its imported history now live under
+`wasi-auth/legacy/wasi-http-middleware`; this repository consumes its
+checksum-pinned local artifacts. Typed authentication, Cedar/SpiceDB
+authorization, and trusted ingress are consolidated in `wasi-auth
+0.1.0-alpha.4`. Its private `leptos-wasi-authz` compatibility bridge remains an
+application dependency, not a `leptos_wasi` handler API.
+
+See [Spin final-WASI compatibility](./SPIN_COMPATIBILITY.md) for the exact
+terminal, trusted-ingress, composed-handler, and native-middleware gates.
+The [counter persistence service](./examples/production-counter/README.md)
+owns a local SQLite database behind a private HTTP boundary. Both `make
+wasmtime` and `make spin` use it, proving that the same WASIp3 component keeps
+state across refreshes and runtime restarts without a runtime-specific database
+API.
+
+See [Tested Compatibility](./COMPATIBILITY.md) for the complete version tuple,
+installation commands, and the `wasm-bindgen` WASI regression history.
+
+Version 0.5 does not claim a generic-response or fully Axum-free server-function
+backend. Upstream `server_fn`'s generic `Request<Bytes>` fixes its WebSocket
+response to `Response<Bytes>`, which does not form the request/response pairing
+needed by the generic response body. A native `WasiServerFnBackend` therefore
+needs a dedicated request newtype and macro support and remains a post-0.5
+experiment.
+
+### Preview 3 entrypoint
 
 ```rust
 use leptos::config::get_configuration;
-use leptos_wasi::executor::init_wasip3_spawner;
-use leptos_wasi::prelude::Handler;
-use wasip3::http::types::{Request, Response, ErrorCode};
-
-use crate::app::{shell, App, GetCount, IncrementCount};
+use leptos_wasi::wasip3::prelude::{Handler, init_wasip3_spawner};
+use wasip3::http::types::{ErrorCode, Request, Response};
 
 struct LeptosServer;
 
 impl wasip3::exports::http::handler::Guest for LeptosServer {
     async fn handle(request: Request) -> Result<Response, ErrorCode> {
-        let _ = init_wasip3_spawner();
+        init_wasip3_spawner()
+            .map_err(|_| ErrorCode::InternalError(None))?;
+        let leptos_options = get_configuration(None)
+            .map_err(|_| ErrorCode::InternalError(None))?
+            .leptos_options;
 
-        let conf = get_configuration(None).unwrap();
-        let leptos_options = conf.leptos_options;
-
-        let req = wasip3::http_compat::http_from_wasi_request(request)?;
-
-        let wasi_res = Handler::build(req).await
-            .map_err(|e| {
-                eprintln!("Error building handler: {:?}", e);
-                ErrorCode::InternalError(None)
-            })?
-            .with_server_fn::<GetCount>()
+        let request = wasip3::http_compat::http_from_wasi_request(request)?;
+        let response = Handler::build(request)
+            .await
+            .map_err(|_| ErrorCode::InternalError(None))?
+            .static_files_handler("/pkg", serve_static_files)
+            .map_err(|_| ErrorCode::InternalError(None))?
             .with_server_fn::<IncrementCount>()
             .generate_routes(App)
-            .handle_with_context(move || shell(leptos_options.clone()), || {})
+            .map_err(|_| ErrorCode::InternalError(None))?
+            .handle_with_context(
+                move || shell(leptos_options.clone()),
+                || {},
+            )
             .await
-            .map_err(|e| {
-                eprintln!("Error handling request: {:?}", e);
-                ErrorCode::InternalError(None)
-            })?;
+            .map_err(|_| ErrorCode::InternalError(None))?;
 
-        Ok(wasi_res)
+        Ok(response)
     }
 }
 
 wasip3::http::service::export!(LeptosServer);
 ```
 
-```bash
-cargo leptos build --release
-wasmtime serve \
-    -W component-model-async=y \
-    -S p3=y -S cli=y -S http=y \
-    target/server/wasm32-wasip2/release/your_crate.wasm
-```
+Initialize the Preview 3 spawner once and propagate initialization conflicts.
+Repeated successful initialization is idempotent.
 
-### WASIp3 with Spin
+### Preview 2 entrypoint
 
 ```rust
-use leptos_wasi::executor::init_wasip3_spawner;
-use leptos_wasi::prelude::Handler;
-use spin_sdk::{http::{IntoResponse, Request, Response}, http_service};
-
-#[http_service]
-async fn handle_request(req: Request) -> Result<impl IntoResponse, anyhow::Error> {
-    let _ = init_wasip3_spawner();
-    // ... build Handler and serve
-}
-```
-
-```bash
-spin build --up
-```
-
-### WASIp2 (Cooperative Polling)
-
-```rust
-use any_spawner::Executor as LeptosExecutor;
-use leptos_wasi::prelude::{IncomingRequest, ResponseOutparam, WasiExecutor};
-use wasi::exports::http::incoming_handler::Guest;
+use leptos::config::get_configuration;
+use leptos_wasi::wasip2::prelude::{
+    Handler, IncomingRequest, Mode, ResponseOutparam, init_wasip2_executor,
+};
+use wasi::{
+    exports::wasi::http::incoming_handler::Guest,
+    http::types::ErrorCode,
+};
 
 struct LeptosServer;
 
 impl Guest for LeptosServer {
     fn handle(request: IncomingRequest, response_out: ResponseOutparam) {
-        let executor = WasiExecutor::new(leptos_wasi::executor::Mode::Stalled);
-        LeptosExecutor::init_local_custom_executor(executor.clone()).unwrap();
+        let executor = match init_wasip2_executor(Mode::Stalled) {
+            Ok(executor) => executor,
+            Err(error) => {
+                eprintln!("failed to initialize the Preview 2 executor: {error}");
+                ResponseOutparam::set(
+                    response_out,
+                    Err(ErrorCode::InternalError(None)),
+                );
+                return;
+            }
+        };
+        let leptos_options = match get_configuration(None) {
+            Ok(config) => config.leptos_options,
+            Err(error) => {
+                eprintln!("failed to load Leptos configuration: {error}");
+                ResponseOutparam::set(
+                    response_out,
+                    Err(ErrorCode::InternalError(None)),
+                );
+                return;
+            }
+        };
 
-        executor.run_until(async {
-            Handler::build(request, response_out).unwrap()
-                .with_server_fn::<GetCount>()
-                .generate_routes(App)
-                .handle_with_context(move || shell(leptos_options.clone()), || {})
-                .await
-                .unwrap();
-        })
+        let result = executor.run_until(async move {
+            let result: Result<(), Box<dyn std::error::Error>> = async {
+                Handler::build(request, response_out)?
+                    .with_server_fn::<IncrementCount>()
+                    .generate_routes(App)?
+                    .handle_with_context(
+                        move || shell(leptos_options.clone()),
+                        || {},
+                    )
+                    .await?;
+                Ok(())
+            }
+            .await;
+            result
+        });
+
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => eprintln!("request failed: {error}"),
+            Err(error) => eprintln!("Preview 2 executor failed: {error}"),
+        }
     }
 }
 
 wasi::http::proxy::export!(LeptosServer with_types_in wasi);
 ```
 
-```bash
-cargo leptos build --release
-wasmtime serve target/server/wasm32-wasip2/release/your_crate.wasm -Scommon
-```
+`init_wasip2_executor` installs and caches one thread-local executor. Calls with
+the same mode reuse it; a conflicting mode or another installed task spawner
+returns a persistent error. Map initialization and stalled-executor failures to
+the component's host error policy.
 
-## Server Function Registration
+## Request policy
+
+The default maximum buffered incoming body is 16 MiB. Configure a smaller
+application-specific limit when building either handler:
 
 ```rust
-// Register a server function (body types inferred automatically):
-.with_server_fn::<MyServerFn>()
+use leptos_wasi::prelude::HandlerConfig;
+
+let config = HandlerConfig::default()
+    .with_max_request_body_size(2 * 1024 * 1024);
 ```
 
-## Static File Serving
+Pass `config` to the runtime handler's `build_with_config` method. Declared and
+collected bodies over the limit receive `413 Payload Too Large`; invalid or
+conflicting Content-Length values receive `400 Bad Request`.
+
+Incoming bodies are currently buffered. Request-body streaming, WebSockets,
+HTTP trailers, static SSR generation, byte ranges, and automatic precompressed
+asset negotiation are not supported. Configure request deadlines, concurrency,
+memory limits, and filesystem capabilities in Wasmtime or Spin. See
+[Production Support](./PRODUCTION.md) for the complete contract and
+[Performance Baseline](./PERFORMANCE.md) for the recorded 0.3.2 comparison.
+
+## Static assets
 
 ```rust
 fn serve_static_files(path: String) -> Option<leptos_wasi::response::Body> {
-    // Return None for 404, Some(body) for file content
+    // `path` is normalized and relative to the registered URI prefix.
+    std::fs::read(format!("/site/pkg/{path}"))
+        .ok()
+        .map(|bytes| leptos_wasi::response::Body::Sync(bytes.into()))
 }
 
-handler.static_files_handler("/pkg", serve_static_files)
+let handler = handler.static_files_handler("/pkg", serve_static_files)?;
 ```
 
-## Examples
+The handler accepts GET and HEAD, rejects encoded separators and traversal,
+and passes only a normalized relative path to the callback. The callback must
+still prevent symlinks inside its asset root from resolving outside that root.
+For high-volume production assets, prefer a host fileserver or CDN.
 
-| Example | Runtime | Description |
-|---------|---------|-------------|
-| [counter](./examples/counter) | Wasmtime + Spin | Dual-runtime counter with compile-time storage backend switching (`build.rs`) |
-| [spin-counter](./examples/spin-counter) | Spin only | Counter using Spin's built-in key-value store |
+## Islands and split browser WASM
 
-## Core Features
+Leptos islands and browser WASM splitting work with the Preview 3 server
+component on Wasmtime 46.0.1. Splitting affects the browser target
+(`wasm32-unknown-unknown`), not the WASI server component. Spin promotion is
+blocked until a tagged release links final `wasi:http@0.3.0`.
 
-* :rocket: **Dual Async Runtimes**:
-  - **WASIp2**: Single-threaded cooperative polling executor using [`pollable`][wasip2-pollable] for non-blocking I/O and Leptos streaming [SSR Modes][leptos-ssr-modes].
-  - **WASIp3**: Native host-level task spawning via `wasip3::wit_bindgen::spawn` — zero guest-side event loop overhead.
-* :zap: **Short-circuiting**: Avoids rendering work entirely when serving static files or server functions.
-* :truck: **Custom Static Asset Serving**: Plug your own serving logic (e.g., [`wasi:blobstore`][wasi-blobstore] for object storage).
-* :gear: **Multiple Server Backends**: Axum, generic, and custom server function backends.
-
-## Troubleshooting
-
-**Server function not found (404):**
-Ensure every `#[server]` function is registered on the handler:
 ```rust
-.with_server_fn::<YourServerFn>()
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn hydrate() {
+    leptos::mount::hydrate_islands();
+}
+
+#[island(lazy)]
+fn CounterIsland() -> impl IntoView {
+    // Only this interactive island is included in its lazy browser chunk.
+}
 ```
 
-[leptos-ssr-modes]: https://book.leptos.dev/ssr/23_ssr_modes.html
-[wasip2-pollable]: https://github.com/WebAssembly/wasi-io/blob/main/wit/poll.wit
-[wasi-blobstore]: https://github.com/WebAssembly/wasi-blobstore
+Render `<HydrationScripts options islands=true />`, build the frontend with
+splitting, and deploy the complete `target/site/pkg` directory:
+
+```bash
+cargo leptos build --release --split --frontend-only
+LEPTOS_OUTPUT_NAME=my_app cargo build --lib --target wasm32-wasip2 \
+  --release --no-default-features --features ssr
+```
+
+Keep Cargo Leptos `hash-files` disabled for this WASI flow. Current Leptos hash
+manifest discovery relies on `current_exe()`, which Rust's WASI standard
+library does not support. Deploy the unhashed package atomically and avoid
+long-lived asset caching.
+
+Enable `islands-router` in both the browser application and `leptos_wasi` only
+when using Leptos client-side islands navigation. Ordinary multi-page islands
+do not require it.
+
+## Example
+
+[`examples/counter`](./examples/counter) is the supported example. It
+demonstrates SSR, one lazy island, split browser WASM, typed server-function
+registration, SQLite-backed idempotent increments, Wasmtime, and a pinned Spin
+compatibility manifest. Without `COUNTER_STORE_URL`, the component deliberately
+falls back to an isolated session counter for protocol and authorization tests.
+
+## Upgrade and operations
+
+- Read [Migration to 0.5](./MIGRATION.md) before upgrading.
+- Read [Production Support](./PRODUCTION.md) before exposing a component to
+  public traffic.
+- Review [Performance Baseline](./PERFORMANCE.md) and retain the CI soak
+  artifacts before a release.
+- Run `cargo make ci` for the complete Preview 2, Preview 3, and dual-feature
+  local verification matrix.
+- After installing Chromium through Playwright, run
+  `HOST=wasmtime ./tests/browser/run.sh` to verify lazy split-WASM hydration
+  against the blocking final-WASI host.
+- To exercise the experimental pinned WASIp3 middleware fixture, install the
+  tool versions recorded in `tests/middleware/components.lock.toml`, then run
+  `./scripts/run-middleware-tests.sh`. Set `MIDDLEWARE=1 HOST=wasmtime` on the
+  browser command to prove middleware wrapping, authentication-context
+  propagation, and lazy hydration without making `/pkg` split assets private.
+- Run `./scripts/run-authz-browser.sh` from sibling checkouts to prove the real
+  authentication plus Cedar/SpiceDB authorization chain. Wasmtime is the
+  final-WASI correctness reference and does not currently satisfy the c100
+  production latency target. Spin is the preferred production-performance
+  runtime once a tagged release links final `wasi:http@0.3.0`.
+- Use `./scripts/tune-trusted-ingress.sh` to select Wasmtime instance lifecycle
+  values before running the paired trusted-ingress benchmark. Production
+  relationship checks call SpiceDB directly; the AuthZEN SpiceDB service is a
+  compatibility profile, not the default performance path.
+- Run `./scripts/run-authz-lifecycle-e2e.sh` and
+  `./scripts/run-authz-wasip2-lifecycle-e2e.sh` to exercise final-artifact
+  WASIp3 and cancellation-safe WASIp2 authorization transport recovery.
+- Trusted-ingress benchmarks and soaks use the Rust `trusted-load` fixture with
+  persistent HTTP/1.1 connections. `scripts/load_runtime.py` remains only for
+  older transport tests and must not be used as promotion evidence.
+
 [wasm-component]: https://component-model.bytecodealliance.org

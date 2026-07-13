@@ -1,55 +1,504 @@
 name: CI
 
-env:
-  CARGO_TERM_COLOR: always
-
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_NET_RETRY: "10"
+  CARGO_TERM_COLOR: always
 
 jobs:
-  make:
+  quality:
+    name: Stable / ${{ matrix.runtime }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: WASIp2
+            task: ci-wasip2
+          - runtime: WASIp3 + islands router
+            task: ci-wasip3
+          - runtime: WASIp2 + WASIp3 + optional features
+            task: ci-dual
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Install cargo-make 0.37.24
+        run: cargo install cargo-make --version 0.37.24 --locked
+
+      - name: Run ${{ matrix.runtime }} checks
+        run: cargo make ${{ matrix.task }}
+
+  msrv:
+    name: Rust 1.93.0 / ${{ matrix.runtime }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: WASIp2
+            features: wasip2,islands-router
+          - runtime: WASIp3 + islands router
+            features: wasip3,islands-router
+          - runtime: WASIp2 + WASIp3 + optional features
+            features: wasip2,wasip3,islands-router
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install Rust 1.93.0
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: 1.93.0
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Test the declared MSRV
+        run: >-
+          cargo test --locked --no-default-features
+          --features "${{ matrix.features }}"
+
+  api-fixtures:
+    name: Public API / ${{ matrix.runtime }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: WASIp2
+            manifest: tests/api-fixtures/wasip2-consumer/Cargo.toml
+          - runtime: WASIp3
+            manifest: tests/api-fixtures/wasip3-consumer/Cargo.toml
+          - runtime: dual runtime
+            manifest: tests/api-fixtures/dual-runtime-consumer/Cargo.toml
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Compile external-consumer imports
+        run: cargo check --locked --manifest-path "${{ matrix.manifest }}"
+
+  dependency-policy:
+    name: Dependency policy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Install cargo-make
-        uses: actions-rs/cargo@v1
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          command: install
-          args: --debug cargo-make
+          toolchain: stable
 
-      - name: Run CI (fmt, clippy, build)
-        uses: actions-rs/cargo@v1
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Install cargo-audit 0.22.2
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Reject known vulnerabilities
+        run: >-
+          cargo audit --deny warnings
+          --ignore RUSTSEC-2024-0436
+          --ignore RUSTSEC-2026-0173
+
+      - name: Install cargo-deny 0.20.2
+        run: cargo install cargo-deny --version 0.20.2 --locked
+
+      - name: Enforce dependency licenses, sources, and duplicate policy
+        run: cargo deny check
+
+  semver:
+    name: SemVer against 0.4.1
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          command: make
-          args: ci-flow
+          fetch-depth: 0
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Install cargo-semver-checks 0.48.0
+        run: cargo install cargo-semver-checks --version 0.48.0 --locked
+
+      - name: Check 0.4.1 compatibility through the package-name fallback
+        run: bash scripts/check-semver.sh
+
+  package:
+    name: Package and publish dry run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Verify crate contents
+        run: cargo package --locked
+
+      - name: Verify crates.io publication
+        run: cargo publish --dry-run --locked
 
   e2e:
+    name: Wasmtime P2/P3, Spin P2, and Spin P3 canary
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install stable Rust and WASI target
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
+          toolchain: stable
           targets: wasm32-wasip2
 
-      - name: Install cargo-binstall
-        run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: |
+            . -> target
+            tests/test-app -> tests/test-app/target
 
-      - name: Install wasmtime-cli
-        run: cargo binstall wasmtime-cli@45.0.0 --no-confirm
+      - name: Install Wasmtime 46.0.1
+        uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
+        with:
+          version: "46.0.1"
 
-      - name: Install spin
-        run: curl -fsSL https://spinframework.dev/downloads/install.sh | bash -s -- -v v4.0.0 && sudo mv spin /usr/local/bin/
+      - name: Install Spin 4.0.2
+        uses: fermyon/actions/spin/setup@8849a6c41270af8e9f60f371982eddf33b8e35c9 # v1
+        with:
+          version: "v4.0.2"
+
+      - name: Install wasm-tools 1.253.0
+        run: cargo install wasm-tools --version 1.253.0 --locked
 
       - name: Build guest test apps and run E2E tests
         run: ./run_tests.sh
+
+  production-counter-store:
+    name: Production counter state boundary / Rust ${{ matrix.rust }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: ["1.93.0", stable]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install Rust ${{ matrix.rust }}
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: examples/production-counter/store -> target
+
+      - name: Test and lint the private persistence service
+        working-directory: examples/production-counter/store
+        run: |
+          cargo fmt --all -- --check
+          cargo test --locked
+          cargo clippy --locked --all-targets -- -D warnings
+
+  browser:
+    name: Split WASM browser / Wasmtime final WASI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: wasmtime
+            port: 3100
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install stable Rust and browser/WASI targets
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown, wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: |
+            . -> target
+            examples/counter -> examples/counter/target
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/browser/package-lock.json
+
+      - name: Install Cargo Leptos 0.3.6 and wasm-bindgen 0.2.126
+        run: |
+          cargo install cargo-leptos --version 0.3.6 --locked
+          cargo install wasm-bindgen-cli --version 0.2.126 --locked
+
+      - name: Install Wasmtime 46.0.1
+        if: matrix.host == 'wasmtime'
+        uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
+        with:
+          version: "46.0.1"
+
+      - name: Install browser test dependencies
+        working-directory: tests/browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run lazy-island browser E2E
+        env:
+          HOST: ${{ matrix.host }}
+          PORT: ${{ matrix.port }}
+        run: ./tests/browser/run.sh
+
+      - name: Prove SQLite persistence and fail-closed outage behavior
+        env:
+          PERSISTENCE_HOSTS: wasmtime
+        run: ./scripts/run-counter-persistence-browser.sh
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-traces-${{ matrix.host }}
+          path: tests/browser/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  middleware-contract:
+    name: Final WASI middleware contract and Spin canary
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install stable Rust and WASI target
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+          targets: wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: |
+            . -> target
+            tests/test-app -> tests/test-app/target
+
+      - name: Install pinned component tools
+        run: |
+          cargo install wac-cli --version 0.10.1 --locked
+          cargo install wasm-tools --version 1.253.0 --locked
+
+      - name: Install Spin 4.0.2
+        uses: fermyon/actions/spin/setup@8849a6c41270af8e9f60f371982eddf33b8e35c9 # v1
+        with:
+          version: "v4.0.2"
+
+      - name: Audit final-WASI middleware manifests
+        run: ./scripts/audit-middleware-manifests.py --composition-tools
+
+      - name: Reject deployment-policy and artifact-set bypasses
+        run: |
+          python3 scripts/test_audit_middleware_manifests.py
+          python3 scripts/test_verify_artifact_set.py
+
+      - name: Build and inspect final-WASI terminal component
+        env:
+          LEPTOS_OUTPUT_NAME: test-app
+        run: |
+          cargo build --locked --manifest-path tests/test-app/Cargo.toml \
+            --target wasm32-wasip2 --release --no-default-features \
+            --features wasip3,islands-router
+          cp tests/test-app/target/wasm32-wasip2/release/test_app.wasm \
+            tests/test-app-p3.wasm
+          wasm-tools component wit \
+            tests/test-app-p3.wasm \
+            | grep -F 'export wasi:http/handler@0.3.0;'
+
+      - name: Confirm native Spin middleware remains an RC incompatibility canary
+        run: |
+          git clone --filter=blob:none https://github.com/spinframework/spin \
+            "${RUNNER_TEMP}/spin"
+          git -C "${RUNNER_TEMP}/spin" checkout \
+            27451471b8ba0faeffa01c5a4ddd6daee9a9d526
+          ./scripts/check-spin-native-middleware-canary.sh "${RUNNER_TEMP}/spin"
+
+      - name: Confirm tagged Spin still lacks the final-WASI terminal ABI
+        run: ./scripts/check-spin-final-wasi-canary.sh
+
+      - name: Build exact Spin main compatibility runtime
+        id: spin-main
+        run: |
+          binary="$(./scripts/bootstrap-spin-main.sh)"
+          echo "binary=${binary}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run final-WASI terminal on pinned Spin main
+        env:
+          SPIN_BIN: ${{ steps.spin-main.outputs.binary }}
+        run: ./scripts/check-spin-main-terminal.sh
+
+      - name: Preserve the composed-handler CPU-metrics regression
+        if: ${{ hashFiles('tests/test-app-p3-middleware.wasm') != '' }}
+        env:
+          SPIN_BIN: ${{ steps.spin-main.outputs.binary }}
+        run: ./scripts/check-spin-main-composed-canary.sh
+
+      - name: Record unavailable composed-handler canary
+        if: ${{ hashFiles('tests/test-app-p3-middleware.wasm') == '' }}
+        run: >-
+          echo "::warning title=Composed middleware canary unavailable::No immutable composed middleware artifact is authorized in this checkout; the experimental component-middleware lane remains unpromoted."
+
+      - name: Report cross-repository middleware promotion gate
+        run: |
+          echo "::warning title=Companion promotion unavailable::The real full-chain, authorization, and browser gates require exact local wasi-http-middleware and wasi-authz source revisions. No remote or release artifact is authorized yet, so this workflow does not claim those production gates."
+          cat >> "${GITHUB_STEP_SUMMARY}" <<'EOF'
+          ## Companion promotion status
+
+          Terminal final-WIT checks and both Spin incompatibility canaries ran.
+          The checksum-pinned Wasmtime full-chain, typed authorization, and
+          browser gates remain a release blocker until both companion
+          repositories have authorized remotes or immutable release artifacts.
+          Run them locally from sibling checkouts with
+          `./scripts/run-middleware-tests.sh` and
+          `./scripts/run-trusted-ingress-browser.sh`. Promotion additionally
+          requires `./scripts/benchmark-trusted-ingress.sh` and
+          `DURATION=600 CONCURRENCY=100 ./scripts/soak-trusted-ingress.sh`.
+          EOF
+
+  soak:
+    name: Ten-minute soak / ${{ matrix.host }} / ${{ matrix.preview }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: wasmtime
+            preview: p2
+            historical_baseline: true
+          - host: wasmtime
+            preview: p3
+            historical_baseline: false
+          - host: spin
+            preview: p2
+            historical_baseline: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Install stable Rust and WASI target
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+          targets: wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: |
+            . -> target
+            tests/test-app -> tests/test-app/target
+
+      - name: Install Wasmtime 46.0.1
+        if: matrix.host == 'wasmtime'
+        uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
+        with:
+          version: "46.0.1"
+
+      - name: Install Spin 4.0.2
+        if: matrix.host == 'spin'
+        uses: fermyon/actions/spin/setup@8849a6c41270af8e9f60f371982eddf33b8e35c9 # v1
+        with:
+          version: "v4.0.2"
+
+      - name: Create immutable 0.3.2 comparison worktree
+        if: matrix.historical_baseline
+        run: >-
+          git worktree add --detach
+          "${RUNNER_TEMP}/leptos-wasi-v0.3.2" 9689c68
+
+      - name: Run 0.3.2 sustained baseline
+        if: matrix.historical_baseline
+        env:
+          PROJECT_ROOT: ${{ runner.temp }}/leptos-wasi-v0.3.2
+          CHECK_POLLABLES: "0"
+          HOST: ${{ matrix.host }}
+          PREVIEW: ${{ matrix.preview }}
+          PORT: 3200
+          DURATION: 600
+          CONCURRENCY: 100
+          OUTPUT: soak-${{ matrix.host }}-${{ matrix.preview }}-baseline.json
+        run: ./scripts/soak-test-app.sh
+
+      - name: Run 0.4 sustained candidate
+        env:
+          CHECK_POLLABLES: "1"
+          HOST: ${{ matrix.host }}
+          PREVIEW: ${{ matrix.preview }}
+          PORT: 3200
+          DURATION: 600
+          CONCURRENCY: 100
+          OUTPUT: soak-${{ matrix.host }}-${{ matrix.preview }}-candidate.json
+        run: ./scripts/soak-test-app.sh
+
+      - name: Enforce latency and memory gates
+        if: matrix.historical_baseline
+        run: >-
+          python3 scripts/compare_performance.py
+          soak-${{ matrix.host }}-${{ matrix.preview }}-baseline.json
+          soak-${{ matrix.host }}-${{ matrix.preview }}-candidate.json
+          | tee soak-${{ matrix.host }}-${{ matrix.preview }}-comparison.json
+
+      - name: Enforce absolute final-WASI latency and memory gates
+        if: ${{ !matrix.historical_baseline }}
+        run: >-
+          python3 scripts/check_soak_candidate.py
+          soak-${{ matrix.host }}-${{ matrix.preview }}-candidate.json
+          --max-p99-ms 25
+          | tee soak-${{ matrix.host }}-${{ matrix.preview }}-comparison.json
+
+      - name: Retain soak evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: soak-${{ matrix.host }}-${{ matrix.preview }}
+          path: soak-${{ matrix.host }}-${{ matrix.preview }}-*.json
+          if-no-files-found: error
+          retention-days: 14

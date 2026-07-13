@@ -3,8 +3,9 @@ use leptos::prelude::*;
 use leptos_meta::*;
 use leptos_router::*;
 
-#[cfg(feature = "hydrate")]
-use web_sys::window;
+#[cfg(feature = "ssr")]
+#[path = "counter_store.rs"]
+mod counter_store;
 
 #[cfg(feature = "ssr")]
 pub fn shell(options: LeptosOptions) -> impl IntoView {
@@ -15,7 +16,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <AutoReload options=options.clone() />
-                <HydrationScripts options=options.clone() root="" />
+                <HydrationScripts options=options.clone() islands=true root="" />
                 <MetaTags />
             </head>
             <body>
@@ -53,146 +54,165 @@ pub fn App() -> impl IntoView {
 
 #[component]
 fn HomePage() -> impl IntoView {
+    view! {
+        <div class="min-h-screen bg-[#1a2332] flex flex-col lg:flex-row items-center justify-center p-4 gap-6">
+            <section class="bg-[#263343] rounded-xl shadow-2xl p-8 md:p-12 max-w-md w-full border border-[#3a4a5c]">
+                <header class="text-center space-y-2 mb-8">
+                    <div class="flex items-center justify-center gap-3 mb-4">
+                        <div class="w-10 h-10 bg-[#00d4aa] rounded-lg flex items-center justify-center">
+                            <span class="text-[#1a2332] font-bold text-xl">L</span>
+                        </div>
+                        <h1 class="text-3xl md:text-4xl font-medium text-white">
+                            "Counter"
+                        </h1>
+                    </div>
+                    <p class="text-[#8b9cb8] text-sm">
+                        "Server-rendered by Leptos on a WASI Preview 3 component."
+                    </p>
+                </header>
+
+                <CounterIsland />
+
+                <footer class="pt-6 mt-8 border-t border-[#3a4a5c] text-center">
+                    <p class="text-[#8b9cb8] text-xs">
+                        "The page shell stays on the server; only this counter hydrates."
+                    </p>
+                </footer>
+            </section>
+
+            <aside class="bg-[#202c3b] rounded-xl p-6 max-w-sm w-full border border-[#3a4a5c] text-slate-200 space-y-4">
+                <p class="text-[#00d4aa] text-xs font-semibold uppercase tracking-widest">
+                    "Islands + WASM splitting"
+                </p>
+                <h2 class="text-xl font-medium text-white">
+                    "One server component, one lazy browser island"
+                </h2>
+                <ul class="space-y-3 text-sm text-[#a9b7cc]">
+                    <li>"• App, routing, layout, and copy render only on the server."</li>
+                    <li>"• Counter interactivity is compiled behind #[island(lazy)]."</li>
+                    <li>"• Spin and Wasmtime serve the same generated split assets."</li>
+                </ul>
+            </aside>
+        </div>
+    }
+}
+
+#[island(lazy)]
+fn CounterIsland() -> impl IntoView {
+    let load_action = ServerAction::<GetCount>::new();
     let increment_action = ServerAction::<IncrementCount>::new();
-    let (optimistic_count, set_optimistic_count) = signal(None::<u32>);
-    let count = Resource::new(move || increment_action.version().get(), |_| get_count());
+    let (count, set_count) = signal(0_u32);
+    let (load_finished, set_load_finished) = signal(false);
+    let (operation_id, set_operation_id) = signal(None::<String>);
+    let load_value = load_action.value();
+    let action_value = increment_action.value();
 
     Effect::new(move |_| {
-        if optimistic_count.get().is_none() {
-            #[cfg(feature = "hydrate")]
-            {
-                if let Some(window) = window() {
-                    if let Ok(Some(storage)) = window.local_storage() {
-                        if let Ok(Some(cached_count_str)) = storage.get_item("counter_count") {
-                            if let Ok(cached_count) = cached_count_str.parse::<u32>() {
-                                set_optimistic_count.set(Some(cached_count));
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if let Some(Ok(server_count)) = count.get() {
-                set_optimistic_count.set(Some(server_count));
-
-                #[cfg(feature = "hydrate")]
-                {
-                    if let Some(window) = window() {
-                        if let Ok(Some(storage)) = window.local_storage() {
-                            let _ = storage.set_item("counter_count", &server_count.to_string());
-                        }
-                    }
-                }
-            }
-        }
+        load_action.dispatch(GetCount {});
     });
 
     Effect::new(move |_| {
-        if let Some(Ok(server_count)) = count.get() {
-            if let Some(current_optimistic) = optimistic_count.get() {
-                if server_count != current_optimistic {
-                    set_optimistic_count.set(Some(server_count));
-                }
+        load_value.with(|result| {
+            if let Some(Ok(stored_count)) = result {
+                set_count.set(*stored_count);
             }
-
-            #[cfg(feature = "hydrate")]
-            {
-                if let Some(window) = window() {
-                    if let Ok(Some(storage)) = window.local_storage() {
-                        let _ = storage.set_item("counter_count", &server_count.to_string());
-                    }
-                }
+            if result.is_some() {
+                set_load_finished.set(true);
             }
-        }
+        });
     });
 
-    let display_count = move || {
-        if let Some(opt_count) = optimistic_count.get() {
-            opt_count.to_string()
-        } else {
-            "...".to_string()
-        }
+    Effect::new(move |_| {
+        action_value.with(|result| {
+            if let Some(Ok(next_count)) = result {
+                set_count.set(*next_count);
+                set_operation_id.set(None);
+            }
+        });
+    });
+
+    let increment = move |_| {
+        let operation_id = operation_id
+            .get_untracked()
+            .unwrap_or_else(new_operation_id);
+        set_operation_id.set(Some(operation_id.clone()));
+        increment_action.dispatch(IncrementCount {
+            current: count.get_untracked(),
+            operation_id,
+        });
     };
 
+    let action_failed = move || {
+        load_action
+            .value()
+            .with(|result| matches!(result, Some(Err(_))))
+            || increment_action
+                .value()
+                .with(|result| matches!(result, Some(Err(_))))
+    };
+
+    let pending =
+        move || load_action.pending().get() || increment_action.pending().get();
+
     view! {
-        <div class="min-h-screen bg-[#1a2332] flex items-center justify-center p-4">
-            <div class="bg-[#263343] rounded-xl shadow-2xl p-8 md:p-12 max-w-md w-full border border-[#3a4a5c]">
-                <div class="text-center space-y-8">
-                    <div class="space-y-2">
-                        <div class="flex items-center justify-center gap-3 mb-4">
-                            <div class="w-10 h-10 bg-[#00d4aa] rounded-lg flex items-center justify-center">
-                                <span class="text-[#1a2332] font-bold text-xl">L</span>
-                            </div>
-                            <h1 class="text-3xl md:text-4xl font-medium text-white">
-                                "Counter"
-                            </h1>
-                        </div>
-                        <p class="text-[#8b9cb8] text-sm">
-                            "Powered by Leptos + WASI Preview 3 Component"
-                        </p>
+        <div class="text-center space-y-8">
+            <div class="relative">
+                <div class="bg-[#1a2332] rounded-lg p-8 border border-[#3a4a5c]">
+                    <div class="text-5xl md:text-6xl font-light text-white tabular-nums">
+                        {move || count.get()}
                     </div>
-
-                    <div class="relative">
-                        <div class="bg-[#1a2332] rounded-lg p-8 border border-[#3a4a5c]">
-                            <div class="text-5xl md:text-6xl font-light text-white tabular-nums">
-                                {display_count}
-                            </div>
-                            <div class="text-[#8b9cb8] text-sm mt-2 uppercase tracking-wider">
-                                "COUNT VALUE"
-                            </div>
-                        </div>
-
-                        <Show when=move || increment_action.pending().get()>
-                            <div class="absolute inset-0 flex items-center justify-center bg-[#1a2332]/50 rounded-lg">
-                                <div class="animate-spin rounded-full h-8 w-8 border-2 border-transparent border-t-[#00d4aa]"></div>
-                            </div>
-                        </Show>
-                    </div>
-
-                    <ActionForm action=increment_action>
-                        <button
-                            disabled=move || increment_action.pending().get()
-                            class="w-full rounded-lg bg-[#00d4aa] px-6 py-3 text-[#1a2332] font-medium transition-all duration-200 hover:bg-[#00b894] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#00d4aa]"
-                        >
-                            {move || if increment_action.pending().get() {
-                                "Updating..."
-                            } else {
-                                "Increment Counter"
-                            }}
-                        </button>
-                    </ActionForm>
-
-                    <div class="flex items-center justify-center gap-2 text-xs">
-                        <div class={move || {
-                            if optimistic_count.get().is_none() {
-                                "w-2 h-2 rounded-full bg-yellow-500 animate-pulse"
-                            } else if increment_action.pending().get() {
-                                "w-2 h-2 rounded-full bg-[#00d4aa] animate-pulse"
-                            } else {
-                                "w-2 h-2 rounded-full bg-[#00d4aa]"
-                            }
-                        }}>
-                        </div>
-                        <span class="text-[#8b9cb8] uppercase tracking-wider">
-                            {move || {
-                                if optimistic_count.get().is_none() {
-                                    "Loading"
-                                } else if increment_action.pending().get() {
-                                    "Syncing"
-                                } else {
-                                    "Ready"
-                                }
-                            }}
-                        </span>
-                    </div>
-
-                    <div class="pt-4 border-t border-[#3a4a5c]">
-                        <p class="text-[#8b9cb8] text-xs">
-                            "Running on raw Wasmtime serve"
-                        </p>
+                    <div class="text-[#8b9cb8] text-sm mt-2 uppercase tracking-wider">
+                        "COUNT VALUE"
                     </div>
                 </div>
+
+                <Show when=pending>
+                    <div class="absolute inset-0 flex items-center justify-center bg-[#1a2332]/50 rounded-lg">
+                        <div class="animate-spin rounded-full h-8 w-8 border-2 border-transparent border-t-[#00d4aa]"></div>
+                    </div>
+                </Show>
+            </div>
+
+            <button
+                type="button"
+                on:click=increment
+                disabled=pending
+                class="w-full rounded-lg bg-[#00d4aa] px-6 py-3 text-[#1a2332] font-medium transition-all duration-200 hover:bg-[#00b894] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#00d4aa]"
+            >
+                {move || if increment_action.pending().get() {
+                    "Updating..."
+                } else {
+                    "Increment Counter"
+                }}
+            </button>
+
+            <div class="flex items-center justify-center gap-2 text-xs">
+                <div class={move || {
+                    if pending() {
+                        "w-2 h-2 rounded-full bg-[#00d4aa] animate-pulse"
+                    } else if action_failed() {
+                        "w-2 h-2 rounded-full bg-red-500"
+                    } else {
+                        "w-2 h-2 rounded-full bg-[#00d4aa]"
+                    }
+                }}>
+                </div>
+                <span
+                    data-testid="counter-status"
+                    class="text-[#8b9cb8] uppercase tracking-wider"
+                >
+                    {move || {
+                        if !load_finished.get() || load_action.pending().get() {
+                            "Loading saved count"
+                        } else if increment_action.pending().get() {
+                            "Saving"
+                        } else if action_failed() {
+                            "Update failed"
+                        } else {
+                            "Ready"
+                        }
+                    }}
+                </span>
             </div>
         </div>
     }
@@ -202,7 +222,9 @@ fn HomePage() -> impl IntoView {
 fn NotFound() -> impl IntoView {
     #[cfg(feature = "ssr")]
     {
-        if let Some(resp) = use_context::<leptos_wasi::response::ResponseOptions>() {
+        if let Some(resp) =
+            use_context::<leptos_wasi::response::ResponseOptions>()
+        {
             resp.set_status(leptos_wasi::prelude::StatusCode::NOT_FOUND);
         }
     }
@@ -210,91 +232,64 @@ fn NotFound() -> impl IntoView {
     view! { <h1>"Not Found"</h1> }
 }
 
-#[cfg(feature = "ssr")]
-mod storage {
-    #[cfg(runtime_spin)]
-    pub async fn get(key: &str) -> Result<Option<Vec<u8>>, String> {
-        use spin_sdk::key_value::Store;
-        let store = Store::open_default().await
-            .map_err(|e| format!("Failed to open Spin KV store: {}", e))?;
-        store.get(key).await
-            .map_err(|e| format!("Failed to get from Spin KV: {}", e))
-    }
-
-    #[cfg(runtime_spin)]
-    pub async fn set(key: &str, value: &[u8]) -> Result<(), String> {
-        use spin_sdk::key_value::Store;
-        let store = Store::open_default().await
-            .map_err(|e| format!("Failed to open Spin KV store: {}", e))?;
-        store.set(key, value).await
-            .map_err(|e| format!("Failed to set in Spin KV: {}", e))
-    }
-
-    #[cfg(not(runtime_spin))]
-    pub async fn get(key: &str) -> Result<Option<Vec<u8>>, String> {
-        use std::fs;
-        use std::path::Path;
-
-        let base_path = std::env::var("STORAGE_PATH").unwrap_or_else(|_| "./data".to_string());
-        let file_path = format!("{}/{}.txt", base_path, key);
-        let path = Path::new(&file_path);
-
-        if !path.exists() {
-            return Ok(None);
-        }
-
-        fs::read(&file_path)
-            .map(Some)
-            .map_err(|e| format!("Failed to read file: {}", e))
-    }
-
-    #[cfg(not(runtime_spin))]
-    pub async fn set(key: &str, value: &[u8]) -> Result<(), String> {
-        use std::fs;
-        use std::path::Path;
-
-        let base_path = std::env::var("STORAGE_PATH").unwrap_or_else(|_| "./data".to_string());
-        let dir_path = Path::new(&base_path);
-        if !dir_path.exists() {
-            fs::create_dir_all(dir_path)
-                .map_err(|e| format!("Failed to create directory: {}", e))?;
-        }
-
-        let file_path = format!("{}/{}.txt", base_path, key);
-        fs::write(&file_path, value)
-            .map_err(|e| format!("Failed to write file: {}", e))
-    }
-}
-
-#[server(prefix = "/api")]
+#[server(prefix = "/api", endpoint = "get_count")]
 pub async fn get_count() -> Result<u32, ServerFnError<String>> {
-    match storage::get("counter").await {
-        Ok(Some(value)) => {
-            let count_str = String::from_utf8(value)
-                .map_err(|e| ServerFnError::ServerError(format!("Invalid UTF-8: {}", e)))?;
-            let count = count_str.parse::<u32>().unwrap_or(0);
-            println!("Retrieved count: {count}");
-            Ok(count)
+    #[cfg(feature = "ssr")]
+    {
+        if let Some(value) = counter_store::read_configured_count()
+            .await
+            .map_err(counter_store_error)?
+        {
+            return Ok(value);
         }
-        Ok(None) => {
-            println!("No count found, returning 0");
-            Ok(0)
+    }
+    Ok(0)
+}
+
+#[server(prefix = "/api", endpoint = "increment_count")]
+pub async fn increment_count(
+    current: u32,
+    operation_id: String,
+) -> Result<u32, ServerFnError<String>> {
+    #[cfg(feature = "ssr")]
+    {
+        if let Some(value) =
+            counter_store::increment_configured_count(&operation_id)
+                .await
+                .map_err(counter_store_error)?
+        {
+            return Ok(value);
         }
-        Err(e) => {
-            eprintln!("Error reading counter: {}", e);
-            Ok(0)
-        }
+    }
+    current.checked_add(1).ok_or_else(|| {
+        ServerFnError::ServerError("counter reached its maximum value".into())
+    })
+}
+
+fn new_operation_id() -> String {
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        return uuid::Uuid::new_v4().simple().to_string();
+    }
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    {
+        String::new()
     }
 }
 
-#[server(prefix = "/api")]
-pub async fn increment_count() -> Result<(), ServerFnError<String>> {
-    let current_count = get_count().await?;
-    let new_count = current_count + 1;
-    println!("Incrementing count from {current_count} to {new_count}");
-
-    storage::set("counter", new_count.to_string().as_bytes()).await
-        .map_err(|e| ServerFnError::ServerError(e))?;
-
-    Ok(())
+#[cfg(feature = "ssr")]
+fn counter_store_error(
+    error: counter_store::CounterStoreError,
+) -> ServerFnError<String> {
+    eprintln!("counter persistence error: {error}");
+    if let Some(response) =
+        use_context::<leptos_wasi::response::ResponseOptions>()
+    {
+        response.set_status(http::StatusCode::SERVICE_UNAVAILABLE);
+        response.insert_header(
+            http::header::CACHE_CONTROL,
+            http::HeaderValue::from_static("no-store"),
+        );
+    }
+    ServerFnError::ServerError("counter store unavailable".into())
 }

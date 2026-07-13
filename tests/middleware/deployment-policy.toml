@@ -1,0 +1,182 @@
+schema = 2
+artifact_set_file = "tests/middleware/artifact-sets.toml"
+artifact_set_sha256 = "890a15da9574f1db64f675d8bcb0aa6ff5b7994881068386122f51ce86faed20"
+
+[support_allowlist]
+spin = [
+  "middleware_unsupported",
+  "blocked_upstream",
+  "test_fixture",
+]
+wasmtime = ["experimental", "reference"]
+
+[[profile]]
+name = "spin-counter-stable"
+authentication_mode = "none"
+runtime = "spin"
+support = "middleware_unsupported"
+manifest = "examples/counter/spin.toml"
+terminal_component = "counter"
+terminal_artifact = "target/wasm32-wasip2/release/counter.wasm"
+middleware_profile = "none"
+middleware = []
+artifact_sets = []
+
+[[profile.public_exemption]]
+route = "/pkg/..."
+component = "counter-pkg"
+reason = "public split-WASM assets served by the pinned legacy fileserver"
+source_url = "https://github.com/fermyon/spin-fileserver/releases/download/v0.1.0/spin_static_fs.wasm"
+source_digest = "sha256:96c76d9af86420b39eb6cd7be5550e3cb5d4cc4de572ce0fd1f6a29471536cb4"
+
+[[profile]]
+name = "spin-counter-native-canary"
+authentication_mode = "portable_component"
+runtime = "spin"
+support = "blocked_upstream"
+manifest = "examples/counter/spin.middleware-vnext.toml"
+terminal_component = "counter"
+terminal_artifact = "target/wasm32-wasip2/release/counter.wasm"
+middleware_profile = "authn"
+middleware = ["request-id", "security-headers", "cors", "authn-policy"]
+artifact_sets = ["middleware"]
+
+[[profile.public_exemption]]
+route = "/pkg/..."
+component = "counter-pkg"
+reason = "public split-WASM assets served by the pinned legacy fileserver"
+source_url = "https://github.com/fermyon/spin-fileserver/releases/download/v0.1.0/spin_static_fs.wasm"
+source_digest = "sha256:96c76d9af86420b39eb6cd7be5550e3cb5d4cc4de572ce0fd1f6a29471536cb4"
+
+[[profile]]
+name = "spin-counter-precomposed-canary"
+authentication_mode = "portable_component"
+runtime = "spin"
+support = "blocked_upstream"
+manifest = "examples/counter/spin.middleware-composed.toml"
+terminal_component = "counter-middleware"
+terminal_artifact = "target/wasm32-wasip2/release/counter-middleware.wasm"
+middleware_profile = "authn"
+precomposed = true
+middleware = ["request-id", "security-headers", "cors", "authn-policy"]
+artifact_sets = ["middleware"]
+
+[[profile.public_exemption]]
+route = "/pkg/..."
+component = "counter-pkg"
+reason = "public split-WASM assets served by the pinned legacy fileserver"
+source_url = "https://github.com/fermyon/spin-fileserver/releases/download/v0.1.0/spin_static_fs.wasm"
+source_digest = "sha256:96c76d9af86420b39eb6cd7be5550e3cb5d4cc4de572ce0fd1f6a29471536cb4"
+
+[[profile]]
+name = "spin-p2-test-fixture"
+authentication_mode = "none"
+runtime = "spin"
+support = "test_fixture"
+manifest = "tests/spin.toml"
+terminal_component = "test-app"
+terminal_artifact = "test-app-p2.wasm"
+middleware_profile = "none"
+middleware = []
+artifact_sets = []
+
+[[profile]]
+name = "spin-p3-runtime-canary"
+authentication_mode = "none"
+runtime = "spin"
+support = "blocked_upstream"
+manifest = "tests/spin-p3.toml"
+terminal_component = "test-app-p3"
+terminal_artifact = "test-app-p3.wasm"
+middleware_profile = "none"
+middleware = []
+artifact_sets = []
+
+[[profile]]
+name = "spin-p3-native-canary"
+authentication_mode = "portable_component"
+runtime = "spin"
+support = "blocked_upstream"
+manifest = "tests/spin-p3-middleware-vnext.toml"
+terminal_component = "test-app-p3"
+terminal_artifact = "test-app-p3.wasm"
+middleware_profile = "authn"
+middleware = ["request-id", "security-headers", "cors", "authn-policy"]
+artifact_sets = ["middleware"]
+
+[[profile]]
+name = "spin-p3-precomposed-canary"
+authentication_mode = "portable_component"
+runtime = "spin"
+support = "blocked_upstream"
+manifest = "tests/spin-p3-middleware-composed.toml"
+terminal_component = "test-app-p3-middleware"
+terminal_artifact = "test-app-p3-middleware.wasm"
+middleware_profile = "authn"
+precomposed = true
+middleware = ["request-id", "security-headers", "cors", "authn-policy"]
+artifact_sets = ["middleware"]
+
+[[profile]]
+name = "wasmtime-authn"
+authentication_mode = "portable_component"
+runtime = "wasmtime"
+support = "experimental"
+terminal_artifact = "tests/test-app-p3.wasm"
+output_artifact = "tests/test-app-p3-middleware.wasm"
+listener_count = 1
+middleware_profile = "authn"
+middleware = ["request-id", "security-headers", "cors", "authn-policy"]
+artifact_sets = ["middleware"]
+
+[[profile]]
+name = "wasmtime-authn-authz"
+authentication_mode = "portable_component"
+runtime = "wasmtime"
+support = "experimental"
+terminal_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_authz_fixture.wasm"
+output_artifact = "examples/counter/target/wasm32-wasip2/release/counter-middleware.wasm"
+listener_count = 1
+middleware_profile = "authn_authz"
+middleware = ["request-id", "security-headers", "cors", "authn-policy"]
+artifact_sets = ["middleware", "authorization"]
+
+[[profile]]
+name = "wasmtime-authn-authz-coarse"
+authentication_mode = "portable_component"
+runtime = "wasmtime"
+support = "experimental"
+terminal_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_authz_fixture.wasm"
+output_artifact = "examples/counter/target/wasm32-wasip2/release/counter-middleware.wasm"
+listener_count = 1
+middleware_profile = "authn_authz_coarse"
+middleware = ["request-id", "security-headers", "cors", "authn-policy", "authz-http-pep"]
+artifact_sets = ["middleware", "authorization"]
+
+[[profile]]
+name = "wasmtime-trusted-ingress-authz"
+authentication_mode = "trusted_ingress"
+runtime = "wasmtime"
+support = "reference"
+terminal_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_authz_fixture.wasm"
+output_artifact = "tests/authz-fixture/target/wasm32-wasip2/release/leptos_wasi_authz_fixture.wasm"
+listener_count = 1
+private_terminal = true
+edge_policy = "managed-private-ingress"
+ingress_manifest = "tests/trusted-ingress/Cargo.toml"
+network_descriptor = "tests/trusted-ingress/compose.yaml"
+public_listener = "ingress"
+terminal_listener = "private"
+forwards_authorization = false
+allows_trusted_response_headers = false
+portable_fallback = false
+middleware_profile = "trusted_ingress_authz"
+middleware = []
+artifact_sets = ["authorization"]
+
+[[profile.public_exemption]]
+route = "/pkg/..."
+component = "counter-pkg"
+reason = "public split-WASM assets remain edge-covered but authentication-exempt"
+source_url = "https://github.com/fermyon/spin-fileserver/releases/download/v0.1.0/spin_static_fs.wasm"
+source_digest = "sha256:96c76d9af86420b39eb6cd7be5550e3cb5d4cc4de572ce0fd1f6a29471536cb4"

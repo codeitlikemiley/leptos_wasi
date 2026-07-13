@@ -1,0 +1,66 @@
+schema = 2
+rust_version = "1.93.0"
+cargo_leptos_version = "0.3.7"
+wasm_bindgen_cli_version = "0.2.126"
+wasm_bindgen_wasi_fix_version = "0.2.123"
+wasi_http = "0.3.0"
+wasip3_version = "0.7.0"
+spin_stable_version = "4.0.2"
+spin_stable_final_wasi_supported = false
+spin_final_wasi_supported = false
+spin_final_wasi_failure = "wasi:http/types@0.3.0 resource implementation is missing"
+spin_middleware_repository = "https://github.com/codeitlikemiley/spin"
+spin_main_version = "4.1.0-pre0"
+spin_main_revision = "c34c584dbf77b3a3528ad0536aa9ce4761b9f772"
+spin_main_tag = "final-wasi-0.7-runtime-4.1.0-pre0"
+spin_main_final_wasi_terminal_supported = true
+spin_main_final_wasi_outbound_http_supported = true
+spin_main_precomposed_default_features_supported = false
+spin_main_precomposed_failure = "cpu_time_last_entry.take().unwrap()"
+spin_middleware_revision = "27451471b8ba0faeffa01c5a4ddd6daee9a9d526"
+spin_middleware_default_features = false
+spin_middleware_wasi_http = "0.3.0-rc-2026-03-15"
+spin_middleware_final_wasi_supported = false
+spin_sdk_version = "6.0.0"
+wasmtime_version = "46.0.1"
+wac_cli_version = "0.10.1"
+wasm_tools_version = "1.253.0"
+oha_version = "1.14.0"
+cosign_version = "3.1.1"
+
+[middleware]
+name = "wasi-http-middleware"
+version = "0.2.0-alpha.3"
+relative_path = "../wasi-auth/legacy/wasi-http-middleware"
+baseline_revision = "6977a75c4d2cb1558158341c109e419189dc2c52"
+source_revision = "42db2e18c94a4e9734bdf39465f6a9f0bb1f396a"
+artifact_revision = "ff8c6b102bf13df25dda79a5ccf775fdd93bbdfe"
+components = [
+  "request-id",
+  "security-headers",
+  "cors",
+  "authn-policy",
+  "secure-defaults",
+]
+
+[authorization]
+name = "wasi-auth"
+version = "0.1.0-alpha.4"
+relative_path = "../wasi-auth"
+leptos_package = "leptos-wasi-authz"
+leptos_crate_path = "crates/leptos-wasi-authz"
+client_package = "wasi-authz-client"
+client_crate_path = "crates/wasi-authz-client"
+baseline_revision = "27689e087af7946ff280102dbec94fb9b2fe0590"
+source_revision = "1bf80347b2fdff65408f3d239ff6f02b1033658e"
+# Last signed pre-consolidation bundle. Release promotion must regenerate and
+# attest an alpha.4 wasi-auth bundle from a clean consolidated revision.
+artifact_name = "wasi-authz"
+artifact_version = "0.1.0-alpha.3"
+artifact_revision = "d4a755e7a4a5abe3b38868a71b063bf33592254c"
+fixture_manifest = "tests/authz-fixture/Cargo.toml"
+components = [
+  "authz-http-pep",
+  "cedar-pdp",
+  "spicedb-pdp",
+]

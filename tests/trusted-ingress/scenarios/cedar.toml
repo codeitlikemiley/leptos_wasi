@@ -1,0 +1,11 @@
+[[route]]
+name = "cedar"
+weight = 1
+method = "POST"
+path = "/api/authorize_cedar"
+credential = "allow"
+body = "current=0"
+expected_status = [200]
+
+[route.headers]
+content-type = "application/x-www-form-urlencoded"

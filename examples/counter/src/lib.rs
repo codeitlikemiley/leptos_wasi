@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 mod app;
 
 #[cfg(feature = "ssr")]
@@ -8,5 +10,5 @@ mod server;
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn hydrate() {
     console_error_panic_hook::set_once();
-    leptos::mount::hydrate_body(app::App);
+    leptos::mount::hydrate_islands();
 }

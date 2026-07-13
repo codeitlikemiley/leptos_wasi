@@ -1,3 +1,169 @@
-[env]
-CARGO_MAKE_RUN_CHECK_FORMAT = true
-CARGO_MAKE_RUN_CLIPPY = true
+[config]
+default_to_workspace = false
+
+[tasks.fmt]
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.clippy-wasip2]
+command = "cargo"
+args = [
+    "clippy",
+    "--locked",
+    "--all-targets",
+    "--no-default-features",
+    "--features",
+    "wasip2,islands-router",
+    "--",
+    "-D",
+    "warnings",
+]
+
+[tasks.clippy-wasip3]
+command = "cargo"
+args = [
+    "clippy",
+    "--locked",
+    "--all-targets",
+    "--no-default-features",
+    "--features",
+    "wasip3,islands-router",
+    "--",
+    "-D",
+    "warnings",
+]
+
+[tasks.clippy-dual]
+command = "cargo"
+args = [
+    "clippy",
+    "--locked",
+    "--all-targets",
+    "--no-default-features",
+    "--features",
+    "wasip2,wasip3,islands-router",
+    "--",
+    "-D",
+    "warnings",
+]
+
+[tasks.test-wasip2]
+command = "cargo"
+args = [
+    "test",
+    "--locked",
+    "--no-default-features",
+    "--features",
+    "wasip2,islands-router",
+]
+
+[tasks.test-wasip3]
+command = "cargo"
+args = [
+    "test",
+    "--locked",
+    "--no-default-features",
+    "--features",
+    "wasip3,islands-router",
+]
+
+[tasks.test-dual]
+command = "cargo"
+args = [
+    "test",
+    "--locked",
+    "--no-default-features",
+    "--features",
+    "wasip2,wasip3,islands-router",
+]
+
+[tasks.doc-wasip2]
+env = { RUSTDOCFLAGS = "-Dmissing-docs -Drustdoc::broken-intra-doc-links" }
+command = "cargo"
+args = [
+    "doc",
+    "--locked",
+    "--no-deps",
+    "--no-default-features",
+    "--features",
+    "wasip2,islands-router",
+]
+
+[tasks.doc-wasip3]
+env = { RUSTDOCFLAGS = "-Dmissing-docs -Drustdoc::broken-intra-doc-links" }
+command = "cargo"
+args = [
+    "doc",
+    "--locked",
+    "--no-deps",
+    "--no-default-features",
+    "--features",
+    "wasip3,islands-router",
+]
+
+[tasks.doc-dual]
+env = { RUSTDOCFLAGS = "-Dmissing-docs -Drustdoc::broken-intra-doc-links" }
+command = "cargo"
+args = [
+    "doc",
+    "--locked",
+    "--no-deps",
+    "--no-default-features",
+    "--features",
+    "wasip2,wasip3,islands-router",
+]
+
+[tasks.clippy-all-features]
+command = "cargo"
+args = ["clippy", "--locked", "--all-targets", "--all-features", "--", "-D", "warnings"]
+
+[tasks.test-all-features]
+command = "cargo"
+args = ["test", "--locked", "--all-features"]
+
+[tasks.doc-all-features]
+env = { RUSTDOCFLAGS = "-Dmissing-docs -Drustdoc::broken-intra-doc-links" }
+command = "cargo"
+args = ["doc", "--locked", "--no-deps", "--all-features"]
+
+[tasks.ci-wasip2]
+dependencies = ["fmt", "clippy-wasip2", "test-wasip2", "doc-wasip2"]
+
+[tasks.ci-wasip3]
+dependencies = ["fmt", "clippy-wasip3", "test-wasip3", "doc-wasip3"]
+
+[tasks.ci-dual]
+dependencies = [
+    "fmt",
+    "clippy-dual",
+    "test-dual",
+    "doc-dual",
+    "clippy-all-features",
+    "test-all-features",
+    "doc-all-features",
+]
+
+[tasks.api-fixtures]
+script_runner = "@shell"
+script = [
+    "cargo check --locked --manifest-path tests/api-fixtures/wasip2-consumer/Cargo.toml",
+    "cargo check --locked --manifest-path tests/api-fixtures/wasip3-consumer/Cargo.toml",
+    "cargo check --locked --manifest-path tests/api-fixtures/dual-runtime-consumer/Cargo.toml",
+]
+
+[tasks.middleware-manifest-audit]
+command = "./scripts/audit-middleware-manifests.py"
+
+[tasks.middleware-vnext]
+command = "./scripts/run-middleware-tests.sh"
+
+[tasks.ci]
+dependencies = ["ci-wasip2", "ci-wasip3", "ci-dual", "api-fixtures"]
+
+[tasks.package]
+command = "cargo"
+args = ["package", "--locked"]
+
+[tasks.publish-dry-run]
+command = "cargo"
+args = ["publish", "--dry-run", "--locked"]

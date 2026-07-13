@@ -1,0 +1,19 @@
+[[route]]
+path = "/api/authorize_authn"
+class = "authn_only"
+
+[[route]]
+path = "/api/authorize_cedar"
+class = "cedar"
+
+[[route]]
+path = "/api/authorize_relationship"
+class = "relationship"
+
+[[route]]
+path = "/api/increment_count"
+class = "hybrid"
+
+[[route]]
+path = "/api/authorize_hybrid_deny"
+class = "hybrid"

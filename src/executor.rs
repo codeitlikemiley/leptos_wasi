@@ -1,407 +1,1100 @@
-//! This is (Yet Another) Async Runtime for WASI with first-class support
-//! for `.await`-ing on `wasi::io::poll::Pollable`. It is an ad-hoc implementation
-//! tailored for Leptos but it could be exported into a standalone crate.
+//! Async executors for WASI Preview 2 and Preview 3.
 //!
-//! It is based on the `futures` crate's `LocalPool` and makes use of
-//! no `unsafe` code.
-//!
-//! # Performance Notes
-//!
-//! I haven't benchmarked this runtime but since it makes no use of unsafe code
-//! and Rust `core`'s `Context` was prematurely optimised for multi-threading
-//! environment, I had no choice but using synchronisation primitives to make
-//! the API happy.
-//!
-//! IIRC, `wasm32` targets have an implementation of synchronisation primitives
-//! that are just stubs, downgrading them to their single-threaded counterpart
-//! so the overhead should be minimal.
-//!
-//! Also, you can customise the behaviour of the `Executor` using the
-//! `Mode` enum to trade-off reactivity for less host context switch
-//! with the `Mode::Stalled` variant.
+//! WASI Preview 2 uses a single-threaded [`futures`] executor and bridges
+//! `wasi::io::poll::Pollable` resources into Rust futures. WASI Preview 3
+//! delegates task spawning to the host runtime.
 
-#[cfg(all(feature = "wasip2", not(feature = "wasip3")))]
+/// Errors produced while configuring or driving a WASI executor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum ExecutorError {
+    /// A WASI Preview 2 pollable was awaited before its executor was initialized.
+    #[error(
+        "a WASI Preview 2 pollable was awaited before initializing the executor"
+    )]
+    Preview2NotInitialized,
+
+    /// A reused Preview 2 executor was requested with a different scheduling mode.
+    #[error(
+        "the WASI Preview 2 executor was initialized with a different mode"
+    )]
+    Preview2ModeMismatch,
+
+    /// Preview 2 executor initialization was called recursively on the same thread.
+    #[error("the WASI Preview 2 executor cannot be initialized recursively")]
+    Preview2InitializationReentrant,
+
+    /// The executor exhausted the identifier space used for pollable registrations.
+    #[error(
+        "the WASI Preview 2 pollable registration identifier space is exhausted"
+    )]
+    PollableRegistrationExhausted,
+
+    /// A pollable registration was canceled before it became ready.
+    #[error("the WASI Preview 2 pollable registration was canceled")]
+    PollableCanceled,
+
+    /// A future could not be queued on the local executor.
+    #[error("the local executor rejected a task")]
+    TaskSpawnFailed,
+
+    /// The result channel used by a Preview 2 executor closed unexpectedly.
+    #[error("the future passed to Executor::run_until was canceled")]
+    RunUntilCanceled,
+
+    /// The executor was polled recursively while it was already driving tasks.
+    #[error("the WASI Preview 2 executor cannot be polled recursively")]
+    ReentrantPoll,
+
+    /// The root future is pending but no runnable task or live pollable can wake it.
+    #[error("the WASI Preview 2 executor stalled with no live pollables")]
+    Stalled,
+
+    /// The global `any_spawner` executor was initialized before the WASIp3 executor.
+    #[error("the global task spawner has already been initialized")]
+    SpawnerAlreadyInitialized,
+}
+
+#[cfg(feature = "wasip2")]
 mod p2 {
-    use any_spawner::CustomExecutor;
-    use futures::{
-        FutureExt, Stream,
-        channel::mpsc::{UnboundedReceiver, UnboundedSender},
-        executor::{LocalPool, LocalSpawner},
-        task::{LocalSpawnExt, SpawnExt},
-    };
-    use parking_lot::Mutex;
     use std::{
-        cell::RefCell,
+        cell::{Cell, OnceCell, RefCell},
+        collections::VecDeque,
         future::Future,
         mem,
         rc::Rc,
-        sync::{Arc, OnceLock},
-        task::{Context, Poll, Wake, Waker},
+        sync::{
+            Arc, OnceLock,
+            atomic::{AtomicU64, Ordering},
+        },
+        task::{Context, Poll, Waker},
     };
+
+    use any_spawner::CustomExecutor;
+    use futures::{
+        executor::{LocalPool, LocalSpawner},
+        future::{AbortHandle, Abortable},
+        task::{LocalSpawnExt, SpawnExt},
+    };
+    use parking_lot::Mutex;
     use wasi::{
         clocks::monotonic_clock::{Duration, subscribe_duration},
         io::poll::{Pollable, poll},
     };
 
-    struct TableEntry(Pollable, Waker);
+    use super::ExecutorError;
 
-    static POLLABLE_SINK: OnceLock<UnboundedSender<TableEntry>> =
-        OnceLock::new();
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct RegistrationId(u64);
 
-    /// Suspends the current execution context for the specified duration (in nanoseconds).
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum RegistrationStatus {
+        Pending,
+        Ready,
+        Canceled,
+    }
+
+    struct RegistrationInner {
+        status: RegistrationStatus,
+        task_waker: Waker,
+    }
+
+    struct WaitRegistration {
+        id: RegistrationId,
+        inner: Mutex<RegistrationInner>,
+    }
+
+    impl WaitRegistration {
+        fn new(id: RegistrationId, waker: &Waker) -> Self {
+            Self {
+                id,
+                inner: Mutex::new(RegistrationInner {
+                    status: RegistrationStatus::Pending,
+                    task_waker: waker.clone(),
+                }),
+            }
+        }
+
+        fn id(&self) -> RegistrationId {
+            self.id
+        }
+
+        fn poll(&self, waker: &Waker) -> Poll<Result<(), ExecutorError>> {
+            let mut inner = self.inner.lock();
+            match inner.status {
+                RegistrationStatus::Ready => Poll::Ready(Ok(())),
+                RegistrationStatus::Canceled => {
+                    Poll::Ready(Err(ExecutorError::PollableCanceled))
+                }
+                RegistrationStatus::Pending => {
+                    if !inner.task_waker.will_wake(waker) {
+                        inner.task_waker = waker.clone();
+                    }
+                    Poll::Pending
+                }
+            }
+        }
+
+        fn mark_ready(&self) -> Option<Waker> {
+            let mut inner = self.inner.lock();
+            if inner.status != RegistrationStatus::Pending {
+                return None;
+            }
+
+            inner.status = RegistrationStatus::Ready;
+            Some(inner.task_waker.clone())
+        }
+
+        fn cancel(&self) {
+            let mut inner = self.inner.lock();
+            if inner.status == RegistrationStatus::Pending {
+                inner.status = RegistrationStatus::Canceled;
+            }
+        }
+
+        fn is_pending(&self) -> bool {
+            self.inner.lock().status == RegistrationStatus::Pending
+        }
+
+        #[cfg(test)]
+        fn status(&self) -> RegistrationStatus {
+            self.inner.lock().status
+        }
+    }
+
+    struct TableEntry<P> {
+        pollable: P,
+        registration: Arc<WaitRegistration>,
+    }
+
+    struct WaitQueue<P> {
+        next_id: AtomicU64,
+        entries: Mutex<VecDeque<TableEntry<P>>>,
+    }
+
+    impl<P> Default for WaitQueue<P> {
+        fn default() -> Self {
+            Self {
+                next_id: AtomicU64::new(1),
+                entries: Mutex::new(VecDeque::new()),
+            }
+        }
+    }
+
+    impl<P> WaitQueue<P> {
+        fn register(
+            &self,
+            pollable: P,
+            waker: &Waker,
+        ) -> Result<Arc<WaitRegistration>, ExecutorError> {
+            let id = self
+                .next_id
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| {
+                    id.checked_add(1)
+                })
+                .map(RegistrationId)
+                .map_err(|_| ExecutorError::PollableRegistrationExhausted)?;
+            let registration = Arc::new(WaitRegistration::new(id, waker));
+
+            let queue_depth = {
+                let mut entries = self.entries.lock();
+                entries.push_back(TableEntry {
+                    pollable,
+                    registration: registration.clone(),
+                });
+                entries.len()
+            };
+            #[cfg(feature = "tracing")]
+            tracing::trace!(
+                preview = "p2",
+                pollable_id = id.0,
+                queue_depth,
+                "registered WASIp2 pollable"
+            );
+            #[cfg(not(feature = "tracing"))]
+            let _ = queue_depth;
+
+            Ok(registration)
+        }
+
+        fn cancel(&self, id: RegistrationId) {
+            let (removed, queue_depth) = {
+                let mut entries = self.entries.lock();
+                let removed = entries
+                    .iter()
+                    .position(|entry| entry.registration.id() == id)
+                    .and_then(|index| entries.remove(index));
+                (removed, entries.len())
+            };
+            #[cfg(feature = "tracing")]
+            if removed.is_some() {
+                tracing::trace!(
+                    preview = "p2",
+                    pollable_id = id.0,
+                    queue_depth,
+                    cancellation = true,
+                    "canceled WASIp2 pollable"
+                );
+            }
+            #[cfg(not(feature = "tracing"))]
+            let _ = queue_depth;
+            drop(removed);
+        }
+
+        fn take_pending(&self) -> Vec<TableEntry<P>> {
+            let drained = self.entries.lock().drain(..).collect::<Vec<_>>();
+            drained
+                .into_iter()
+                .filter(|entry| entry.registration.is_pending())
+                .collect()
+        }
+
+        fn requeue_pending(
+            &self,
+            entries: impl IntoIterator<Item = TableEntry<P>>,
+        ) {
+            let pending = entries
+                .into_iter()
+                .filter(|entry| entry.registration.is_pending())
+                .collect::<VecDeque<_>>();
+            self.entries.lock().extend(pending);
+        }
+
+        fn len(&self) -> usize {
+            self.entries.lock().len()
+        }
+    }
+
+    static POLLABLE_QUEUE: OnceLock<Arc<WaitQueue<Pollable>>> = OnceLock::new();
+
+    fn initialize_wait_queue(
+        registry: &OnceLock<Arc<WaitQueue<Pollable>>>,
+    ) -> Arc<WaitQueue<Pollable>> {
+        registry
+            .get_or_init(|| Arc::new(WaitQueue::default()))
+            .clone()
+    }
+
+    /// Suspends execution for `duration` nanoseconds.
     ///
-    /// This asynchronous function relies on the WASI Preview 2 cooperative polling executor
-    /// to register a clock timer and wake up the future when it expires.
+    /// # Errors
+    ///
+    /// Returns
+    /// [`ExecutorError::Preview2NotInitialized`](crate::ExecutorError::Preview2NotInitialized)
+    /// if no Preview 2 executor has been created, or another executor error if
+    /// timer registration fails.
     ///
     /// # Example
     ///
     /// ```ignore
-    /// use leptos_wasi::executor::sleep;
+    /// use leptos_wasi::wasip2::sleep;
     ///
-    /// # async fn run() {
-    /// // Sleep for 1 second (1,000,000,000 nanoseconds)
-    /// sleep(1_000_000_000).await;
+    /// # async fn run() -> Result<(), leptos_wasi::ExecutorError> {
+    /// sleep(1_000_000_000).await?;
+    /// # Ok(())
     /// # }
     /// ```
-    pub async fn sleep(duration: Duration) {
+    pub async fn sleep(duration: Duration) -> Result<(), ExecutorError> {
         WaitPoll::new(subscribe_duration(duration)).await
     }
 
-    /// A future that resolves when the associated WASI `Pollable` resource becomes ready.
+    /// Resolves when a WASI Preview 2 [`wasi::io::poll::Pollable`] becomes ready.
     ///
-    /// This structure is used internally by the cooperative executor to block on WASI pollables
-    /// (such as I/O streams and timers) within Rust's async model.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// use leptos_wasi::executor::WaitPoll;
-    /// use wasi::clocks::monotonic_clock::subscribe_duration;
-    ///
-    /// # async fn run() {
-    /// // Wait on a 500ms monotonic clock pollable
-    /// let pollable = subscribe_duration(500_000_000);
-    /// WaitPoll::new(pollable).await;
-    /// # }
-    /// ```
+    /// Dropping this future cancels its registration and removes queued host
+    /// resources before the next blocking poll.
     pub struct WaitPoll(WaitPollInner);
 
     enum WaitPollInner {
         Unregistered(Pollable),
-        Registered(Arc<WaitPollWaker>),
+        Registered(Arc<WaitRegistration>),
+        Failed(ExecutorError),
     }
 
     impl WaitPoll {
-        /// Creates a new `WaitPoll` future wrapping a WASI `Pollable`.
+        /// Creates a future for a WASI Preview 2 pollable resource.
         pub fn new(pollable: Pollable) -> Self {
             Self(WaitPollInner::Unregistered(pollable))
         }
     }
 
     impl Future for WaitPoll {
-        type Output = ();
+        type Output = Result<(), ExecutorError>;
 
         fn poll(
             self: std::pin::Pin<&mut Self>,
             cx: &mut Context<'_>,
         ) -> Poll<Self::Output> {
-            match &mut self.get_mut().0 {
-                this @ WaitPollInner::Unregistered(_) => {
-                    let waker = Arc::new(WaitPollWaker::new(cx.waker()));
+            let this = self.get_mut();
+            let current = mem::replace(
+                &mut this.0,
+                WaitPollInner::Failed(ExecutorError::PollableCanceled),
+            );
 
-                    if let Some(sender) = POLLABLE_SINK.get() {
-                        if let WaitPollInner::Unregistered(pollable) =
-                            mem::replace(
-                                this,
-                                WaitPollInner::Registered(waker.clone()),
-                            )
-                        {
-                            sender
-                                .clone()
-                                .unbounded_send(TableEntry(
-                                    pollable,
-                                    waker.into(),
-                                ))
-                                .expect("cannot spawn a new WaitPoll");
+            match current {
+                WaitPollInner::Unregistered(pollable) => {
+                    let Some(queue) = POLLABLE_QUEUE.get() else {
+                        let error = ExecutorError::Preview2NotInitialized;
+                        this.0 = WaitPollInner::Failed(error);
+                        return Poll::Ready(Err(error));
+                    };
 
+                    match queue.register(pollable, cx.waker()) {
+                        Ok(registration) => {
+                            this.0 = WaitPollInner::Registered(registration);
                             Poll::Pending
-                        } else {
-                            unreachable!();
                         }
-                    } else {
-                        panic!(
-                            "cannot create a WaitPoll before creating an \
-                             Executor"
-                        );
+                        Err(error) => {
+                            this.0 = WaitPollInner::Failed(error);
+                            Poll::Ready(Err(error))
+                        }
                     }
                 }
-                WaitPollInner::Registered(waker) => {
-                    let mut lock = waker.0.lock();
-                    if lock.done {
-                        Poll::Ready(())
-                    } else {
-                        // How can it happen?! :O
-                        // Well, if, for some reason, the Task get woken up for
-                        // another reason than the pollable associated with this
-                        // WaitPoll got ready.
-                        //
-                        // We need to make sure we update the waker.
-                        lock.task_waker = cx.waker().clone();
-                        Poll::Pending
-                    }
+                WaitPollInner::Registered(registration) => {
+                    let result = registration.poll(cx.waker());
+                    this.0 = WaitPollInner::Registered(registration);
+                    result
+                }
+                WaitPollInner::Failed(error) => {
+                    this.0 = WaitPollInner::Failed(error);
+                    Poll::Ready(Err(error))
                 }
             }
         }
     }
 
-    struct WaitPollWaker(Mutex<WaitPollWakerInner>);
+    impl Drop for WaitPoll {
+        fn drop(&mut self) {
+            let WaitPollInner::Registered(registration) = &self.0 else {
+                return;
+            };
 
-    struct WaitPollWakerInner {
-        done: bool,
-        task_waker: Waker,
-    }
-
-    impl WaitPollWaker {
-        fn new(waker: &Waker) -> Self {
-            Self(Mutex::new(WaitPollWakerInner {
-                done: false,
-                task_waker: waker.clone(),
-            }))
+            registration.cancel();
+            if let Some(queue) = POLLABLE_QUEUE.get() {
+                queue.cancel(registration.id());
+            }
         }
     }
 
-    impl Wake for WaitPollWaker {
-        fn wake(self: std::sync::Arc<Self>) {
-            self.wake_by_ref();
-        }
-
-        fn wake_by_ref(self: &std::sync::Arc<Self>) {
-            let mut lock = self.0.lock();
-            lock.task_waker.wake_by_ref();
-            lock.done = true;
-        }
-    }
-
-    /// Controls how often the `Executor` checks for `Pollable` readiness.
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// use leptos_wasi::executor::{Executor, Mode};
-    ///
-    /// // Create an executor that yields control and polls only when stalled
-    /// let executor = Executor::new(Mode::Stalled);
-    /// ```
+    /// Controls how eagerly [`crate::wasip2::Executor`] checks WASI pollables.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum Mode {
-        /// Will check as often as possible for readiness, this have some
-        /// performance overhead.
-        Premptive,
+        /// Run one guest task before each host poll, favoring I/O responsiveness.
+        Preemptive,
 
-        /// Will only check for readiness when no more progress can be made
-        /// on pooled Futures.
+        /// Run all immediately available guest work before blocking on the host.
         Stalled,
     }
 
-    /// A single-threaded cooperative future executor for WASI Preview 2.
-    ///
-    /// It schedules and executes queued futures, blocking on registered WASI pollables
-    /// when no further guest-side progress can be made.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// use leptos_wasi::executor::{Executor, Mode};
-    ///
-    /// let executor = Executor::new(Mode::Stalled);
-    /// executor.run_until(async {
-    ///     println!("Task is running under the WASIp2 executor!");
-    /// });
-    /// ```
+    /// A single-threaded cooperative executor for WASI Preview 2.
     #[derive(Clone)]
     pub struct Executor(Rc<ExecutorInner>);
+
+    thread_local! {
+        static PREVIEW2_EXECUTOR: RefCell<Option<Executor>> = const {
+            RefCell::new(None)
+        };
+
+        static PREVIEW2_SPAWNER_STATE: OnceCell<Preview2InitState> = const {
+            OnceCell::new()
+        };
+    }
+
+    enum Preview2InitState {
+        Initialized(Executor),
+        Conflict,
+    }
 
     struct ExecutorInner {
         pool: RefCell<LocalPool>,
         spawner: LocalSpawner,
-        rx: RefCell<UnboundedReceiver<TableEntry>>,
+        queue: Arc<WaitQueue<Pollable>>,
         mode: Mode,
+        spawn_failed: Cell<bool>,
+    }
+
+    trait Poller {
+        fn poll(&self, pollables: &[&Pollable]) -> Vec<u32>;
+    }
+
+    struct HostPoller;
+
+    impl Poller for HostPoller {
+        fn poll(&self, pollables: &[&Pollable]) -> Vec<u32> {
+            poll(pollables)
+        }
     }
 
     impl Executor {
-        /// Creates a new cooperative polling executor with the specified `Mode`.
-        pub fn new(mode: Mode) -> Self {
+        /// Creates a cooperative Preview 2 executor.
+        ///
+        /// # Errors
+        ///
+        /// Repeated calls on the same thread return the same executor so they stay
+        /// aligned with `any_spawner`'s thread-local executor instance.
+        ///
+        /// Returns
+        /// [`ExecutorError::Preview2ModeMismatch`](crate::ExecutorError::Preview2ModeMismatch)
+        /// if a reused executor is requested with a different mode, or
+        /// [`ExecutorError::Preview2InitializationReentrant`](crate::ExecutorError::Preview2InitializationReentrant)
+        /// if initialization is called recursively.
+        pub fn new(mode: Mode) -> Result<Self, ExecutorError> {
+            PREVIEW2_EXECUTOR.with(|slot| {
+                let mut slot = slot.try_borrow_mut().map_err(|_| {
+                    ExecutorError::Preview2InitializationReentrant
+                })?;
+
+                if let Some(executor) = slot.as_ref() {
+                    if executor.0.mode != mode {
+                        return Err(ExecutorError::Preview2ModeMismatch);
+                    }
+                    return Ok(executor.clone());
+                }
+
+                let queue = initialize_wait_queue(&POLLABLE_QUEUE);
+                let executor = Self::with_queue(mode, queue);
+                *slot = Some(executor.clone());
+                Ok(executor)
+            })
+        }
+
+        fn with_queue(mode: Mode, queue: Arc<WaitQueue<Pollable>>) -> Self {
             let pool = LocalPool::new();
             let spawner = pool.spawner();
-            let (tx, rx) = futures::channel::mpsc::unbounded();
-
-            POLLABLE_SINK
-                .set(tx.clone())
-                .expect("calling Executor::new two times is not supported");
-
             Self(Rc::new(ExecutorInner {
                 pool: RefCell::new(pool),
                 spawner,
-                rx: RefCell::new(rx),
+                queue,
                 mode,
+                spawn_failed: Cell::new(false),
             }))
         }
 
-        /// Runs the provided future to completion on the current thread, polling and blocking
-        /// on WASI resource readiness as needed.
-        pub fn run_until<T>(&self, fut: T) -> T::Output
+        /// Drives `future` to completion on the current thread.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the future cannot be spawned, the executor is
+        /// polled recursively, its result channel closes, or it stalls without a
+        /// live pollable capable of waking the future.
+        pub fn run_until<T>(
+            &self,
+            future: T,
+        ) -> Result<T::Output, ExecutorError>
         where
             T: Future + 'static,
         {
-            let (tx, mut rx) =
+            let (sender, mut receiver) =
                 futures::channel::oneshot::channel::<T::Output>();
-            self.spawn_local(Box::pin(fut.then(|val| async move {
-                if tx.send(val).is_err() {
-                    panic!(
-                        "failed to send the return value of the future passed \
-                         to run_until"
-                    );
-                }
-            })));
+            let (abort_handle, abort_registration) = AbortHandle::new_pair();
+            self.0
+                .spawner
+                .spawn_local(Box::pin(async move {
+                    let _ = Abortable::new(
+                        async move {
+                            let output = future.await;
+                            let _ = sender.send(output);
+                        },
+                        abort_registration,
+                    )
+                    .await;
+                }))
+                .map_err(|_| ExecutorError::TaskSpawnFailed)?;
 
+            let result = self.drive_until_output(&mut receiver);
+            if result.is_err() {
+                abort_handle.abort();
+                self.drop_aborted_tasks();
+            }
+            result
+        }
+
+        fn drive_until_output<T>(
+            &self,
+            receiver: &mut futures::channel::oneshot::Receiver<T>,
+        ) -> Result<T, ExecutorError> {
             loop {
-                match rx.try_recv() {
-                    Err(_) => panic!(
-                        "internal error: sender of run until has been dropped"
-                    ),
-                    Ok(Some(val)) => return val,
-                    Ok(None) => {
-                        self.poll_local();
-                    }
+                if let Some(output) = receiver
+                    .try_recv()
+                    .map_err(|_| ExecutorError::RunUntilCanceled)?
+                {
+                    return Ok(output);
+                }
+
+                let can_make_progress = self.poll_once()?;
+
+                if let Some(output) = receiver
+                    .try_recv()
+                    .map_err(|_| ExecutorError::RunUntilCanceled)?
+                {
+                    return Ok(output);
+                }
+
+                if !can_make_progress {
+                    return Err(ExecutorError::Stalled);
                 }
             }
         }
-    }
 
-    impl CustomExecutor for Executor {
-        fn spawn(&self, fut: any_spawner::PinnedFuture<()>) {
-            self.0.spawner.spawn(fut).unwrap();
+        fn drop_aborted_tasks(&self) {
+            if let Ok(mut pool) = self.0.pool.try_borrow_mut() {
+                pool.run_until_stalled();
+            }
         }
 
-        fn spawn_local(&self, fut: any_spawner::PinnedLocalFuture<()>) {
-            self.0.spawner.spawn_local(fut).unwrap();
-        }
-
-        fn poll_local(&self) {
-            let mut pool = match self.0.pool.try_borrow_mut() {
-                Ok(pool) => pool,
-                // Nested call to poll_local(), noop.
-                Err(_) => return,
-            };
-
-            match self.0.mode {
-                Mode::Premptive => {
-                    pool.try_run_one();
-                }
-                Mode::Stalled => pool.run_until_stalled(),
-            };
-
-            let (lower, upper) = self.0.rx.borrow().size_hint();
-            let capacity = upper.unwrap_or(lower);
-            let mut entries = Vec::with_capacity(capacity);
-            let mut rx = self.0.rx.borrow_mut();
-
-            while let Ok(entry) = rx.try_recv() {
-                entries.push(Some(entry));
+        fn poll_once(&self) -> Result<bool, ExecutorError> {
+            if self.0.spawn_failed.replace(false) {
+                return Err(ExecutorError::TaskSpawnFailed);
             }
 
+            let mut pool = self
+                .0
+                .pool
+                .try_borrow_mut()
+                .map_err(|_| ExecutorError::ReentrantPoll)?;
+            let guest_progress = match self.0.mode {
+                Mode::Preemptive => pool.try_run_one(),
+                Mode::Stalled => {
+                    pool.run_until_stalled();
+                    false
+                }
+            };
+            drop(pool);
+
+            if self.0.spawn_failed.replace(false) {
+                return Err(ExecutorError::TaskSpawnFailed);
+            }
+
+            let pollable_progress = self.poll_registered(&HostPoller);
+            Ok(guest_progress || pollable_progress)
+        }
+
+        fn poll_registered(&self, poller: &impl Poller) -> bool {
+            let entries = self.0.queue.take_pending();
             if entries.is_empty() {
-                // This could happen if some Futures use Waker that are not
-                // registered through [`WaitPoll`] or that we are blocked
-                // because some Future returned `Poll::Pending` without
-                // actually making sure their Waker is called at some point.
-                return;
+                return false;
             }
 
             let pollables = entries
                 .iter()
-                .map(|entry| &entry.as_ref().unwrap().0)
+                .map(|entry| &entry.pollable)
+                .collect::<Vec<_>>();
+            let ready = poller.poll(&pollables);
+            let mut ready_flags = vec![false; entries.len()];
+            for index in ready {
+                if let Some(is_ready) = usize::try_from(index)
+                    .ok()
+                    .and_then(|index| ready_flags.get_mut(index))
+                {
+                    *is_ready = true;
+                }
+            }
+
+            let mut pending = Vec::new();
+            let mut task_wakers = Vec::new();
+            for (entry, is_ready) in entries.into_iter().zip(ready_flags) {
+                if is_ready {
+                    if let Some(waker) = entry.registration.mark_ready() {
+                        task_wakers.push(waker);
+                    }
+                } else if entry.registration.is_pending() {
+                    pending.push(entry);
+                }
+            }
+
+            self.0.queue.requeue_pending(pending);
+
+            // Waking can synchronously poll user futures, so no executor or
+            // registration mutex may be held here.
+            for waker in task_wakers {
+                waker.wake();
+            }
+
+            true
+        }
+    }
+
+    impl Preview2InitState {
+        fn result(
+            &self,
+            requested_mode: Mode,
+        ) -> Result<Executor, ExecutorError> {
+            match self {
+                Self::Initialized(executor)
+                    if executor.0.mode == requested_mode =>
+                {
+                    Ok(executor.clone())
+                }
+                Self::Initialized(_) => {
+                    Err(ExecutorError::Preview2ModeMismatch)
+                }
+                Self::Conflict => Err(ExecutorError::SpawnerAlreadyInitialized),
+            }
+        }
+    }
+
+    fn initialize_preview2_with(
+        state: &OnceCell<Preview2InitState>,
+        mode: Mode,
+        create: impl FnOnce(Mode) -> Result<Executor, ExecutorError>,
+        install: impl FnOnce(Executor) -> Result<(), any_spawner::ExecutorError>,
+    ) -> Result<Executor, ExecutorError> {
+        if let Some(state) = state.get() {
+            return state.result(mode);
+        }
+
+        let executor = create(mode)?;
+        let initialized = match install(executor.clone()) {
+            Ok(()) => Preview2InitState::Initialized(executor.clone()),
+            Err(_) => Preview2InitState::Conflict,
+        };
+
+        if state.set(initialized).is_err() {
+            return state
+                .get()
+                .ok_or(ExecutorError::Preview2InitializationReentrant)?
+                .result(mode);
+        }
+
+        state
+            .get()
+            .ok_or(ExecutorError::Preview2InitializationReentrant)?
+            .result(mode)
+    }
+
+    /// Initializes and returns the thread-local WASI Preview 2 executor.
+    ///
+    /// The first call installs the returned executor in `any_spawner`. Later
+    /// calls with the same [`Mode`](crate::wasip2::Mode) return that exact executor
+    /// without attempting another installation.
+    ///
+    /// # Errors
+    ///
+    /// Returns
+    /// [`ExecutorError::SpawnerAlreadyInitialized`](crate::ExecutorError::SpawnerAlreadyInitialized)
+    /// consistently when another executor was installed before the first call. It
+    /// also propagates executor construction and scheduling-mode errors.
+    pub fn init_wasip2_executor(mode: Mode) -> Result<Executor, ExecutorError> {
+        PREVIEW2_SPAWNER_STATE.with(|state| {
+            initialize_preview2_with(
+                state,
+                mode,
+                Executor::new,
+                any_spawner::Executor::init_local_custom_executor,
+            )
+        })
+    }
+
+    pub(crate) fn pollable_queue_depth() -> usize {
+        POLLABLE_QUEUE.get().map_or(0, |queue| queue.len())
+    }
+
+    impl CustomExecutor for Executor {
+        fn spawn(&self, future: any_spawner::PinnedFuture<()>) {
+            if self.0.spawner.spawn(future).is_err() {
+                self.0.spawn_failed.set(true);
+            }
+        }
+
+        fn spawn_local(&self, future: any_spawner::PinnedLocalFuture<()>) {
+            if self.0.spawner.spawn_local(future).is_err() {
+                self.0.spawn_failed.set(true);
+            }
+        }
+
+        fn poll_local(&self) {
+            let _ = self.poll_once();
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::task::{Wake, Waker};
+        use std::{
+            cell::Cell,
+            rc::Rc,
+            sync::{
+                Arc, OnceLock,
+                atomic::{AtomicBool, AtomicUsize, Ordering},
+            },
+        };
+
+        use futures::task::noop_waker;
+
+        use super::*;
+
+        struct CountingWake(AtomicUsize);
+
+        struct SetOnDrop(Arc<AtomicBool>);
+
+        impl Wake for CountingWake {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        impl Drop for SetOnDrop {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Relaxed);
+            }
+        }
+
+        #[test]
+        fn initialize_wait_queue_reuses_the_process_queue() {
+            let registry: OnceLock<Arc<WaitQueue<Pollable>>> = OnceLock::new();
+            let first = initialize_wait_queue(&registry);
+            let second = initialize_wait_queue(&registry);
+
+            assert!(Arc::ptr_eq(&first, &second));
+        }
+
+        #[test]
+        fn executor_new_supports_a_reused_component_instance() {
+            let first = Executor::new(Mode::Stalled)
+                .expect("first initialization should succeed");
+            let second = Executor::new(Mode::Stalled)
+                .expect("reused initialization should succeed");
+
+            assert!(Rc::ptr_eq(&first.0, &second.0));
+        }
+
+        #[test]
+        fn executor_new_rejects_a_mode_change_on_reuse() {
+            Executor::new(Mode::Stalled)
+                .expect("first initialization should succeed");
+
+            let error = match Executor::new(Mode::Preemptive) {
+                Ok(_) => panic!("mode change unexpectedly succeeded"),
+                Err(error) => error,
+            };
+
+            assert_eq!(error, ExecutorError::Preview2ModeMismatch);
+        }
+
+        #[test]
+        fn executor_new_reports_recursive_initialization() {
+            let error = PREVIEW2_EXECUTOR.with(|slot| {
+                let _borrow = slot.borrow_mut();
+                match Executor::new(Mode::Stalled) {
+                    Ok(_) => {
+                        panic!(
+                            "recursive initialization unexpectedly succeeded"
+                        )
+                    }
+                    Err(error) => error,
+                }
+            });
+
+            assert_eq!(error, ExecutorError::Preview2InitializationReentrant);
+        }
+
+        #[test]
+        fn cancel_marks_a_pending_registration_as_canceled() {
+            let registration =
+                WaitRegistration::new(RegistrationId(1), &noop_waker());
+
+            registration.cancel();
+
+            assert_eq!(registration.status(), RegistrationStatus::Canceled);
+        }
+
+        #[test]
+        fn cancel_does_not_replace_a_ready_registration() {
+            let registration =
+                WaitRegistration::new(RegistrationId(1), &noop_waker());
+            let _ = registration.mark_ready();
+
+            registration.cancel();
+
+            assert_eq!(registration.status(), RegistrationStatus::Ready);
+        }
+
+        #[test]
+        fn mark_ready_returns_the_task_waker_for_waking_after_unlock() {
+            let counter = Arc::new(CountingWake(AtomicUsize::new(0)));
+            let waker = Waker::from(counter.clone());
+            let registration = WaitRegistration::new(RegistrationId(1), &waker);
+
+            registration
+                .mark_ready()
+                .expect("pending registration should return its waker")
+                .wake();
+
+            assert_eq!(counter.0.load(Ordering::Relaxed), 1);
+        }
+
+        #[test]
+        fn take_pending_filters_canceled_registrations_before_host_polling() {
+            let queue = WaitQueue::default();
+            let canceled = queue
+                .register("long", &noop_waker())
+                .expect("registration should succeed");
+            queue
+                .register("short", &noop_waker())
+                .expect("registration should succeed");
+            canceled.cancel();
+
+            let pending = queue
+                .take_pending()
+                .into_iter()
+                .map(|entry| entry.pollable)
                 .collect::<Vec<_>>();
 
-            let ready = poll(&pollables);
+            assert_eq!(pending, vec!["short"]);
+        }
 
-            if let Some(sender) = POLLABLE_SINK.get() {
-                let sender = sender.clone();
+        #[test]
+        fn canceling_many_registrations_returns_queue_to_baseline() {
+            let queue = WaitQueue::default();
+            let registrations = (0..256)
+                .map(|pollable| {
+                    queue
+                        .register(pollable, &noop_waker())
+                        .expect("registration should succeed")
+                })
+                .collect::<Vec<_>>();
 
-                // Wakes futures subscribed to ready pollable.
-                for index in ready {
-                    let wake = entries[index as usize].take().unwrap().1;
-                    wake.wake();
-                }
-
-                // Requeue not ready pollable.
-                for entry in entries.into_iter().flatten() {
-                    sender
-                        .unbounded_send(entry)
-                        .expect("the sender channel is closed");
-                }
-            } else {
-                unreachable!();
+            for registration in registrations {
+                registration.cancel();
+                queue.cancel(registration.id());
             }
+
+            assert_eq!(queue.len(), 0);
+        }
+
+        #[test]
+        fn run_until_returns_the_ready_future_output() {
+            let executor = Executor::with_queue(
+                Mode::Stalled,
+                Arc::new(WaitQueue::default()),
+            );
+
+            let output = executor
+                .run_until(async { 42 })
+                .expect("ready future should complete");
+
+            assert_eq!(output, 42);
+        }
+
+        #[test]
+        fn run_until_cancels_a_future_that_cannot_be_woken() {
+            let executor = Executor::with_queue(
+                Mode::Stalled,
+                Arc::new(WaitQueue::default()),
+            );
+            let dropped = Arc::new(AtomicBool::new(false));
+            let guard = SetOnDrop(dropped.clone());
+
+            let error = executor
+                .run_until(async move {
+                    let _guard = guard;
+                    futures::future::pending::<()>().await;
+                })
+                .expect_err("pending future without a pollable should stall");
+
+            assert_eq!(
+                (error, dropped.load(Ordering::Relaxed)),
+                (ExecutorError::Stalled, true)
+            );
+        }
+
+        #[test]
+        fn preview2_initializer_reuses_the_exact_installed_executor() {
+            let state = OnceCell::new();
+            let install_calls = Cell::new(0);
+            let installed = RefCell::new(None);
+            let first = initialize_preview2_with(
+                &state,
+                Mode::Stalled,
+                |mode| {
+                    Ok(Executor::with_queue(
+                        mode,
+                        Arc::new(WaitQueue::default()),
+                    ))
+                },
+                |executor| {
+                    install_calls.set(install_calls.get() + 1);
+                    installed.replace(Some(executor));
+                    Ok(())
+                },
+            )
+            .expect("first initialization should succeed");
+            let second = initialize_preview2_with(
+                &state,
+                Mode::Stalled,
+                |_| {
+                    panic!(
+                        "cached initialization should not create an executor"
+                    )
+                },
+                |_| {
+                    panic!(
+                        "cached initialization should not install an executor"
+                    )
+                },
+            )
+            .expect("cached initialization should succeed");
+            let installed = installed
+                .borrow()
+                .as_ref()
+                .expect("installer should receive an executor")
+                .clone();
+
+            assert!(
+                Rc::ptr_eq(&first.0, &second.0)
+                    && Rc::ptr_eq(&first.0, &installed.0)
+                    && install_calls.get() == 1
+            );
+        }
+
+        #[test]
+        fn preview2_initializer_persists_a_conflicting_first_result() {
+            let state = OnceCell::new();
+            let install_calls = Cell::new(0);
+            let first = initialize_preview2_with(
+                &state,
+                Mode::Stalled,
+                |mode| {
+                    Ok(Executor::with_queue(
+                        mode,
+                        Arc::new(WaitQueue::default()),
+                    ))
+                },
+                |_| {
+                    install_calls.set(install_calls.get() + 1);
+                    Err(any_spawner::ExecutorError::AlreadySet)
+                },
+            );
+            let second = initialize_preview2_with(
+                &state,
+                Mode::Stalled,
+                |_| panic!("cached conflict should not create an executor"),
+                |_| panic!("cached conflict should not install an executor"),
+            );
+
+            assert_eq!(
+                (first.err(), second.err(), install_calls.get()),
+                (
+                    Some(ExecutorError::SpawnerAlreadyInitialized),
+                    Some(ExecutorError::SpawnerAlreadyInitialized),
+                    1,
+                )
+            );
         }
     }
 }
 
-#[cfg(all(feature = "wasip2", not(feature = "wasip3")))]
+#[cfg(feature = "wasip2")]
 pub use p2::*;
 
 #[cfg(feature = "wasip3")]
 mod p3 {
+    use std::sync::OnceLock;
+
     use any_spawner::CustomExecutor;
 
-    /// A custom executor for WASI Preview 3.
-    ///
-    /// Under WASIp3, task spawning is handled natively by the host runtime,
-    /// so this executor routes task spawns directly to the host's event loop via the
-    /// `wasip3::wit_bindgen::spawn` bridge.
+    use super::ExecutorError;
+
+    /// A custom executor that delegates WASI Preview 3 tasks to the host.
     #[derive(Clone, Copy)]
     pub struct Wasip3Executor;
 
     impl CustomExecutor for Wasip3Executor {
-        fn spawn(&self, fut: any_spawner::PinnedFuture<()>) {
-            wasip3::wit_bindgen::spawn(fut);
+        fn spawn(&self, future: any_spawner::PinnedFuture<()>) {
+            wasip3::spawn(future);
         }
 
-        fn spawn_local(&self, fut: any_spawner::PinnedLocalFuture<()>) {
-            wasip3::wit_bindgen::spawn(fut);
+        fn spawn_local(&self, future: any_spawner::PinnedLocalFuture<()>) {
+            wasip3::spawn(future);
         }
 
         fn poll_local(&self) {
-            // No-op under WASIp3 as the host runtime manages execution.
+            // WASI Preview 3 host tasks are driven by the component runtime.
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum InitState {
+        Initialized,
+        Conflict,
+    }
+
+    static INITIALIZED: OnceLock<InitState> = OnceLock::new();
+
+    fn initialize_with(
+        state: &OnceLock<InitState>,
+        initialize: impl FnOnce() -> Result<(), any_spawner::ExecutorError>,
+    ) -> Result<(), ExecutorError> {
+        match state.get_or_init(|| match initialize() {
+            Ok(()) => InitState::Initialized,
+            Err(_) => InitState::Conflict,
+        }) {
+            InitState::Initialized => Ok(()),
+            InitState::Conflict => {
+                Err(ExecutorError::SpawnerAlreadyInitialized)
+            }
         }
     }
 
     /// Initializes the global task spawner for WASI Preview 3.
     ///
-    /// This registers the `Wasip3Executor` as the default local spawner, enabling
-    /// standard Leptos features like `leptos::spawn_local` to execute as native host tasks.
+    /// Repeated calls return the result of the first initialization attempt.
     ///
     /// # Errors
     ///
-    /// Returns an error if the spawner has already been initialized with a different executor.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// use leptos_wasi::executor::init_wasip3_spawner;
-    ///
-    /// fn main() {
-    ///     init_wasip3_spawner().expect("failed to initialize spawner");
-    /// }
-    /// ```
-    pub fn init_wasip3_spawner() -> Result<(), any_spawner::ExecutorError> {
-        static INITIALIZED: std::sync::Once = std::sync::Once::new();
-        let mut res = Ok(());
-        INITIALIZED.call_once(|| {
-            res = any_spawner::Executor::init_local_custom_executor(
-                Wasip3Executor,
+    /// Returns
+    /// [`ExecutorError::SpawnerAlreadyInitialized`](crate::ExecutorError::SpawnerAlreadyInitialized)
+    /// when another global executor was installed before this function's first
+    /// call.
+    pub fn init_wasip3_spawner() -> Result<(), ExecutorError> {
+        initialize_with(&INITIALIZED, || {
+            any_spawner::Executor::init_local_custom_executor(Wasip3Executor)
+        })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::cell::Cell;
+
+        use super::*;
+
+        #[test]
+        fn repeated_success_returns_success_without_reinitializing() {
+            let state = OnceLock::new();
+            let calls = Cell::new(0);
+            let first = initialize_with(&state, || {
+                calls.set(calls.get() + 1);
+                Ok(())
+            });
+            let second = initialize_with(&state, || {
+                calls.set(calls.get() + 1);
+                Ok(())
+            });
+
+            assert_eq!((first, second, calls.get()), (Ok(()), Ok(()), 1));
+        }
+
+        #[test]
+        fn repeated_conflict_returns_conflict_without_reinitializing() {
+            let state = OnceLock::new();
+            let calls = Cell::new(0);
+            let first = initialize_with(&state, || {
+                calls.set(calls.get() + 1);
+                Err(any_spawner::ExecutorError::AlreadySet)
+            });
+            let second = initialize_with(&state, || {
+                calls.set(calls.get() + 1);
+                Ok(())
+            });
+
+            assert_eq!(
+                (first, second, calls.get()),
+                (
+                    Err(ExecutorError::SpawnerAlreadyInitialized),
+                    Err(ExecutorError::SpawnerAlreadyInitialized),
+                    1,
+                )
             );
-        });
-        res
+        }
     }
 }
 

@@ -1,0 +1,28 @@
+spin_manifest_version = 2
+
+[application]
+name = "test-app-p3-middleware-composed"
+version = "0.0.0"
+
+[[trigger.http]]
+route = "/..."
+component = "test-app-p3-middleware"
+executor = { type = "http" }
+
+[component.test-app-p3-middleware]
+source = "test-app-p3-middleware.wasm"
+allowed_outbound_hosts = ["http://127.0.0.1:3112"]
+files = [{ source = "test-app/static", destination = "/static" }]
+
+[component.test-app-p3-middleware.environment]
+WASI_MIDDLEWARE_CORS_ORIGINS = "http://127.0.0.1:3110,http://127.0.0.1:3111"
+WASI_MIDDLEWARE_CORS_METHODS = "GET,HEAD,POST"
+WASI_MIDDLEWARE_CORS_HEADERS = "content-type,authorization,x-request-id"
+WASI_MIDDLEWARE_CORS_ALLOW_CREDENTIALS = "false"
+WASI_MIDDLEWARE_AUTHN_BROKER_URL = "http://127.0.0.1:3112/authenticate"
+WASI_MIDDLEWARE_AUTHN_TIMEOUT_MS = "2000"
+WASI_MIDDLEWARE_AUTHN_MODE = "optional"
+WASI_MIDDLEWARE_SERVICE_ID = "leptos-wasi-test-app"
+WASI_MIDDLEWARE_AUTHN_AUDIENCES = "api://leptos-wasi-test-app"
+WASI_MIDDLEWARE_AUTHN_MAX_IN_FLIGHT = "64"
+WASI_MIDDLEWARE_AUTHN_ALLOW_INSECURE_LOOPBACK = "true"

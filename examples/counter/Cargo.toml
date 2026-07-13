@@ -5,40 +5,45 @@ edition = "2024"
 rust-version = "1.93.0"
 authors = ["codeitlikemiley <codeitlikemiley@gmail.com>"]
 description = "A Leptos application running as a WASIp3 Component"
-build = "build.rs"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-any_spawner = { version = "0.3.0", features = ["futures-executor"] }
-bytes = "1.7.2"
 console_error_panic_hook = "0.1"
-futures = "0.3.30"
-hydration_context = { version = "0.3.0" }
-leptos = { version = "0.8.9" }
-leptos_meta = { version = "0.8.5" }
-leptos_router = { version = "0.8.7" }
-leptos_wasi = { path = "../..", default-features = false, features = ["wasip3"], optional = true }
-server_fn = { version = "0.8.7", features = ["axum-no-default"] }
-spin-sdk = { version = "6.0.0", optional = true }
-wasip3 = { version = "0.6.0", features = ["http-compat"], optional = true }
-wasm-bindgen = { version = "=0.2.103", optional = true }
-web-sys = { version = "0.3", features = ["Storage", "Window"], optional = true }
+futures = { version = "0.3.32", optional = true }
+http = { version = "1.4", optional = true }
+leptos = { version = "0.8.20", default-features = false }
+leptos_meta = { version = "0.8.6", default-features = false }
+leptos_router = { version = "0.8.14", default-features = false }
+leptos_wasi = { package = "leptos-wasi-runtime", path = "../..", default-features = false, features = ["wasip3"], optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+server_fn = { version = "0.8.12", default-features = false, features = ["axum-no-default"] }
+thiserror = { version = "2.0", optional = true }
+uuid = { version = "1.18", features = ["js", "v4"], optional = true }
+wasip3 = { version = "=0.7.0", features = ["http-compat"], optional = true }
+wasm-bindgen = { version = "=0.2.126", optional = true }
 
 [features]
 hydrate = [
   "leptos/hydrate",
+  "leptos/islands",
   "dep:wasm-bindgen",
-  "dep:web-sys",
+  "dep:uuid",
 ]
 ssr = [
   "leptos/ssr",
+  "leptos/islands",
   "leptos_meta/ssr",
   "leptos_router/ssr",
+  "dep:futures",
+  "dep:http",
   "dep:leptos_wasi",
+  "dep:serde",
+  "dep:serde_json",
+  "dep:thiserror",
   "dep:wasip3",
-  "dep:spin-sdk",
 ]
 
 [profile.wasm-release]
@@ -52,6 +57,9 @@ panic = "abort"
 output-name = "counter"
 tailwind-input-file = "input.css"
 assets-dir = "public"
+# Rust's WASI stdlib cannot resolve current_exe(), which Leptos hash-manifest
+# lookup currently relies on during SSR. Keep split filenames stable for now.
+hash-files = false
 
 # == Hydrate (client)
 lib-profile-release = "wasm-release"

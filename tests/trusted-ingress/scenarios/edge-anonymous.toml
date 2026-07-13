@@ -1,0 +1,6 @@
+[[route]]
+name = "edge-anonymous"
+weight = 1
+method = "GET"
+path = "/"
+expected_status = [200]

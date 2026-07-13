@@ -1,0 +1,11 @@
+[[route]]
+name = "hybrid-deny"
+weight = 1
+method = "POST"
+path = "/api/authorize_hybrid_deny"
+credential = "allow"
+body = "current=0"
+expected_status = [403]
+
+[route.headers]
+content-type = "application/x-www-form-urlencoded"

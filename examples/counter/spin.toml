@@ -13,10 +13,13 @@ executor = { type = "http" }
 
 [component.counter]
 source = "target/wasm32-wasip2/release/counter.wasm"
-allowed_outbound_hosts = []
-key_value_stores = ["default"]
+allowed_outbound_hosts = ["http://127.0.0.1:4040"]
+environment = { LEPTOS_OUTPUT_NAME = "counter", LEPTOS_SITE_ROOT = "/site", LEPTOS_SITE_PKG_DIR = "pkg", COUNTER_STORE_URL = "http://127.0.0.1:4040", COUNTER_ID = "demo" }
+files = [
+  { source = "target/site", destination = "/site" }
+]
 [component.counter.build]
-command = "WASI_RUNTIME=spin cargo leptos build --release && WASI_RUNTIME=spin LEPTOS_OUTPUT_NAME=counter cargo build --lib --target wasm32-wasip2 --release --no-default-features --features ssr"
+command = "cargo leptos build --release --split --frontend-only --lib-cargo-args=--locked && LEPTOS_OUTPUT_NAME=counter cargo build --locked --lib --target wasm32-wasip2 --release --no-default-features --features ssr"
 watch = ["src/**/*.rs", "Cargo.toml"]
 
 [[trigger.http]]
@@ -26,3 +29,4 @@ component = "counter-pkg"
 [component.counter-pkg]
 source = { url = "https://github.com/fermyon/spin-fileserver/releases/download/v0.1.0/spin_static_fs.wasm", digest = "sha256:96c76d9af86420b39eb6cd7be5550e3cb5d4cc4de572ce0fd1f6a29471536cb4" }
 files = [{ source = "target/site/pkg", destination = "/" }]
+environment = { CACHE_CONTROL = "no-cache" }

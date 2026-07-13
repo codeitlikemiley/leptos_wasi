@@ -1,3 +1,5 @@
+//! Utilities for manipulating Leptos responses from reactive context.
+
 use crate::response::ResponseOptions;
 use http::{HeaderName, HeaderValue, StatusCode, header, request::Parts};
 use leptos::prelude::use_context;
@@ -54,7 +56,7 @@ pub fn redirect(path: &str) {
             // instead, set the REDIRECT_HEADER to indicate that the client should redirect
             res.insert_header(
                 HeaderName::from_static(REDIRECT_HEADER),
-                HeaderValue::from_str("").unwrap(),
+                HeaderValue::from_static(""),
             );
         }
     } else {
