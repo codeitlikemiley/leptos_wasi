@@ -154,8 +154,11 @@ def audit_artifact_sets(lock: dict, policy: dict) -> dict[str, dict]:
     ):
         bundle = by_id[bundle_id]
         for bundle_key, lock_key in (
-            ("name", "name"),
-            ("version", "version"),
+            ("name", "artifact_name" if bundle_id == "authorization" else "name"),
+            (
+                "version",
+                "artifact_version" if bundle_id == "authorization" else "version",
+            ),
             ("source_revision", "artifact_revision"),
         ):
             if bundle.get(bundle_key) != lock_section.get(lock_key):

@@ -55,6 +55,8 @@ baseline_revision = "27689e087af7946ff280102dbec94fb9b2fe0590"
 source_revision = "1bf80347b2fdff65408f3d239ff6f02b1033658e"
 # Last signed pre-consolidation bundle. Release promotion must regenerate and
 # attest an alpha.4 wasi-auth bundle from a clean consolidated revision.
+artifact_name = "wasi-authz"
+artifact_version = "0.1.0-alpha.3"
 artifact_revision = "d4a755e7a4a5abe3b38868a71b063bf33592254c"
 fixture_manifest = "tests/authz-fixture/Cargo.toml"
 components = [
