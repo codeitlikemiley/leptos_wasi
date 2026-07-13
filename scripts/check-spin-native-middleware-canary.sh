@@ -14,12 +14,14 @@ actual_revision="$(git -C "$SPIN_SOURCE_DIR" rev-parse HEAD)"
   exit 1
 }
 
-rg -q "MW_HANDLER_INTERFACE.*wasi:http/handler@$EXPECTED_WIT" "$SPIN_SOURCE_DIR" || {
+git -C "$SPIN_SOURCE_DIR" grep -Eq \
+  "MW_HANDLER_INTERFACE.*wasi:http/handler@$EXPECTED_WIT" || {
   echo "Spin middleware ABI changed; reassess final-WASI native support" >&2
   exit 1
 }
 
-if rg -q 'MW_HANDLER_INTERFACE.*wasi:http/handler@0\.3\.0[";]' "$SPIN_SOURCE_DIR"; then
+if git -C "$SPIN_SOURCE_DIR" grep -Eq \
+  'MW_HANDLER_INTERFACE.*wasi:http/handler@0\.3\.0[";]'; then
   echo "Spin now advertises final WASI HTTP; remove the expected-incompatibility canary" >&2
   exit 1
 fi
