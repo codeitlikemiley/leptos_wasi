@@ -2469,4 +2469,173 @@ mod tests {
         assert_eq!(generated_paths(alpha_app as AppPointer), ["/alpha"]);
         assert_eq!(generated_paths(beta_app as AppPointer), ["/beta"]);
     }
+
+    #[cfg(feature = "islands-router")]
+    mod islands_router_streaming {
+        use super::*;
+        use leptos::prelude::{ElementChild, Suspend, Suspense};
+        use std::{
+            task::{Context, Poll},
+            time::{Duration, Instant},
+        };
+
+        /// How long the suspended resource stays unresolved. Waking the poller
+        /// immediately is not enough: the `Suspense` boundary settles on a
+        /// worker thread, so it can win the race and inline the resolved
+        /// markup even in out-of-order mode. A wall-clock gate keeps the first
+        /// poll reliably pending.
+        const RESOURCE_DELAY: Duration = Duration::from_millis(50);
+
+        /// Stays pending until [`RESOURCE_DELAY`] has elapsed, forcing an
+        /// out-of-order stream to emit the `Suspense` fallback first.
+        struct PendingResource(Instant);
+
+        impl Default for PendingResource {
+            fn default() -> Self {
+                Self(Instant::now() + RESOURCE_DELAY)
+            }
+        }
+
+        impl Future for PendingResource {
+            type Output = ();
+
+            fn poll(
+                self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+            ) -> Poll<Self::Output> {
+                let now = Instant::now();
+                if now >= self.0 {
+                    return Poll::Ready(());
+                }
+                // The reactive graph may poll this from any thread, so wake
+                // from a plain thread instead of a runtime-bound timer.
+                let remaining = self.0 - now;
+                let waker = cx.waker().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(remaining);
+                    waker.wake();
+                });
+                Poll::Pending
+            }
+        }
+
+        fn out_of_order_app() -> impl IntoView {
+            view! {
+                <Router>
+                    <Routes fallback=|| view! { "not found" }>
+                        <Route
+                            path=path!("/streamed")
+                            ssr=SsrMode::OutOfOrder
+                            view=|| {
+                                view! {
+                                    <Suspense fallback=|| view! { <p>"pending"</p> }>
+                                        {move || Suspend::new(async move {
+                                            PendingResource::default().await;
+                                            view! { <p>"resolved"</p> }
+                                        })}
+                                    </Suspense>
+                                }
+                            }
+                        />
+                    </Routes>
+                </Router>
+            }
+        }
+
+        async fn render_streamed(islands_navigation: bool) -> String {
+            // `Suspense` drives its boundary with an isomorphic effect, so the
+            // reactive graph needs a spawner before this route can render.
+            let _ = any_spawner::Executor::init_futures_executor();
+
+            let mut builder = Request::builder().uri("/streamed");
+            if islands_navigation {
+                builder = builder.header(ISLANDS_ROUTER_HEADER, "1");
+            }
+            let request = builder
+                .body(Bytes::new())
+                .expect("test request should be valid");
+            let core = HandlerCore::new(request, HandlerConfig::default())
+                .generate_routes_with_exclusions_and_discovery_context(
+                    out_of_order_app,
+                    None,
+                    || {},
+                )
+                .expect("route registration should succeed");
+            let response = core.render(out_of_order_app, || {}).await;
+            match response.0.into_body() {
+                Body::Sync(bytes) => String::from_utf8(bytes.to_vec())
+                    .expect("rendered body should be UTF-8"),
+                Body::Async(stream) => {
+                    stream
+                        .map(|chunk| {
+                            let chunk =
+                                chunk.expect("stream chunk should not fail");
+                            String::from_utf8(chunk.to_vec())
+                                .expect("rendered chunk should be UTF-8")
+                        })
+                        .collect::<String>()
+                        .await
+                }
+            }
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn islands_router_navigation_downgrades_out_of_order_streaming() {
+            let streamed = render_streamed(false).await;
+            let navigated = render_streamed(true).await;
+
+            // Branching markup is selected by the cargo feature, so both
+            // responses carry it; only the streaming order reacts to the header.
+            assert!(
+                streamed.contains("<!--bo-"),
+                "branching markup should be emitted without the header, got: {streamed}"
+            );
+            assert!(
+                navigated.contains("<!--bo-"),
+                "branching markup should survive the downgrade, got: {navigated}"
+            );
+
+            // Out-of-order streaming ships the `Suspense` fallback first and
+            // defers the resolved markup into a trailing `<template>`.
+            assert!(
+                streamed.contains("<p>pending</p>"),
+                "out-of-order streaming should emit the Suspense fallback, got: {streamed}"
+            );
+            let deferred = streamed.find("<template id=").unwrap_or_else(|| {
+                panic!(
+                    "out-of-order streaming should defer markup into a template, got: {streamed}"
+                )
+            });
+            let resolved =
+                streamed.find("<p>resolved</p>").unwrap_or_else(|| {
+                    panic!(
+                        "out-of-order streaming should still emit the resolved markup, got: {streamed}"
+                    )
+                });
+            assert!(
+                deferred < resolved,
+                "resolved markup should only appear inside the deferred template, got: {streamed}"
+            );
+
+            // An islands-router navigation downgrades to in-order streaming:
+            // the resolved markup is inlined and none of the out-of-order
+            // machinery (fallback, template, suspense markers) is present.
+            assert!(
+                navigated.contains("<p>resolved</p>"),
+                "in-order streaming should inline the resolved markup, got: {navigated}"
+            );
+            assert!(
+                !navigated.contains("<template id="),
+                "an islands-router navigation must not defer markup into a template, got: {navigated}"
+            );
+            assert!(
+                !navigated.contains("<p>pending</p>"),
+                "an islands-router navigation must not emit the Suspense fallback, got: {navigated}"
+            );
+            assert!(
+                !navigated.contains("<!--s-"),
+                "an islands-router navigation must not emit suspense stream markers, got: {navigated}"
+            );
+        }
+    }
 }

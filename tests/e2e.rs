@@ -640,6 +640,40 @@ async fn run_assertions(
         );
     }
 
+    // The requests above hit an `SsrMode::Async` route, whose stream builder
+    // ignores the out-of-order flag entirely. Repeat them against the
+    // `SsrMode::OutOfOrder` route so the arm that actually reads the flag runs
+    // both ways. `SsrOutOfOrderView`'s resource is ready on first poll, so the
+    // downgrade to in-order streaming must not change the rendered document.
+    for (header, expected) in [(None, "false"), (Some("1"), "true")] {
+        let mut request = client.get(format!("{}/ssr/out-of-order", base_url));
+        if let Some(header) = header {
+            request = request.header("Islands-Router", header);
+        }
+        let res = request.send().await?;
+        assert_eq!(res.status(), StatusCode::OK);
+        let text = res.text().await?;
+        assert!(
+            text.contains(&format!(
+                "data-islands-router-navigation=\"{}\"",
+                expected
+            )),
+            "Expected islands-router navigation {} on an OutOfOrder route, got: {}",
+            expected,
+            text
+        );
+        assert!(
+            text.contains("OutOfOrder View"),
+            "Expected the OutOfOrder view to render, got: {}",
+            text
+        );
+        assert!(
+            text.contains("OutOfOrder resource resolved"),
+            "Expected the OutOfOrder resource to resolve, got: {}",
+            text
+        );
+    }
+
     // SSR receives the complete path and query, and application context is
     // installed after the standard Leptos request contexts.
     {
