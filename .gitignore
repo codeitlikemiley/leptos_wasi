@@ -33,3 +33,6 @@ rustc-ice-*.txt
 # Local SQLite state used by the persistent counter example.
 /data/
 tests/.spin/
+
+# Scratch git worktrees created by local tooling.
+.claude/worktrees/
