@@ -37,6 +37,25 @@ All notable changes to this project will be documented in this file.
   open-redirect assertions now require an exact same-origin path instead of a
   matching suffix, which an absolute URL could satisfy.
 
+### Documentation
+
+- Documented the per-request Leptos nonce the handler already provides and a
+  recipe for emitting a `Content-Security-Policy` from the application through
+  `ResponseOptions`, including the `'wasm-unsafe-eval'` requirement for
+  hydration and the fact that `leptos_meta`'s `Stylesheet` and `Link`
+  components accept no nonce attribute.
+- Recorded that guest-served static responses carry no `Cache-Control`,
+  `ETag`, or `Last-Modified` and answer no conditional request with `304`, and
+  that the Spin manifests obtain `Cache-Control` from `spin-fileserver` rather
+  than from this crate.
+- Separated body size, which is bounded on both previews, from body read time,
+  which is bounded on neither. The host supplies the request-read/idle deadline
+  and the concurrent-instance cap in addition to a size limit.
+- Documented that a server-function response has its `Location` reduced to a
+  same-origin path, that a `Location` written through `ResponseOptions`
+  bypasses that reduction, and that both differ from `leptos_axum` and
+  `leptos_actix`.
+
 ## [0.4.2-rc.1] — 2026-07-12
 
 ### Added
