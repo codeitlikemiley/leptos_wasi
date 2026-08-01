@@ -29,6 +29,13 @@ All notable changes to this project will be documented in this file.
   scheduling modes.
 - An end-to-end regression asserting that a nested percent-encoding chain is
   rejected without a latency blow-up relative to a plain 404.
+- Coverage for `Location` handling through the whole render path, rather than
+  only through `apply_server_fn_redirect` in isolation: a `Location` written
+  through `ResponseOptions` reaches the client unchanged, including an
+  off-origin scheme and authority, while a `Location` set on a server
+  function's own response is reduced to a same-origin path. The end-to-end
+  open-redirect assertions now require an exact same-origin path instead of a
+  matching suffix, which an absolute URL could satisfy.
 
 ## [0.4.2-rc.1] — 2026-07-12
 

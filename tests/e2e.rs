@@ -287,6 +287,66 @@ async fn read_raw_status(stream: &mut TcpStream) -> anyhow::Result<StatusCode> {
     Ok(StatusCode::from_u16(status)?)
 }
 
+/// Asserts a redirect `Location` is genuinely same-origin and relative.
+///
+/// A bare `ends_with("/previous-page")` check also accepts
+/// `https://malicious.example.com/previous-page`, which is exactly the open
+/// redirect these tests exist to rule out. So instead of trusting the suffix
+/// alone, this pins the shape of the value: a single leading `/`, no scheme,
+/// no protocol-relative `//` authority, no backslash (or percent-encoded
+/// backslash) that a browser would normalise into one, and no trace of the
+/// host the `Referer` tried to smuggle in.
+fn assert_same_origin_location(
+    location: &str,
+    expected_suffix: &str,
+    forbidden_host: &str,
+) {
+    assert!(
+        location.starts_with('/'),
+        "Location must be origin-relative, got: {}",
+        location
+    );
+    assert!(
+        !location.starts_with("//"),
+        "Location must not be protocol-relative, got: {}",
+        location
+    );
+    let lowered = location.to_ascii_lowercase();
+    assert!(
+        !lowered.contains("://"),
+        "Location must not carry a scheme, got: {}",
+        location
+    );
+    for scheme in ["http:", "https:", "javascript:", "data:"] {
+        assert!(
+            !lowered.contains(scheme),
+            "Location must not carry the {} scheme, got: {}",
+            scheme,
+            location
+        );
+    }
+    assert!(
+        !location.contains('\\')
+            && !lowered.contains("%5c")
+            && !lowered.contains("%2f%2f"),
+        "Location must not contain backslash or encoded-slash bypasses, \
+         got: {}",
+        location
+    );
+    assert!(
+        !lowered.contains(&forbidden_host.to_ascii_lowercase()),
+        "Location must not echo the referring host {}, got: {}",
+        forbidden_host,
+        location
+    );
+    assert!(
+        location.ends_with(expected_suffix),
+        "Expected Location to resolve to {}, got: {}",
+        expected_suffix,
+        location
+    );
+}
+
 async fn run_assertions(
     port: u16,
     capabilities: RuntimeCapabilities,
@@ -441,13 +501,7 @@ async fn run_assertions(
             .get("Location")
             .expect("Location header missing");
         let loc_clean = loc.to_str()?.trim_end_matches('?');
-        assert!(
-            loc_clean == "/previous-page"
-                || loc_clean.ends_with("/previous-page"),
-            "Expected relative /previous-page or absolute ending with \
-             /previous-page, got: {}",
-            loc_clean
-        );
+        assert_same_origin_location(loc_clean, "/previous-page", "127.0.0.1");
     }
 
     // 7. POST /api/form_submit_test (with Referrer spelling)
@@ -465,12 +519,7 @@ async fn run_assertions(
             .get("Location")
             .expect("Location header missing");
         let loc_clean = loc.to_str()?.trim_end_matches('?');
-        assert!(
-            loc_clean == "/other-page" || loc_clean.ends_with("/other-page"),
-            "Expected relative /other-page or absolute ending with \
-             /other-page, got: {}",
-            loc_clean
-        );
+        assert_same_origin_location(loc_clean, "/other-page", "127.0.0.1");
     }
 
     // Adversarial Test 1: Open Redirect Vulnerability Prevention
@@ -488,12 +537,10 @@ async fn run_assertions(
             .get("Location")
             .expect("Location header missing");
         let loc_clean = loc.to_str()?.trim_end_matches('?');
-        assert!(
-            loc_clean == "/steal-session"
-                || loc_clean.ends_with("/steal-session"),
-            "Expected relative /steal-session or absolute ending with \
-             /steal-session, got: {}",
-            loc_clean
+        assert_same_origin_location(
+            loc_clean,
+            "/steal-session",
+            "malicious.example.com",
         );
     }
 

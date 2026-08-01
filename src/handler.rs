@@ -2179,6 +2179,103 @@ mod tests {
         );
     }
 
+    /// `ResponseOptions` is the documented escape hatch for redirects that
+    /// legitimately leave the origin (OAuth authorization endpoints, payment
+    /// providers). `extend_response` runs *after* `apply_server_fn_redirect`
+    /// and `http`'s `Extend` impl replaces rather than appends, so a
+    /// `Location` written through the reactive context wins outright and is
+    /// never reduced to a path. This pins that contract end to end.
+    #[tokio::test(flavor = "current_thread")]
+    async fn response_options_location_survives_server_fn_sanitizing() {
+        const OFF_ORIGIN: &str =
+            "https://accounts.example.com/oauth/authorize?client_id=leptos";
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/api/start_oauth")
+            .header(ACCEPT, "text/html")
+            .header(REFERER, "http://127.0.0.1/previous-page")
+            .body(Bytes::new())
+            .expect("test request should be valid");
+        let mut core = HandlerCore::new(request, HandlerConfig::default());
+        core.server_fn = Some(Box::new(|_| {
+            Box::pin(async {
+                http::Response::new(Body::Sync(Bytes::from_static(b"ok")))
+            })
+        }));
+
+        let response = core
+            .render(
+                || view! { "unused" },
+                || {
+                    use_context::<ResponseOptions>()
+                        .expect("response options should be installed")
+                        .insert_header(
+                            LOCATION,
+                            HeaderValue::from_static(OFF_ORIGIN),
+                        );
+                },
+            )
+            .await;
+
+        // `apply_server_fn_redirect` saw an html form POST with a `Referer`
+        // and still promoted the status, so this is the same code path a real
+        // form redirect takes.
+        assert_eq!(response.0.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.0.headers().get(LOCATION),
+            Some(&HeaderValue::from_static(OFF_ORIGIN)),
+            "a Location set through ResponseOptions must reach the client \
+             unchanged, including the scheme and authority"
+        );
+    }
+
+    /// The complementary half: a `Location` the server function wrote onto its
+    /// own `http::Response` is *not* an escape hatch. It is sanitized down to
+    /// a path, and it takes precedence over the `Referer` fallback.
+    #[tokio::test(flavor = "current_thread")]
+    async fn server_fn_response_location_is_reduced_to_a_path() {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/api/form_submit")
+            .header(ACCEPT, "text/html")
+            .header(REFERER, "http://127.0.0.1/previous-page")
+            .body(Bytes::new())
+            .expect("test request should be valid");
+        let mut core = HandlerCore::new(request, HandlerConfig::default());
+        core.server_fn = Some(Box::new(|_| {
+            Box::pin(async {
+                let mut response =
+                    http::Response::new(Body::Sync(Bytes::from_static(b"ok")));
+                *response.status_mut() = StatusCode::FOUND;
+                response.headers_mut().insert(
+                    LOCATION,
+                    HeaderValue::from_static(
+                        "https://malicious.example.com/steal-session?token=1",
+                    ),
+                );
+                response
+            })
+        }));
+
+        let response = core.render(|| view! { "unused" }, || {}).await;
+
+        assert_eq!(response.0.status(), StatusCode::FOUND);
+        let location = response
+            .0
+            .headers()
+            .get(LOCATION)
+            .expect("redirect should carry a Location")
+            .to_str()
+            .expect("Location should be text");
+        assert_eq!(
+            location, "/steal-session?token=1",
+            "the server function's own Location must be reduced to a \
+             same-origin path, not replaced by the Referer"
+        );
+        assert!(!location.contains("malicious.example.com"));
+    }
+
     #[test]
     fn html_with_zero_quality_is_not_accepted() {
         let mut headers = HeaderMap::new();
