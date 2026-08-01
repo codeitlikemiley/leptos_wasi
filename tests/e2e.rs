@@ -784,6 +784,34 @@ async fn run_assertions(
                 "unsafe static path {path} returned {status}"
             );
         }
+
+        // A deeply nested percent-encoding chain must be rejected by the
+        // bounded validator rather than driving a quadratic decode loop. The
+        // guest is compared against a plain 404 so a regression shows up as a
+        // latency blow-up rather than a wrong status.
+        {
+            let chain = format!("/static/%{}41", "25".repeat(4_000));
+            let baseline = Instant::now();
+            let _ = raw_http_status(port, "/static/does-not-exist.png").await?;
+            let baseline = baseline.elapsed();
+
+            let started = Instant::now();
+            let status = raw_http_status(port, &chain).await?;
+            let elapsed = started.elapsed();
+
+            assert!(
+                matches!(
+                    status,
+                    StatusCode::BAD_REQUEST | StatusCode::NOT_FOUND
+                ),
+                "nested encoding chain returned {status}"
+            );
+            assert!(
+                elapsed < baseline + Duration::from_millis(250),
+                "nested encoding chain cost {elapsed:?} against a {baseline:?} \
+                 baseline"
+            );
+        }
     }
 
     // A streaming response must expose its first frame before its delayed

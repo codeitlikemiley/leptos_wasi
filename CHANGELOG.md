@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Bounded static asset path validation to a fixed number of residual
+  percent-decoding passes. A path such as `/static/%2525…2541` previously drove
+  a decode loop that shrank by two bytes per pass, costing time quadratic in
+  the request path length; a 16 KiB path burned tens of milliseconds of CPU per
+  unauthenticated `GET` and still resolved successfully. Chains longer than the
+  budget are now rejected as residual percent-encoding.
+- Restricted the generated route-list cache to zero-sized application and
+  route-discovery closures. A `TypeId` identifies behavior only for types with
+  a single inhabitant, so two different applications coerced to the same
+  `fn() -> _` pointer type previously shared one cached route list and the
+  second application served the first application's routes. Function pointers
+  and capturing closures now re-run route discovery.
+
+### Added
+
+- Unit coverage for the previously untested request, response, redirect, and
+  executor surfaces: WASI Preview 2 method and scheme conversion, `Accept`
+  negotiation, referrer and `Location` sanitization, `utils::redirect`,
+  `axum_core` and boxed-error body streaming, `ResponseOptions` application
+  semantics, pollable dispatch through an injected poller, and both executor
+  scheduling modes.
+- An end-to-end regression asserting that a nested percent-encoding chain is
+  rejected without a latency blow-up relative to a plain 404.
+
 ## [0.4.2-rc.1] — 2026-07-12
 
 ### Added

@@ -66,3 +66,91 @@ pub fn redirect(path: &str) {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::redirect;
+    use crate::response::{ResponseOptions, ResponseParts};
+    use http::{HeaderValue, Request, StatusCode, header};
+    use leptos::prelude::{Owner, provide_context};
+
+    fn redirect_with(
+        accept: Option<&'static str>,
+        path: &str,
+    ) -> ResponseParts {
+        let mut builder = Request::builder().uri("/current");
+        if let Some(accept) = accept {
+            builder = builder.header(header::ACCEPT, accept);
+        }
+        let (parts, ()) = builder
+            .body(())
+            .expect("test request should be valid")
+            .into_parts();
+
+        let owner = Owner::new();
+        let options = owner.with(|| {
+            let options = ResponseOptions::default();
+            provide_context(parts);
+            provide_context(options.clone());
+            redirect(path);
+            options
+        });
+        options.snapshot()
+    }
+
+    #[test]
+    fn html_requests_receive_a_found_status_and_location() {
+        let parts = redirect_with(Some("text/html"), "/target-page");
+
+        assert_eq!(parts.status(), Some(StatusCode::FOUND));
+        assert_eq!(
+            parts.headers().get(header::LOCATION),
+            Some(&HeaderValue::from_static("/target-page"))
+        );
+    }
+
+    #[test]
+    fn client_requests_receive_the_redirect_header_instead_of_a_status() {
+        let parts = redirect_with(Some("application/json"), "/target-page");
+
+        assert_eq!(parts.status(), None);
+        assert_eq!(
+            parts.headers().get(header::LOCATION),
+            Some(&HeaderValue::from_static("/target-page"))
+        );
+        assert!(
+            parts
+                .headers()
+                .contains_key(server_fn::redirect::REDIRECT_HEADER)
+        );
+    }
+
+    #[test]
+    fn requests_without_an_accept_header_use_the_client_redirect_protocol() {
+        let parts = redirect_with(None, "/target-page");
+
+        assert_eq!(parts.status(), None);
+        assert!(
+            parts
+                .headers()
+                .contains_key(server_fn::redirect::REDIRECT_HEADER)
+        );
+    }
+
+    #[test]
+    fn header_injection_attempts_are_rejected_with_bad_request() {
+        let parts = redirect_with(
+            Some("text/html"),
+            "/target-page\r\nLocation: http://evil.example.com",
+        );
+
+        assert_eq!(parts.status(), Some(StatusCode::BAD_REQUEST));
+        assert!(!parts.headers().contains_key(header::LOCATION));
+    }
+
+    #[test]
+    fn redirecting_without_context_does_not_panic() {
+        let owner = Owner::new();
+        owner.with(|| redirect("/target-page"));
+    }
+}

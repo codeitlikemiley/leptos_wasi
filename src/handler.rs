@@ -851,8 +851,15 @@ where
         app: TypeId::of::<AppFn>(),
         context: TypeId::of::<ContextFn>(),
     };
-    if let Some(cached) =
-        ROUTE_CACHE.with(|cache| cache.borrow().get(&key).cloned())
+    // A `TypeId` identifies behavior only when the type has exactly one
+    // inhabitant. Zero-sized function items and non-capturing closures qualify;
+    // function pointers and capturing closures do not, and two distinct
+    // applications coerced to the same `fn()` type would otherwise share one
+    // cached route list.
+    let cacheable = size_of::<AppFn>() == 0 && size_of::<ContextFn>() == 0;
+    if cacheable
+        && let Some(cached) =
+            ROUTE_CACHE.with(|cache| cache.borrow().get(&key).cloned())
     {
         return cached;
     }
@@ -891,9 +898,11 @@ where
             .collect()
     };
 
-    ROUTE_CACHE.with(|cache| {
-        cache.borrow_mut().insert(key, generated.clone());
-    });
+    if cacheable {
+        ROUTE_CACHE.with(|cache| {
+            cache.borrow_mut().insert(key, generated.clone());
+        });
+    }
     generated
 }
 
@@ -1175,7 +1184,11 @@ macro_rules! common_handler_methods {
         /// Generates routes with exclusions and deterministic discovery context.
         ///
         /// Route discovery is cached per concrete application/context closure
-        /// type. The context closure runs against synthetic standard contexts
+        /// type, and only when both are zero-sized (function items or
+        /// non-capturing closures) so that one type cannot describe two
+        /// different applications. Function pointers and capturing closures
+        /// re-run discovery on every request.
+        /// The context closure runs against synthetic standard contexts
         /// only when route discovery executes. Route structure, exclusions,
         /// and discovery context must be deterministic deployment
         /// configuration rather than request-dependent state.
@@ -2171,5 +2184,192 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(ACCEPT, HeaderValue::from_static("text/html;q=0"));
         assert!(!accepts_html(&headers));
+    }
+
+    fn accept(value: &'static str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(ACCEPT, HeaderValue::from_static(value));
+        headers
+    }
+
+    #[test]
+    fn browser_navigation_accept_headers_are_html() {
+        assert!(accepts_html(&accept(
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        )));
+        assert!(accepts_html(&accept("application/xhtml+xml")));
+        assert!(accepts_html(&accept(" text/html ; charset=utf-8")));
+    }
+
+    #[test]
+    fn non_navigation_accept_headers_are_not_html() {
+        assert!(!accepts_html(&accept("application/json")));
+        assert!(!accepts_html(&accept("*/*")));
+        assert!(!accepts_html(&HeaderMap::new()));
+        assert!(!accepts_html(&accept("text/html;q=0.000")));
+    }
+
+    #[test]
+    fn accept_html_is_detected_across_repeated_headers() {
+        let mut headers = HeaderMap::new();
+        headers.append(ACCEPT, HeaderValue::from_static("application/json"));
+        headers.append(ACCEPT, HeaderValue::from_static("text/html"));
+
+        assert!(accepts_html(&headers));
+    }
+
+    fn sanitized(value: &'static str) -> Option<String> {
+        sanitize_referrer(&HeaderValue::from_static(value))
+            .map(|value| value.to_str().expect("ascii").to_owned())
+    }
+
+    #[test]
+    fn referrers_are_reduced_to_same_origin_paths() {
+        assert_eq!(
+            sanitized("http://127.0.0.1/previous-page"),
+            Some("/previous-page".to_owned())
+        );
+        assert_eq!(
+            sanitized("https://malicious.example.com/steal?a=1"),
+            Some("/steal?a=1".to_owned())
+        );
+        assert_eq!(
+            sanitized("/relative/page"),
+            Some("/relative/page".to_owned())
+        );
+    }
+
+    #[test]
+    fn protocol_relative_and_backslash_referrers_are_rejected() {
+        assert_eq!(sanitized("//evil.example.com/path"), None);
+        assert_eq!(sanitized("http://127.0.0.1/\\evil.example.com"), None);
+        assert_eq!(sanitized("http://127.0.0.1/%5Cevil.example.com"), None);
+        assert_eq!(sanitized("http://127.0.0.1/%5cevil.example.com"), None);
+        assert_eq!(sanitized("mailto:someone@example.com"), None);
+    }
+
+    fn redirected(
+        status: StatusCode,
+        location: Option<&'static str>,
+        accepts_html: bool,
+        referrer: Option<&'static str>,
+    ) -> (StatusCode, Option<String>) {
+        let mut response =
+            http::Response::new(Body::Sync(Bytes::from_static(b"body")));
+        *response.status_mut() = status;
+        if let Some(location) = location {
+            response
+                .headers_mut()
+                .insert(LOCATION, HeaderValue::from_static(location));
+        }
+        apply_server_fn_redirect(
+            &mut response,
+            accepts_html,
+            referrer.map(HeaderValue::from_static),
+        );
+        let location = response
+            .headers()
+            .get(LOCATION)
+            .map(|value| value.to_str().expect("ascii").to_owned());
+        (response.status(), location)
+    }
+
+    #[test]
+    fn html_form_posts_redirect_back_to_a_same_origin_referrer() {
+        assert_eq!(
+            redirected(
+                StatusCode::OK,
+                None,
+                true,
+                Some("http://127.0.0.1/previous-page")
+            ),
+            (StatusCode::FOUND, Some("/previous-page".to_owned()))
+        );
+    }
+
+    #[test]
+    fn html_form_posts_fall_back_to_root_for_unusable_referrers() {
+        assert_eq!(
+            redirected(
+                StatusCode::OK,
+                None,
+                true,
+                Some("http://127.0.0.1/%5Cevil.example.com")
+            ),
+            (StatusCode::FOUND, Some("/".to_owned()))
+        );
+    }
+
+    #[test]
+    fn cross_origin_locations_are_reduced_to_their_path() {
+        assert_eq!(
+            redirected(
+                StatusCode::FOUND,
+                Some("https://evil.example.com/take-over"),
+                false,
+                None
+            ),
+            (StatusCode::FOUND, Some("/take-over".to_owned()))
+        );
+    }
+
+    #[test]
+    fn api_clients_keep_an_explicit_same_origin_location() {
+        assert_eq!(
+            redirected(StatusCode::OK, Some("/dashboard"), false, None),
+            (StatusCode::OK, Some("/dashboard".to_owned()))
+        );
+    }
+
+    #[test]
+    fn responses_without_a_location_are_left_alone() {
+        assert_eq!(
+            redirected(StatusCode::OK, None, false, None),
+            (StatusCode::OK, None)
+        );
+    }
+
+    fn alpha_app() -> leptos::prelude::AnyView {
+        use leptos::prelude::IntoAny;
+        view! {
+            <Router>
+                <Routes fallback=|| view! { "not found" }>
+                    <Route path=path!("/alpha") view=|| view! { "alpha" } />
+                </Routes>
+            </Router>
+        }
+        .into_any()
+    }
+
+    fn beta_app() -> leptos::prelude::AnyView {
+        use leptos::prelude::IntoAny;
+        view! {
+            <Router>
+                <Routes fallback=|| view! { "not found" }>
+                    <Route path=path!("/beta") view=|| view! { "beta" } />
+                </Routes>
+            </Router>
+        }
+        .into_any()
+    }
+
+    fn generated_paths<AppFn>(app: AppFn) -> Vec<String>
+    where
+        AppFn: Fn() -> leptos::prelude::AnyView + 'static + Send + Clone,
+    {
+        let noop: fn() = || {};
+        registered_routes(&app, &noop)
+            .expect("route generation should succeed")
+            .into_iter()
+            .map(|(path, _, _)| path)
+            .collect()
+    }
+
+    #[test]
+    fn function_pointer_applications_do_not_share_a_cached_route_list() {
+        type AppPointer = fn() -> leptos::prelude::AnyView;
+
+        assert_eq!(generated_paths(alpha_app as AppPointer), ["/alpha"]);
+        assert_eq!(generated_paths(beta_app as AppPointer), ["/beta"]);
     }
 }

@@ -63,6 +63,17 @@ pub(crate) enum StaticPathError {
     ResidualPercentEncoding,
 }
 
+/// Maximum residual decoding passes performed while proving that a decoded
+/// path cannot change meaning under further decoding.
+///
+/// Each pass is linear in the length of the probe, and an attacker-chosen
+/// chain such as `%252525…2541` only shrinks by two bytes per pass. Bounding
+/// the pass count keeps validation linear in the request path length instead
+/// of quadratic. Legitimate names converge within one or two passes, so any
+/// input that still decodes after this many passes is rejected as residual
+/// encoding.
+const MAX_RESIDUAL_DECODE_PASSES: usize = 8;
+
 /// Decodes and normalizes a relative static asset path.
 ///
 /// The input is the URI path remaining after the static route prefix and at
@@ -148,7 +159,7 @@ fn validate_decoded_bytes(decoded: &[u8]) -> Result<(), StaticPathError> {
 
 fn validate_residual_encoding(decoded: &str) -> Result<(), StaticPathError> {
     let mut probe = decoded.to_owned();
-    for _ in 0..=decoded.len() {
+    for _ in 0..MAX_RESIDUAL_DECODE_PASSES {
         let Some(next) = decode_residual_once(&probe)? else {
             return Ok(());
         };
@@ -424,6 +435,32 @@ mod tests {
             normalize_static_path("pkg/literal-%2541.txt"),
             Ok("pkg/literal-%41.txt".to_owned())
         );
+    }
+
+    #[test]
+    fn rejects_a_decoding_chain_longer_than_the_pass_budget() {
+        let chain = format!("pkg/%{}41", "25".repeat(64));
+
+        assert_rejected(&chain, StaticPathError::ResidualPercentEncoding);
+    }
+
+    #[test]
+    fn accepts_a_decoding_chain_inside_the_pass_budget() {
+        let chain = format!("pkg/%{}41", "25".repeat(2));
+
+        assert_eq!(normalize_static_path(&chain), Ok("pkg/%2541".to_owned()));
+    }
+
+    #[test]
+    fn long_decoding_chains_stay_linear_in_the_path_length() {
+        // Before the pass budget, each pass shrank the probe by two bytes, so
+        // this shape cost O(len^2). The budget keeps a hostile path from
+        // costing more than a handful of linear scans.
+        for length in [1_024usize, 16_384] {
+            let chain = format!("pkg/%{}41", "25".repeat(length / 2));
+
+            assert_rejected(&chain, StaticPathError::ResidualPercentEncoding);
+        }
     }
 
     #[test]

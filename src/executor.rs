@@ -412,16 +412,67 @@ mod p2 {
         spawn_failed: Cell<bool>,
     }
 
-    trait Poller {
-        fn poll(&self, pollables: &[&Pollable]) -> Vec<u32>;
+    trait Poller<P> {
+        fn poll(&self, pollables: &[&P]) -> Vec<u32>;
     }
 
     struct HostPoller;
 
-    impl Poller for HostPoller {
+    impl Poller<Pollable> for HostPoller {
         fn poll(&self, pollables: &[&Pollable]) -> Vec<u32> {
             poll(pollables)
         }
+    }
+
+    /// Polls every pending registration once and wakes the ready tasks.
+    ///
+    /// Returns `true` when at least one registration was polled, which the
+    /// executor reads as "the host may still make progress".
+    fn dispatch_ready<P>(
+        queue: &WaitQueue<P>,
+        poller: &impl Poller<P>,
+    ) -> bool {
+        let entries = queue.take_pending();
+        if entries.is_empty() {
+            return false;
+        }
+
+        let pollables = entries
+            .iter()
+            .map(|entry| &entry.pollable)
+            .collect::<Vec<_>>();
+        let ready = poller.poll(&pollables);
+        let mut ready_flags = vec![false; entries.len()];
+        for index in ready {
+            if let Some(is_ready) = usize::try_from(index)
+                .ok()
+                .and_then(|index| ready_flags.get_mut(index))
+            {
+                *is_ready = true;
+            }
+        }
+
+        let mut pending = Vec::new();
+        let mut task_wakers = Vec::new();
+        for (entry, is_ready) in entries.into_iter().zip(ready_flags) {
+            if is_ready {
+                if let Some(waker) = entry.registration.mark_ready() {
+                    task_wakers.push(waker);
+                }
+            } else if entry.registration.is_pending() {
+                pending.push(entry);
+            }
+        }
+
+        queue.requeue_pending(pending);
+
+        // Waking can synchronously poll user futures, so no executor or
+        // registration mutex may be held here.
+        for waker in task_wakers {
+            waker.wake();
+        }
+
+        true
     }
 
     impl Executor {
@@ -568,48 +619,8 @@ mod p2 {
             Ok(guest_progress || pollable_progress)
         }
 
-        fn poll_registered(&self, poller: &impl Poller) -> bool {
-            let entries = self.0.queue.take_pending();
-            if entries.is_empty() {
-                return false;
-            }
-
-            let pollables = entries
-                .iter()
-                .map(|entry| &entry.pollable)
-                .collect::<Vec<_>>();
-            let ready = poller.poll(&pollables);
-            let mut ready_flags = vec![false; entries.len()];
-            for index in ready {
-                if let Some(is_ready) = usize::try_from(index)
-                    .ok()
-                    .and_then(|index| ready_flags.get_mut(index))
-                {
-                    *is_ready = true;
-                }
-            }
-
-            let mut pending = Vec::new();
-            let mut task_wakers = Vec::new();
-            for (entry, is_ready) in entries.into_iter().zip(ready_flags) {
-                if is_ready {
-                    if let Some(waker) = entry.registration.mark_ready() {
-                        task_wakers.push(waker);
-                    }
-                } else if entry.registration.is_pending() {
-                    pending.push(entry);
-                }
-            }
-
-            self.0.queue.requeue_pending(pending);
-
-            // Waking can synchronously poll user futures, so no executor or
-            // registration mutex may be held here.
-            for waker in task_wakers {
-                waker.wake();
-            }
-
-            true
+        fn poll_registered(&self, poller: &impl Poller<Pollable>) -> bool {
+            dispatch_ready(&self.0.queue, poller)
         }
     }
 
@@ -895,6 +906,124 @@ mod p2 {
                 (error, dropped.load(Ordering::Relaxed)),
                 (ExecutorError::Stalled, true)
             );
+        }
+
+        struct ScriptedPoller(Vec<u32>);
+
+        impl<P> Poller<P> for ScriptedPoller {
+            fn poll(&self, _: &[&P]) -> Vec<u32> {
+                self.0.clone()
+            }
+        }
+
+        #[test]
+        fn ready_registrations_wake_their_task_and_leave_the_queue() {
+            let queue = WaitQueue::<&'static str>::default();
+            let counter = Arc::new(CountingWake(AtomicUsize::new(0)));
+            let waker = Waker::from(counter.clone());
+            let first = queue
+                .register("first", &waker)
+                .expect("registration should succeed");
+            let second = queue
+                .register("second", &waker)
+                .expect("registration should succeed");
+
+            let progressed = dispatch_ready(&queue, &ScriptedPoller(vec![0]));
+
+            assert!(progressed);
+            assert_eq!(first.status(), RegistrationStatus::Ready);
+            assert_eq!(second.status(), RegistrationStatus::Pending);
+            assert_eq!(counter.0.load(Ordering::Relaxed), 1);
+            assert_eq!(queue.len(), 1);
+        }
+
+        #[test]
+        fn out_of_range_ready_indices_are_ignored() {
+            let queue = WaitQueue::<&'static str>::default();
+            let registration = queue
+                .register("only", &noop_waker())
+                .expect("registration should succeed");
+
+            let progressed =
+                dispatch_ready(&queue, &ScriptedPoller(vec![7, u32::MAX]));
+
+            assert!(progressed);
+            assert_eq!(registration.status(), RegistrationStatus::Pending);
+            assert_eq!(queue.len(), 1);
+        }
+
+        #[test]
+        fn an_empty_queue_reports_no_host_progress() {
+            let queue = WaitQueue::<&'static str>::default();
+
+            assert!(!dispatch_ready(&queue, &ScriptedPoller(vec![0])));
+        }
+
+        #[test]
+        fn canceled_registrations_are_never_woken_or_requeued() {
+            let queue = WaitQueue::<&'static str>::default();
+            let counter = Arc::new(CountingWake(AtomicUsize::new(0)));
+            let waker = Waker::from(counter.clone());
+            let registration = queue
+                .register("canceled", &waker)
+                .expect("registration should succeed");
+            registration.cancel();
+
+            let progressed = dispatch_ready(&queue, &ScriptedPoller(vec![0]));
+
+            assert!(!progressed);
+            assert_eq!(registration.status(), RegistrationStatus::Canceled);
+            assert_eq!(counter.0.load(Ordering::Relaxed), 0);
+            assert_eq!(queue.len(), 0);
+        }
+
+        #[test]
+        fn preemptive_mode_runs_queued_guest_work_one_task_at_a_time() {
+            let executor = Executor::with_queue(
+                Mode::Preemptive,
+                Arc::new(WaitQueue::default()),
+            );
+            let completed = Rc::new(Cell::new(0_usize));
+            for _ in 0..2 {
+                let completed = Rc::clone(&completed);
+                executor.spawn_local(Box::pin(async move {
+                    completed.set(completed.get() + 1);
+                }));
+            }
+
+            let first = executor
+                .poll_once()
+                .expect("the first task should be runnable");
+            let after_first = completed.get();
+            let second = executor
+                .poll_once()
+                .expect("the second task should be runnable");
+
+            assert_eq!(
+                (first, after_first, second, completed.get()),
+                (true, 1, true, 2)
+            );
+        }
+
+        #[test]
+        fn stalled_mode_drains_every_runnable_task_in_one_poll() {
+            let executor = Executor::with_queue(
+                Mode::Stalled,
+                Arc::new(WaitQueue::default()),
+            );
+            let completed = Rc::new(Cell::new(0_usize));
+            for _ in 0..3 {
+                let completed = Rc::clone(&completed);
+                executor.spawn_local(Box::pin(async move {
+                    completed.set(completed.get() + 1);
+                }));
+            }
+
+            let progressed = executor
+                .poll_once()
+                .expect("draining the pool should not fail");
+
+            assert_eq!((progressed, completed.get()), (false, 3));
         }
 
         #[test]
