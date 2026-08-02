@@ -1248,11 +1248,25 @@ fn assert_middleware_response_headers(headers: &reqwest::header::HeaderMap) {
         .and_then(|value| value.to_str().ok())
         .expect("middleware response should include a request ID");
     assert!(!request_id.is_empty() && request_id.len() <= 128);
+    // Both this crate and the external `security-headers` component emit
+    // `x-content-type-options`. If that component appends rather than sets,
+    // the composed stack sends two field lines. A browser still honours it —
+    // WHATWG Fetch joins repeated lines and compares the first comma-separated
+    // value — but it is a duplicate nobody intended, and `HeaderMap::get`
+    // returns only the first value, so the assertion below cannot see it.
+    // Counting makes the composed lane answer the question by itself instead
+    // of requiring someone to curl the stack by hand.
+    let content_type_options = headers
+        .get_all("x-content-type-options")
+        .iter()
+        .map(|value| value.to_str().unwrap_or_default())
+        .collect::<Vec<_>>();
     assert_eq!(
-        headers
-            .get("x-content-type-options")
-            .and_then(|value| value.to_str().ok()),
-        Some("nosniff")
+        content_type_options,
+        ["nosniff"],
+        "expected exactly one x-content-type-options; more than one means the \
+         guest and the security-headers component are both emitting it and \
+         that component appends rather than sets"
     );
     assert_eq!(
         headers
