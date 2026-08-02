@@ -18,6 +18,13 @@ env:
   CARGO_NET_RETRY: "10"
   CARGO_TERM_COLOR: always
 
+# `shell: bash` runs every step with `-eo pipefail`. The default GitHub shell
+# is `bash -e`, which reports a pipeline's exit status as its LAST command's,
+# so a gate piped into `tee` could never fail the build.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   quality:
     name: Stable / ${{ matrix.runtime }}
@@ -338,6 +345,7 @@ jobs:
         run: |
           python3 scripts/test_audit_middleware_manifests.py
           python3 scripts/test_verify_artifact_set.py
+          python3 scripts/test_soak_gates.py
 
       - name: Build and inspect final-WASI terminal component
         env:

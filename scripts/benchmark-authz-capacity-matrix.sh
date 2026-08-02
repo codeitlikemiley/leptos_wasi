@@ -31,6 +31,13 @@ for profile in "${PROFILES[@]}"; do
 done
 mkdir -p "${OUTPUT_ROOT}"
 
+results=()
+floor_failures=()
+lowest_rate="${RATES[0]}"
+for rate in "${RATES[@]}"; do
+  ((rate < lowest_rate)) && lowest_rate="${rate}"
+done
+
 for profile in "${PROFILES[@]}"; do
   coarse_flag=0
   if [[ "${profile}" == "coarse" ]]; then
@@ -57,7 +64,24 @@ for profile in "${PROFILES[@]}"; do
       >"${run_dir}/runner.log" 2>&1
     status=$?
     printf '%s\n' "${status}" >"${run_dir}/exit-status"
+    results+=("${profile} ${rate} ${status}")
+    if ((rate == lowest_rate)) && ((status != 0)); then
+      floor_failures+=("${profile} at ${rate} rps")
+    fi
   done
 done
 
+# A capacity sweep is meant to break at high offered rates - that is how the
+# knee is found - so a failure above the floor is data, not an error. A
+# failure at the LOWEST rate means nothing ran at all, which is.
+echo
+echo "capacity matrix results (profile rate exit-status):"
+printf '  %s\n' "${results[@]}"
 echo "capacity matrix written to ${OUTPUT_ROOT}"
+
+if ((${#floor_failures[@]} > 0)); then
+  echo >&2
+  echo "capacity matrix failed at its lowest offered rate: ${floor_failures[*]}" >&2
+  echo "this is not a capacity knee; no useful curve was produced" >&2
+  exit 1
+fi

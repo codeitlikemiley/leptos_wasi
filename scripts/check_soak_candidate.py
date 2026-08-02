@@ -58,12 +58,14 @@ def main() -> int:
         else:
             final_rss_growth = value
             rss_start = rss.get("start")
-            proportional_limit = (
-                int(float(rss_start) * 0.10)
-                if isinstance(rss_start, (int, float))
-                else 0
-            )
-            memory_limit = max(memory_limit, proportional_limit)
+            # Hold a process to whichever allowance is TIGHTER: the absolute
+            # ceiling, or a proportion of where it started. A small process
+            # would never reach the absolute ceiling, so the proportional
+            # bound is what makes a small leak visible. When the starting
+            # sample is unavailable there is nothing to be proportional to,
+            # so the absolute ceiling stands alone.
+            if isinstance(rss_start, (int, float)) and rss_start > 0:
+                memory_limit = min(memory_limit, int(float(rss_start) * 0.10))
             if final_rss_growth > memory_limit:
                 errors.append(
                     f"candidate RSS grew {final_rss_growth} KiB in the final quarter "

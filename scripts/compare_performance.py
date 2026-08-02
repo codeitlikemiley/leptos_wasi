@@ -29,6 +29,11 @@ def main() -> int:
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--max-regression", type=float, default=0.05)
     parser.add_argument("--max-final-rss-growth-kib", type=int, default=32768)
+    # Reported always, enforced only when a limit is supplied. The sibling
+    # `compare_middleware_profiles.py` gates throughput at 10%; this lane has
+    # no measured run-to-run spread yet, so the number is collected first and
+    # the limit is set from evidence rather than guessed.
+    parser.add_argument("--max-throughput-regression", type=float, default=None)
     args = parser.parse_args()
 
     baseline = read_result(args.baseline)
@@ -65,8 +70,16 @@ def main() -> int:
     throughput_change = (
         (candidate_rps / baseline_rps) - 1.0 if baseline_rps else 0.0
     )
+    throughput_limit = args.max_throughput_regression
+    if throughput_limit is not None and baseline_rps:
+        if candidate_rps < baseline_rps * (1.0 - throughput_limit):
+            errors.append(
+                f"throughput regressed {-throughput_change * 100.0:.2f}% "
+                f"(allowed {throughput_limit * 100.0:.2f}%)"
+            )
 
     rss = candidate.get("rss_kib")
+    memory_limit = args.max_final_rss_growth_kib
     if not isinstance(rss, dict):
         errors.append("candidate RSS samples are missing")
         final_rss_growth = None
@@ -76,18 +89,20 @@ def main() -> int:
             errors.append("candidate final-quarter RSS growth is unavailable")
         else:
             rss_start = rss.get("start")
-            proportional_limit = (
-                int(float(rss_start) * 0.10)
-                if isinstance(rss_start, (int, float))
-                else 0
-            )
-            memory_limit = max(args.max_final_rss_growth_kib, proportional_limit)
-        if isinstance(final_rss_growth, int) and final_rss_growth > memory_limit:
-            errors.append(
-                "candidate RSS grew "
-                f"{final_rss_growth} KiB in the final quarter "
-                f"(allowed {memory_limit} KiB)"
-            )
+            # Whichever allowance is TIGHTER. A small process would never
+            # reach the absolute ceiling, so the proportional bound is what
+            # makes a small leak visible. Without a starting sample there is
+            # nothing to be proportional to, so the ceiling stands alone.
+            if isinstance(rss_start, (int, float)) and rss_start > 0:
+                memory_limit = min(
+                    memory_limit, int(float(rss_start) * 0.10)
+                )
+            if final_rss_growth > memory_limit:
+                errors.append(
+                    "candidate RSS grew "
+                    f"{final_rss_growth} KiB in the final quarter "
+                    f"(allowed {memory_limit} KiB)"
+                )
 
     summary = {
         "baseline": str(args.baseline),
@@ -97,8 +112,15 @@ def main() -> int:
             "baseline_requests_per_second": baseline_rps,
             "candidate_requests_per_second": candidate_rps,
             "change_percent": throughput_change * 100.0,
+            "enforced": throughput_limit is not None,
+            "max_regression_percent": (
+                None
+                if throughput_limit is None
+                else throughput_limit * 100.0
+            ),
         },
         "candidate_final_quarter_rss_growth_kib": final_rss_growth,
+        "max_final_rss_growth_kib": memory_limit,
         "passed": not errors,
         "errors": errors,
     }
