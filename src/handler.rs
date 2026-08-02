@@ -357,10 +357,35 @@ fn trace_policy_rejection(preview: &'static str, error: &RequestPolicyError) {
     );
 }
 
+/// Builds one of the crate's own error responses.
+///
+/// The body is always a short ASCII sentence, so it is declared as
+/// `text/plain; charset=utf-8`: a body with no declared type is exactly the
+/// case where content sniffing is dangerous.
 fn plain_response(status: StatusCode, message: impl Into<Bytes>) -> Response {
     let mut response = http::Response::new(Body::Sync(message.into()));
     *response.status_mut() = status;
+    response.headers_mut().insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
     response.into()
+}
+
+/// Applies `x-content-type-options: nosniff` unless the response already
+/// carries a value for it.
+///
+/// Insert-if-absent mirrors
+/// [`ExtendResponse::set_default_content_type`](crate::integration::ExtendResponse::set_default_content_type):
+/// an application that deliberately set its own value through
+/// [`ResponseOptions`] keeps it, because `extend_response` has already merged
+/// those headers in by the time this runs.
+fn set_default_nosniff(response: &mut Response) {
+    let name = http::header::HeaderName::from_static(X_CONTENT_TYPE_OPTIONS);
+    let headers = response.0.headers_mut();
+    if !headers.contains_key(&name) {
+        headers.insert(name, HeaderValue::from_static("nosniff"));
+    }
 }
 
 type ServerFnHandler = Box<
@@ -652,12 +677,8 @@ impl HandlerCore {
                         HeaderValue::from_static("application/octet-stream")
                     }),
                 );
-                response.headers_mut().insert(
-                    http::header::HeaderName::from_static(
-                        X_CONTENT_TYPE_OPTIONS,
-                    ),
-                    HeaderValue::from_static("nosniff"),
-                );
+                // `nosniff` is applied centrally in `HandlerCore::render`,
+                // which every static response also funnels through.
                 if let Some(length) = original_length
                     && let Ok(length) =
                         HeaderValue::from_str(&length.to_string())
@@ -801,6 +822,11 @@ impl HandlerCore {
         let mut response = response.unwrap_or_else(|| {
             plain_response(StatusCode::NOT_FOUND, "404 not found")
         });
+        // Single insertion point for every response this crate emits. It sits
+        // after the `extend_response` tail, so an application value merged from
+        // `ResponseOptions` is already present and wins, and after the 404
+        // fallback, which never reaches that tail.
+        set_default_nosniff(&mut response);
         if is_head {
             *response.0.body_mut() = Body::Sync(Bytes::new());
         } else if !response.0.headers().contains_key(CONTENT_LENGTH)
@@ -1506,6 +1532,15 @@ pub mod wasip2 {
 
     fn send_internal_error(response_out: ResponseOutparam) {
         let headers = wasi::http::types::Headers::new();
+        // This response is built outside `HandlerCore::render`, so the
+        // centralized default cannot reach it. Its body is a typeless ASCII
+        // sentence, which is exactly the case content sniffing exploits.
+        let _ = headers.append(
+            CONTENT_TYPE.as_str(),
+            b"text/plain; charset=utf-8".to_vec().as_ref(),
+        );
+        let _ = headers
+            .append(X_CONTENT_TYPE_OPTIONS, b"nosniff".to_vec().as_ref());
         let response = OutgoingResponse::new(headers);
         if response
             .set_status_code(StatusCode::INTERNAL_SERVER_ERROR.as_u16())
@@ -2637,5 +2672,287 @@ mod tests {
                 "an islands-router navigation must not emit suspense stream markers, got: {navigated}"
             );
         }
+    }
+    fn header_of<'a>(response: &'a Response, name: &str) -> Option<&'a str> {
+        response
+            .0
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+    }
+
+    fn nosniff_of(response: &Response) -> Option<&str> {
+        header_of(response, X_CONTENT_TYPE_OPTIONS)
+    }
+
+    fn static_asset_core(method: Method) -> HandlerCore {
+        HandlerCore::new(
+            Request::builder()
+                .method(method)
+                .uri("/static/app.js")
+                .body(Bytes::new())
+                .expect("test request should be valid"),
+            HandlerConfig::default(),
+        )
+        .static_files_handler("/static", |_| {
+            Some(Body::Sync(Bytes::from_static(b"console.log(1)")))
+        })
+        .expect("static registration should succeed")
+    }
+
+    async fn render_plain(core: HandlerCore) -> Response {
+        core.render(|| view! { "unused" }, || {}).await
+    }
+
+    /// Covers the shape an SSR render reaches `render`'s tail in: a response
+    /// that already carries the `text/html; charset=utf-8` installed by
+    /// `set_default_content_type` inside `Response::from_app`.
+    ///
+    /// This drives the preset arm rather than the SSR arm, so it pins the
+    /// content-type interaction but not SSR-specific precedence. That is not a
+    /// coverage hole: the default is applied once, after the shared
+    /// `extend_response` tail, so every arm that produced a response reaches
+    /// it by the same path. `application_nosniff_override_wins` proves the
+    /// precedence itself through the server-function arm.
+    #[tokio::test(flavor = "current_thread")]
+    async fn html_responses_gain_nosniff_and_keep_their_content_type() {
+        let mut html = http::Response::new(Body::Sync(Bytes::from_static(
+            b"<!DOCTYPE html><html></html>",
+        )));
+        html.headers_mut().insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        );
+        let core = HandlerCore::new(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/rendered")
+                .body(Bytes::new())
+                .expect("test request should be valid"),
+            HandlerConfig::default(),
+        )
+        .with_preset(html.into(), "ssr");
+
+        let response = render_plain(core).await;
+
+        assert_eq!(response.0.status(), StatusCode::OK);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/html; charset=utf-8")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn preset_responses_carry_nosniff() {
+        let core = HandlerCore::new(
+            Request::new(Bytes::new()),
+            HandlerConfig::default(),
+        )
+        .with_preset(plain_response(StatusCode::OK, "selected"), "test");
+
+        let response = render_plain(core).await;
+
+        assert_eq!(response.0.status(), StatusCode::OK);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/plain; charset=utf-8")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn server_fn_responses_carry_nosniff() {
+        let mut core = HandlerCore::new(
+            Request::builder()
+                .uri("/api/echo")
+                .body(Bytes::new())
+                .expect("test request should be valid"),
+            HandlerConfig::default(),
+        );
+        core.server_fn = Some(Box::new(|_| {
+            Box::pin(async {
+                let mut response =
+                    http::Response::new(Body::Sync(Bytes::from_static(b"{}")));
+                response.headers_mut().insert(
+                    CONTENT_TYPE,
+                    HeaderValue::from_static("application/json"),
+                );
+                response
+            })
+        }));
+
+        let response = render_plain(core).await;
+
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("application/json")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn not_found_fallback_carries_nosniff() {
+        let core = HandlerCore::new(
+            Request::builder()
+                .uri("/missing")
+                .body(Bytes::new())
+                .expect("test request should be valid"),
+            HandlerConfig::default(),
+        );
+
+        let response = render_plain(core).await;
+
+        assert_eq!(response.0.status(), StatusCode::NOT_FOUND);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/plain; charset=utf-8")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn policy_rejections_carry_nosniff() {
+        let core = HandlerCore::new(
+            Request::new(Bytes::new()),
+            HandlerConfig::default(),
+        )
+        .with_preset(
+            policy_response(&RequestPolicyError::BodyTooLarge { limit: 16 }),
+            "request_policy",
+        );
+
+        let response = render_plain(core).await;
+
+        assert_eq!(response.0.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/plain; charset=utf-8")
+        );
+    }
+
+    /// The server-function body guard builds its own 413 and returns it
+    /// through the `server_fn` arm, so it reaches the wire by a different path
+    /// than the request-policy 413 injected as a preset.
+    #[tokio::test(flavor = "current_thread")]
+    async fn server_fn_body_limit_rejection_carries_nosniff() {
+        let limit = 8_usize;
+        let mut core = HandlerCore::new(
+            Request::builder()
+                .uri("/api/upload")
+                .body(Bytes::from_static(b"oversized payload"))
+                .expect("test request should be valid"),
+            HandlerConfig::default().with_max_request_body_size(limit),
+        );
+        core.server_fn = Some(Box::new(move |request| {
+            Box::pin(async move {
+                let (_, bytes) = request.into_parts();
+                assert!(bytes.len() > limit, "fixture must exceed the limit");
+                plain_response(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    format!("request body exceeds limit of {limit} bytes"),
+                )
+                .0
+            })
+        }));
+
+        let response = render_plain(core).await;
+
+        assert_eq!(response.0.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/plain; charset=utf-8")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn static_method_not_allowed_carries_nosniff() {
+        let response = render_plain(static_asset_core(Method::POST)).await;
+
+        assert_eq!(response.0.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(header_of(&response, "allow"), Some("GET, HEAD"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/plain; charset=utf-8")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn static_files_still_carry_nosniff_after_centralisation() {
+        let response = render_plain(static_asset_core(Method::GET)).await;
+
+        assert_eq!(response.0.status(), StatusCode::OK);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert!(
+            header_of(&response, "content-type")
+                .is_some_and(|value| value.contains("javascript"))
+        );
+        assert_eq!(
+            response
+                .0
+                .headers()
+                .get_all(X_CONTENT_TYPE_OPTIONS)
+                .iter()
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn head_responses_keep_nosniff() {
+        let response = render_plain(static_asset_core(Method::HEAD)).await;
+
+        assert_eq!(response.0.status(), StatusCode::OK);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(header_of(&response, "content-length"), Some("14"));
+        assert!(
+            matches!(response.0.body(), Body::Sync(bytes) if bytes.is_empty())
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn application_nosniff_override_wins() {
+        let mut core = HandlerCore::new(
+            Request::builder()
+                .uri("/api/echo")
+                .body(Bytes::new())
+                .expect("test request should be valid"),
+            HandlerConfig::default(),
+        );
+        core.server_fn = Some(Box::new(|_| {
+            Box::pin(async {
+                http::Response::new(Body::Sync(Bytes::from_static(b"ok")))
+            })
+        }));
+
+        let response = core
+            .render(
+                || view! { "unused" },
+                || {
+                    use_context::<ResponseOptions>()
+                        .expect("response options should be installed")
+                        .insert_header(
+                            http::header::HeaderName::from_static(
+                                X_CONTENT_TYPE_OPTIONS,
+                            ),
+                            HeaderValue::from_static("off"),
+                        );
+                },
+            )
+            .await;
+
+        assert_eq!(nosniff_of(&response), Some("off"));
+        assert_eq!(
+            response
+                .0
+                .headers()
+                .get_all(X_CONTENT_TYPE_OPTIONS)
+                .iter()
+                .count(),
+            1
+        );
     }
 }
