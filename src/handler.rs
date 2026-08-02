@@ -485,7 +485,8 @@ struct HandlerCore {
     trace_route_class: Option<&'static str>,
 }
 
-type CachedRoutes =
+/// A discovered route list, or the first registration error that rejects it.
+type DiscoveredRoutes =
     Result<Vec<(String, RouteSpec, RouteListing)>, RegistrationError>;
 
 impl HandlerCore {
@@ -966,7 +967,7 @@ where
 fn registered_routes<IV, AppFn, ContextFn>(
     app_fn: &AppFn,
     discovery_context: &ContextFn,
-) -> CachedRoutes
+) -> DiscoveredRoutes
 where
     IV: IntoView + 'static,
     AppFn: Fn() -> IV + 'static + Send + Clone,
@@ -980,7 +981,7 @@ where
     // route list to each request. Measured on `/api/get_test`, discovery plus
     // registration accounts for roughly 183 us of a 1054 us request, none of
     // which the cache was removing.
-    let generated: CachedRoutes = {
+    let generated: DiscoveredRoutes = {
         let owner = Owner::new_root(Some(Arc::new(SsrSharedContext::new())));
         let routes = owner
             .with(|| {

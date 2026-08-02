@@ -168,6 +168,41 @@ the exact broker destination in a custom Wasmtime embedding or an outbound
 network sandbox before production. The local loopback runner validates the
 protocol and fail-closed behavior, not network egress isolation.
 
+### Component instance reuse
+
+`wasmtime serve` bounds how many requests one component instance serves with
+`--max-instance-reuse-count`, and it **defaults to 1 for WASIp2 and 128 for
+WASIp3**. A Preview 2 deployment therefore instantiates a fresh component for
+every request unless it opts out, which measures as roughly 107 us of avoidable
+work per request — about **14% of throughput** at low concurrency. That is
+larger than any single change this crate has made to its own request path.
+
+Raising it is the highest-leverage tuning available to a Preview 2 deployment:
+
+```
+wasmtime serve --max-instance-reuse-count 128 app.wasm
+```
+
+The pooling allocator (`-O pooling-allocator=y`) was measured alongside it and
+is indistinguishable from noise, with or without reuse. It is not part of this
+recommendation.
+
+Reuse is not free of consequences, and the consequence is the reason to test
+before adopting it. A reused instance keeps its guest statics between requests,
+so anything an application stores in a `static` or `thread_local` now outlives
+the request that created it. This crate's own statics — the Preview 2 executor
+cell and the pollable queue — are designed to be reused and pass the end-to-end
+suite under `--max-instance-reuse-count 128`, covering server functions, static
+assets, SSR, islands, redirects, and a panicking server function. An
+application that keeps request-scoped state in a static will leak it between
+requests, and no test in this repository can detect that for you. Run your own
+suite under reuse before enabling it; `LEPTOS_WASI_MAX_INSTANCE_REUSE` wires
+the flag into this repository's e2e tests for that purpose.
+
+Other hosts expose the same trade-off under different names. Reuse also changes
+what a cold start means for observability: a latency histogram under reuse has
+a small population of instantiating requests rather than a uniform floor.
+
 WASIp2 uses a single-threaded cooperative executor. Initialize it through
 `init_wasip2_executor`, which caches the thread-local executor and rejects a
 mode mismatch. Treat `ExecutorError::Stalled` as an operational failure and
