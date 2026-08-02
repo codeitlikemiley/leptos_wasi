@@ -67,11 +67,43 @@ earlier run reported success unconditionally because the checker was piped into
 | 1 | Wasmtime P2 | +8.59% | +8.55% | -6.62% |
 | 2 | Wasmtime P2 | — | — | -7.11% |
 
-The two throughput samples differ by half a percentage point, so the
-regression reproduces rather than being runner variance. It is measured
-against the 0.3.2 worktree, and both sides pin identical third-party
-dependency versions in `tests/test-app/Cargo.lock`, so it is attributable to
-this crate rather than to upstream drift. Locating it is open work.
+The two throughput samples differ by half a percentage point, and both sides
+pin identical third-party dependency versions in `tests/test-app/Cargo.lock`,
+so the delta is not upstream drift. Locating it is open work, and the
+paragraph below is a caveat on how confidently it can be attributed at all.
+
+### What a single paired run can and cannot show
+
+An attempt to reproduce the delta locally, on a different machine, ran five
+alternating 60-second pairs of the same two guests at concurrency 100:
+
+| Pair | 0.3.2 rps | 0.4 rps | delta |
+|---:|---:|---:|---:|
+| 1 | 1464.7 | 1546.3 | +5.57% |
+| 2 | 1620.1 | 1536.8 | -5.14% |
+| 3 | 1573.6 | 1417.1 | -9.95% |
+| 4 | 1519.3 | 1507.2 | -0.79% |
+| 5 | 1436.8 | 1474.1 | +2.60% |
+
+The per-pair delta changes sign, and the mean is -1.75%. More telling, the
+*same* binary measured across those runs spans 12.8% (baseline) and 9.1%
+(candidate), so on that machine the noise is larger than the effect and the
+comparison cannot resolve it.
+
+That does not refute the CI figure. Noise falls with the square root of the
+sample window, so a 12% spread over 60 seconds corresponds to roughly 4% over
+CI's 600 seconds, which is below the ~7% CI reports. The CI number is
+plausibly real.
+
+It does establish a limit on the method. The soak runs the baseline once and
+the candidate once, in that fixed order, with no replication and no dispersion
+estimate. A design like that cannot separate a code regression from anything
+that drifts monotonically across the job - thermal behaviour, a co-tenant
+ramping up - because whatever runs second is always the candidate. Before the
+delta is attributed to a specific change, the comparison needs either
+alternated ordering or repeated pairs compared by median. Both cost CI time on
+a lane already close to its 35-minute timeout, so that is a deliberate
+trade-off rather than an oversight to fix silently.
 
 The absolute Wasmtime P3 lane measured 87.66 ms total p99 and -168 to +88 KiB
 final-quarter RSS growth across runs. Its budget is set from that observation
