@@ -3,9 +3,7 @@
 //! Shared Leptos request handling and runtime-specific WASI HTTP adapters.
 
 use std::{
-    any::TypeId,
-    cell::RefCell,
-    collections::{BTreeSet, HashMap},
+    collections::BTreeSet,
     future::Future,
     marker::PhantomData,
     pin::Pin,
@@ -452,19 +450,8 @@ struct HandlerCore {
     trace_route_class: Option<&'static str>,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct RouteCacheKey {
-    app: TypeId,
-    context: TypeId,
-}
-
 type CachedRoutes =
     Result<Vec<(String, RouteSpec, RouteListing)>, RegistrationError>;
-
-thread_local! {
-    static ROUTE_CACHE: RefCell<HashMap<RouteCacheKey, CachedRoutes>> =
-        RefCell::new(HashMap::new());
-}
 
 impl HandlerCore {
     fn new(req: Request<Bytes>, config: HandlerConfig) -> Self {
@@ -873,23 +860,14 @@ where
     AppFn: Fn() -> IV + 'static + Send + Clone,
     ContextFn: Fn() + 'static + Send + Clone,
 {
-    let key = RouteCacheKey {
-        app: TypeId::of::<AppFn>(),
-        context: TypeId::of::<ContextFn>(),
-    };
-    // A `TypeId` identifies behavior only when the type has exactly one
-    // inhabitant. Zero-sized function items and non-capturing closures qualify;
-    // function pointers and capturing closures do not, and two distinct
-    // applications coerced to the same `fn()` type would otherwise share one
-    // cached route list.
-    let cacheable = size_of::<AppFn>() == 0 && size_of::<ContextFn>() == 0;
-    if cacheable
-        && let Some(cached) =
-            ROUTE_CACHE.with(|cache| cache.borrow().get(&key).cloned())
-    {
-        return cached;
-    }
-
+    // Route discovery is deliberately uncached. Both supported hosts
+    // (`wasmtime serve` and Spin) instantiate a fresh component per request,
+    // so any in-guest cache starts empty on every lookup and is discarded with
+    // the instance. The previous thread-local cache never returned a hit in
+    // production; it only added a map allocation and a full deep clone of the
+    // route list to each request. Measured on `/api/get_test`, discovery plus
+    // registration accounts for roughly 183 us of a 1054 us request, none of
+    // which the cache was removing.
     let generated: CachedRoutes = {
         let owner = Owner::new_root(Some(Arc::new(SsrSharedContext::new())));
         let routes = owner
@@ -924,11 +902,6 @@ where
             .collect()
     };
 
-    if cacheable {
-        ROUTE_CACHE.with(|cache| {
-            cache.borrow_mut().insert(key, generated.clone());
-        });
-    }
     generated
 }
 
@@ -2117,7 +2090,13 @@ mod tests {
     }
 
     #[test]
-    fn validated_route_lists_are_cached_by_application_type() {
+    fn route_discovery_runs_once_per_registration() {
+        // Deliberately uncached. Both supported hosts instantiate a fresh
+        // component per request, so a cache keyed on the application type
+        // could only ever hit within a single request - and discovery runs
+        // once per request, so it never hit at all. Pinning the count at one
+        // generation per registration keeps a future cache from being
+        // reintroduced on the assumption that it pays for itself.
         ROUTE_GENERATIONS.store(0, Ordering::Relaxed);
         for _ in 0..2 {
             let core = HandlerCore::new(
@@ -2134,7 +2113,7 @@ mod tests {
             assert!(result.is_ok());
         }
 
-        assert_eq!(ROUTE_GENERATIONS.load(Ordering::Relaxed), 1);
+        assert_eq!(ROUTE_GENERATIONS.load(Ordering::Relaxed), 2);
     }
 
     #[test]
@@ -2497,8 +2476,12 @@ mod tests {
             .collect()
     }
 
+    /// Two applications coerced to the same `fn()` type are indistinguishable
+    /// by `TypeId`, which is what made the removed route cache unsound to key
+    /// that way. Discovery is per-registration now, so each gets its own list;
+    /// this keeps that guarantee pinned independently of how routes are built.
     #[test]
-    fn function_pointer_applications_do_not_share_a_cached_route_list() {
+    fn function_pointer_applications_do_not_share_a_route_list() {
         type AppPointer = fn() -> leptos::prelude::AnyView;
 
         assert_eq!(generated_paths(alpha_app as AppPointer), ["/alpha"]);
