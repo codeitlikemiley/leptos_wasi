@@ -25,6 +25,20 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Route discovery no longer runs on requests that cannot use the SSR router. A
+  server function, a static asset, and an already-selected response all resolve
+  without it, but discovery renders the whole application to extract its
+  `<Routes/>` — measured at 183 µs of a 1054 µs request, and paid on every
+  request because both supported hosts instantiate a fresh component each time.
+  0.3.2 skipped this and 0.4.0 stopped doing so; the results were generated and
+  then discarded. Restoring the skip recovers 7.35pp on server-function and
+  static-asset requests (13.13% → 5.78% slower than 0.3.2, paired, n=5), and
+  leaves requests that do consult the router unchanged, as expected.
+
+  This trades away a validation step: an application reached only through
+  server functions and static assets no longer rejects a malformed route table
+  at request time. `leptos_wasi::validate_route_table` is the replacement — call
+  it once from a test to apply exactly the rules the request path applies.
 - Every soak lane now compares against a baseline instead of only an absolute
   ceiling. The WASIp3 lane had no baseline at all — WASIp3 postdates 0.3.2, so
   there was nothing historical to compare it to — and its 150 ms ceiling left
@@ -62,6 +76,12 @@ All notable changes to this project will be documented in this file.
   timer instead of blocking on it, and Preview 3 races the length-limited
   collect against the same duration, so both previews apply one whole-body
   budget rather than a per-chunk one.
+- `validate_route_table`, which checks an application's route table without
+  serving a request. Route discovery is skipped on requests that cannot use the
+  SSR router, so a route table reached only through server functions and static
+  assets is never validated in production; calling this once from a test closes
+  that gap. It shares its implementation with the request path, so the rules a
+  deployment enforces and the rules a test suite checks cannot drift apart.
 - Unit coverage for the previously untested request, response, redirect, and
   executor surfaces: WASI Preview 2 method and scheme conversion, `Accept`
   negotiation, referrer and `Location` sanitization, `utils::redirect`,

@@ -21,9 +21,16 @@ current candidate using the same resolved dependencies and probe.
 
 The candidate stayed inside the accepted five-percent p99 regression budget in
 all four comparisons. A first implementation regenerated Leptos routes on
-every server-function request and failed this gate; 0.4 now caches the
-type-stable generated route list while continuing to validate exclusions,
-duplicate expansions, unsupported static SSR, and registration errors.
+every server-function request and failed this gate.
+
+The fix recorded here was a type-keyed cache of the generated route list. That
+description is no longer accurate, and the correction is instructive: the cache
+was a `thread_local!`, and both supported hosts instantiate a fresh component
+per request, so it started empty on every lookup and never returned a hit in
+production. It has been removed. Route discovery is now skipped outright on
+requests that cannot use the SSR router, which is what 0.3.2 did and what this
+paragraph originally set out to achieve. See
+[Where the 0.4 overhead comes from](#where-the-04-overhead-comes-from).
 
 RSS was sampled once per second. Candidate start to end values were
 102,416 to 34,208 KiB (Wasmtime P2), 17,120 to 17,120 KiB (Spin P2),
@@ -239,10 +246,36 @@ that is a small share of the response, and the deployment target in this
 document is unaffected. It is documented because a fixed per-request cost is
 worth knowing about, not because it is user-visible.
 
-The remaining lever is the 183 us registration stage: `generate_routes` re-runs
-on every fresh instance, and moving discovery to build time would remove it.
-That is an API and design change rather than a patch, and it is not attempted
-here.
+### The registration stage, resolved
+
+The 183 us registration stage turned out not to need moving to build time. It
+needed not to run.
+
+0.3.2 returned early from route generation whenever the request was already
+claimed, under the comment "if we matched a server function, we do not need to
+go through all of that". `d1f9308` removed that early return: 0.4 ran full
+discovery and then dropped every entry through a `if shortcut { continue; }`
+in the registration loop.
+
+Restoring the skip, measured paired against 0.3.2 over five reps:
+
+| Endpoint | 0.4 | with the skip | recovered |
+|---|---:|---:|---:|
+| `/api/get_test` (claimed) | -13.13% | -5.78% | +7.35pp |
+| `/definitely-not-a-route` (uses the router) | -3.71% | -2.45% | +1.26pp |
+
+The asymmetry is the evidence. A 404 has to consult the router to know it is a
+404, so it discovers routes in both versions and barely moves - within its own
+error bar. A uniform improvement across both would have meant the change was
+doing something other than what it claims.
+
+This is also what makes the two-tier structure above fall out: claimed requests
+regress by roughly the discovery cost, and unclaimed ones show only the
+residual. About 5.8% remains on claimed requests and is still unexplained.
+
+Build-time route generation is therefore only worth considering for genuine SSR
+requests, which do need the router on every fresh instance. That is a narrower
+prize than it appeared before the skip was restored.
 
 ## Reproducing release evidence
 
