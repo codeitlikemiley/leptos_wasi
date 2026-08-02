@@ -170,7 +170,22 @@ broker, while ingress changed by -192 KiB. Diagnostics localize the remaining
 failure to sustained terminal/native transport pressure, not an admission
 queue leak. `scripts/check-trusted-load-soak.py` now writes `summary.json` and
 enforces duration, failures, all three 25 ms p99 limits, final process
-liveness, and `max(32 MiB, 10%)` per-process final-quarter RSS growth.
+liveness, and `min(32 MiB, 10%)` per-process final-quarter RSS growth.
+
+The per-process memory allowance takes the *tighter* of the two bounds. Taking
+the looser one meant a larger process bought a larger leak allowance, so a
+small process was held to a ceiling it could never reach and a small leak went
+unseen. Where no starting sample exists there is nothing to be proportional
+to, so the absolute ceiling stands alone.
+
+The 25 ms p99 figure is a per-request deployment target and is measured at low
+concurrency; the single-digit p99 values recorded above come from those runs.
+It is not reachable in a saturated closed-loop soak: at concurrency 100 the
+mean latency is fixed by `concurrency / throughput`, which for the observed
+2623 requests per second is 38 ms, and p99 necessarily exceeds the mean. The
+concurrency-100 lane therefore carries its own load-appropriate budget rather
+than the deployment target. Both numbers are real; they describe different
+load profiles.
 
 A 2026-07-11 two-terminal, 500-request concurrency-100 diagnostic completed
 with zero failures. The direct hybrid path measured 54.975 ms first-byte and
