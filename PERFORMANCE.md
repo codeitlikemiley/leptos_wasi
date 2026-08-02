@@ -177,12 +177,20 @@ Guest-side stage timing on `/api/get_test` (n=14,125, 1054 us mean):
 |---|---:|---:|
 | registration - 13x `with_server_fn` + `generate_routes` | 183 us | 17% |
 | handle - render and send | 92 us | 9% |
-| instantiation, host, HTTP, socket | 779 us | 74% |
+| everything else - instantiation, host, HTTP, client | 779 us | 74% |
 
 Three quarters of a request is spent before any handler code runs. That is why
 no single code change recovers the delta: the whole guest handler is a quarter
 of the budget, and the regression is spread across it rather than sitting on
 one line.
+
+Do not read that last row as "instantiation costs 779 us". Measuring instance
+reuse (below) puts instantiation at roughly **107 us** per request; the rest of
+that row is the host's HTTP path, the socket, and the probe's own client
+overhead. An earlier revision of this document leaned on the larger figure to
+argue that module size drove the regression through instantiation work. That
+argument was wrong twice over - the arithmetic never supported it, and
+instantiation is a seventh of the bucket it was attributed to.
 
 The cost splits by response class. A 404, which short-circuits before route
 matching, pays about 0.07 ms; a 200 pays about 0.14 ms. Both 200 endpoints
@@ -276,6 +284,48 @@ residual. About 5.8% remains on claimed requests and is still unexplained.
 Build-time route generation is therefore only worth considering for genuine SSR
 requests, which do need the router on every fresh instance. That is a narrower
 prize than it appeared before the skip was restored.
+
+### Instance reuse: the largest lever is a host flag
+
+`wasmtime serve` bounds how many requests one component instance may serve with
+`--max-instance-reuse-count`. It **defaults to 1 for WASIp2 and 128 for
+WASIp3**. A Preview 2 deployment therefore builds a fresh component for every
+request unless it says otherwise, and that default - not this crate - is the
+largest single cost in a Preview 2 request.
+
+Measured on the merged tree, five paired reps at concurrency 1 against the
+default configuration:
+
+| Configuration | rps | mean | vs default |
+|---|---:|---:|---:|
+| default | 1161.4 | 853 us | - |
+| `--max-instance-reuse-count 128` | 1326.1 | 746 us | **+14.44%** (se 3.45pp) |
+| `-O pooling-allocator=y` | 1153.5 | 858 us | +1.39% (se 2.18pp) |
+| both | 1346.0 | 735 us | +13.65% (se 1.42pp) |
+
+Instance reuse is worth more than the entire 0.4-versus-0.3.2 regression
+documented above. The pooling allocator is indistinguishable from noise on its
+own and adds nothing on top of reuse, so it is not part of the recommendation.
+
+The saving is about 107 us per request, which is what instantiation actually
+costs here - not the 779 us of the "everything else" row above.
+
+The e2e suite is the check that matters, because reuse makes guest statics -
+the executor cell, the pollable queue - outlive a request. Set
+`LEPTOS_WASI_MAX_INSTANCE_REUSE` to run it under reuse:
+
+```
+LEPTOS_WASI_MAX_INSTANCE_REUSE=128 \
+  cargo test --locked --test e2e test_e2e_wasip -- --ignored --test-threads=1
+```
+
+Both Preview 2 and Preview 3 pass, and the suite finishes in 1.90 s against
+5.10 s at the default - the same speedup measured a second way. That is
+evidence for the paths the suite covers, which include server functions, static
+assets, SSR, islands, redirects, and a panicking server function. It is not a
+general proof that every application is safe to reuse: an application holding
+its own request-scoped state in a static would be, and this crate cannot check
+that for it.
 
 ## Reproducing release evidence
 

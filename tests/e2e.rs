@@ -65,6 +65,17 @@ fn start_server(
 ) -> anyhow::Result<WasmtimeServer> {
     let mut args =
         vec!["serve".to_string(), "-S".to_string(), "cli=y".to_string()];
+    // `wasmtime serve` defaults `--max-instance-reuse-count` to 1 for WASIp2
+    // and 128 for WASIp3, so a Preview 2 deployment builds a fresh component
+    // instance for every request. Raising it is the largest single throughput
+    // lever available to a deployment, but it also makes guest statics - the
+    // executor cell and the pollable queue among them - outlive a request.
+    // Running the suite with this set is what tells us whether that is safe,
+    // so the knob is wired here rather than measured once by hand.
+    if let Ok(reuse) = std::env::var("LEPTOS_WASI_MAX_INSTANCE_REUSE") {
+        args.push("--max-instance-reuse-count".to_string());
+        args.push(reuse);
+    }
     if is_p3 {
         args.push("-S".to_string());
         args.push("p3=y".to_string());

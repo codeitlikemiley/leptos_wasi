@@ -100,6 +100,22 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+- Documented component instance reuse, which is the largest throughput lever
+  available to a WASIp2 deployment and is not controlled by this crate.
+  `wasmtime serve --max-instance-reuse-count` defaults to 1 for WASIp2 and 128
+  for WASIp3, so a Preview 2 deployment rebuilds the component for every
+  request unless it opts out: measured at roughly 107 µs per request, about 14%
+  of throughput at low concurrency, which exceeds any single change this crate
+  has made to its own request path. The pooling allocator was measured
+  alongside it and is indistinguishable from noise, so it is not recommended.
+  Reuse makes guest statics outlive a request, so `PRODUCTION.md` records both
+  the win and the obligation to test for it; `LEPTOS_WASI_MAX_INSTANCE_REUSE`
+  runs this repository's e2e suite under reuse, where both previews pass.
+- Corrected `PERFORMANCE.md`, which presented 779 µs of a 1054 µs request as
+  though instantiation dominated it. Instantiation is roughly 107 µs; the rest
+  is the host HTTP path, the socket, and the probe's own client overhead. An
+  earlier revision used the larger figure to argue that module size drove the
+  regression, which the arithmetic never supported.
 - Documented the per-request Leptos nonce the handler already provides and a
   recipe for emitting a `Content-Security-Policy` from the application through
   `ResponseOptions`, including the `'wasm-unsafe-eval'` requirement for
