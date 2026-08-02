@@ -91,6 +91,25 @@ class SoakGateTests(unittest.TestCase):
             [error for error in report["errors"] if "throughput" in error]
         )
 
+    def test_latency_budget_is_configurable_per_lane(self) -> None:
+        # The p2 lanes carry a measured ~8.5% gap against 0.3.2 and run with
+        # --max-regression 0.12; the p3 lane baselines after that gap and keeps
+        # the 5% default. Both behaviours have to hold on the same inputs, or
+        # raising one lane's budget would quietly raise every lane's.
+        arguments = (
+            self.write("baseline.json", BASELINE),
+            self.write("candidate.json", CANDIDATE),
+        )
+        tolerant, report = run(
+            COMPARE, *arguments, "--max-regression", "0.12"
+        )
+        self.assertEqual(tolerant, 0)
+        self.assertTrue(report["passed"])
+
+        strict, report = run(COMPARE, *arguments, "--max-regression", "0.05")
+        self.assertEqual(strict, 1)
+        self.assertFalse(report["passed"])
+
     def test_throughput_is_enforced_when_a_limit_is_supplied(self) -> None:
         status, report = run(
             COMPARE,

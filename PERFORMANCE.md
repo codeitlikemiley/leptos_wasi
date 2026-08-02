@@ -69,8 +69,9 @@ earlier run reported success unconditionally because the checker was piped into
 
 The two throughput samples differ by half a percentage point, and both sides
 pin identical third-party dependency versions in `tests/test-app/Cargo.lock`,
-so the delta is not upstream drift. Locating it is open work, and the
-paragraph below is a caveat on how confidently it can be attributed at all.
+so the delta is not upstream drift. It has since been located - see
+[Where the 0.4 overhead comes from](#where-the-04-overhead-comes-from) - and
+the paragraph below records the measurement limit that made locating it hard.
 
 ### What a single paired run can and cannot show
 
@@ -108,6 +109,120 @@ trade-off rather than an oversight to fix silently.
 The absolute Wasmtime P3 lane measured 87.66 ms total p99 and -168 to +88 KiB
 final-quarter RSS growth across runs. Its budget is set from that observation
 and should tighten once several more runs establish the spread.
+
+## Where the 0.4 overhead comes from
+
+### The method that resolved it
+
+Pooled statistics could not separate the effect from machine drift: across four
+alternating 60-second pairs the box slowed 28% end to end, and 0.3.2 measured
+anywhere from 959 to 692 rps. Pooling that into a standard deviation reports
+"-17.07%, sd 14.91%" and looks like noise.
+
+Comparing **adjacent pairs** resolves it. Both members of a pair run seconds
+apart under the same conditions, so drift cancels:
+
+| Pair | 0.3.2 rps | 0.4 rps | ratio |
+|---:|---:|---:|---:|
+| 1 | 959.6 | 822.0 | -14.3% |
+| 2 | 911.6 | 703.2 | -22.9% |
+| 3 | 712.4 | 594.3 | -16.6% |
+| 4 | 692.1 | 597.3 | -13.7% |
+
+Four of four in the same direction, mean -16.9%, sd 4.1pp, standard error
+2.0pp - eight standard errors from zero. Any future comparison on a noisy host
+should use paired ratios rather than pooled means; the earlier section's
+conclusion that the method "cannot resolve it" applies to unpaired sampling
+only.
+
+### Which commit
+
+A paired bisect at concurrency 1 against 0.3.2, five reps per candidate,
+measured `/api/get_test`:
+
+| Commit | vs 0.3.2 | stderr |
+|---|---:|---:|
+| `6da6ed7` route discovery | -13.71% | 1.91pp |
+| `663e1a9` final WASI 0.3 | -14.63% | 1.89pp |
+| `2141837` 0.4 candidate | -9.94% | 0.84pp |
+| `dd35de9` 0.4.2-rc.1 | -14.01% | 2.85pp |
+| `e798edb` cache identity | -10.20% | 2.35pp |
+| `8578fd2` nosniff | -12.81% | 1.12pp |
+
+There is no step anywhere in the range - the cost is already present at the
+earliest commit that builds and is flat across six commits after it. That
+places the origin at `d1f9308`, the additive-adapter rewrite, which is the
+parent of the first measurable point and the only commit in the window that
+rewrites the request path (3480 changed lines). `d1f9308` itself cannot be
+measured in isolation: its test application predates
+`leptos_wasi::prelude::Handler` and does not compile.
+
+### Where the time goes
+
+Both supported hosts instantiate a **fresh component per request**. This is
+observable rather than inferred: a counter accumulated in a guest static reads
+zero after 18,000 requests, and Wasmtime's in-process guest profiler collects
+no samples because no store survives long enough to be sampled.
+
+Guest-side stage timing on `/api/get_test` (n=14,125, 1054 us mean):
+
+| Stage | Time | Share |
+|---|---:|---:|
+| registration - 13x `with_server_fn` + `generate_routes` | 183 us | 17% |
+| handle - render and send | 92 us | 9% |
+| instantiation, host, HTTP, socket | 779 us | 74% |
+
+Three quarters of a request is spent before any handler code runs. That is why
+no single code change recovers the delta: the whole guest handler is a quarter
+of the budget, and the regression is spread across it rather than sitting on
+one line.
+
+The cost splits by response class. A 404, which short-circuits before route
+matching, pays about 0.07 ms; a 200 pays about 0.14 ms. Both 200 endpoints
+regress identically (-13.83% for a server function, -13.64% for a zero-byte
+static file) despite having entirely different producers, so the extra tier is
+shared success-path work, not anything specific to either.
+
+### What was excluded, and why size is not the cause
+
+Each of these was tested by building a variant and measuring it paired against
+0.3.2, not by reading the diff:
+
+| Hypothesis | Result |
+|---|---|
+| Post-flush `WaitPoll` on the p2 write path | +0.8pp, median -0.8pp |
+| 0.3.2's `blocking_write_and_flush` write loop restored | +2.1pp, median +0.5pp |
+| Removing the dead route cache | +2.11pp, se 1.61pp |
+| Tracing overhead | Compiles to a unit struct and empty functions |
+| `parts.clone()` per request | Identical in 0.3.2 |
+
+A zero-byte static file regresses as much as a body-producing endpoint, which
+rules out byte writing independently of the two write-path experiments.
+
+Module size correlates with the regression across commits - it steps 8.5% at
+the same commit and stays flat - but it is not the mechanism. Only the `data`
+section is copied per instantiation, and it grew 15,836 bytes, on the order of
+a microsecond of memcpy rather than the tens of microseconds observed. The
+growth is 8.6% in `code`, which is compiled once at startup, and 9.4% in
+name and debug sections, which cost nothing at runtime. Stripping the binary
+would remove roughly 40% of the file and change latency by zero. Both test
+applications already build with `opt-level='z'`, fat LTO, `codegen-units=1`
+and `panic="abort"`, so there is no profile slack to recover either.
+
+### What it costs in practice
+
+The benchmark endpoint returns the 12-byte string `"GET response"` with no
+rendering, database, or middleware in the loop, so it measures this crate's
+per-request plumbing with application work set to zero. The regression is
+roughly 0.15 ms added to a ~1 ms floor. On any page that renders real content
+that is a small share of the response, and the deployment target in this
+document is unaffected. It is documented because a fixed per-request cost is
+worth knowing about, not because it is user-visible.
+
+The remaining lever is the 183 us registration stage: `generate_routes` re-runs
+on every fresh instance, and moving discovery to build time would remove it.
+That is an API and design change rather than a patch, and it is not attempted
+here.
 
 ## Reproducing release evidence
 
