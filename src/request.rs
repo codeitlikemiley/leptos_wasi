@@ -7,8 +7,9 @@ pub mod p2 {
     use http::{Uri, uri::Parts};
     use thiserror::Error;
     use wasi::{
+        clocks::monotonic_clock::subscribe_duration,
         http::types::{IncomingBody, IncomingRequest, Method, Scheme},
-        io::streams::StreamError,
+        io::{poll::poll, streams::StreamError},
     };
 
     /// Converts a WASI Preview 2 request into an `http` request while enforcing
@@ -16,6 +17,22 @@ pub mod p2 {
     pub fn from_wasi_request(
         request: IncomingRequest,
         max_body_size: usize,
+    ) -> Result<http::Request<Bytes>, RequestError> {
+        from_wasi_request_with_deadline(request, max_body_size, None)
+    }
+
+    /// Converts a WASI Preview 2 request, optionally abandoning a body that
+    /// takes longer than `timeout_ns` to arrive in full.
+    ///
+    /// Without a budget this blocks on the input stream exactly as before.
+    /// With one, the stream and a monotonic timer are polled together, so a
+    /// client that stalls or trickles cannot hold the instance indefinitely.
+    /// The budget spans the whole body rather than the gap between chunks, so
+    /// a client feeding one byte per interval is bounded too.
+    pub fn from_wasi_request_with_deadline(
+        request: IncomingRequest,
+        max_body_size: usize,
+        timeout_ns: Option<u64>,
     ) -> Result<http::Request<Bytes>, RequestError> {
         let parts = request_parts(&request)?;
         super::super::handler::validate_content_length(
@@ -33,9 +50,44 @@ pub mod p2 {
                 return Err(RequestError::BodyStreamUnavailable);
             }
         };
+        // One timer for the whole body. Subscribing once rather than per
+        // chunk is what makes this a total budget instead of an idle one: a
+        // client feeding a byte at a time can never refresh it.
+        let deadline = timeout_ns.map(subscribe_duration);
+        let readable = deadline.as_ref().map(|_| body_stream.subscribe());
+
         let mut body = Vec::with_capacity(crate::CHUNK_BYTE_SIZE);
         let collected = loop {
-            match body_stream.blocking_read(crate::CHUNK_BYTE_SIZE as u64) {
+            if let Some(deadline) = &deadline
+                && deadline.ready()
+            {
+                break Err(RequestError::BodyReadTimeout(
+                    timeout_ns.unwrap_or_default(),
+                ));
+            }
+
+            // With no budget this is the original blocking read. With one, the
+            // non-blocking read plus a two-way poll lets the timer win a race
+            // that `blocking_read` would otherwise never return from.
+            let read = match (&deadline, &readable) {
+                (Some(deadline), Some(readable)) => {
+                    match body_stream.read(crate::CHUNK_BYTE_SIZE as u64) {
+                        Ok(data) if data.is_empty() => {
+                            let ready = poll(&[readable, deadline]);
+                            if ready.contains(&1) {
+                                break Err(RequestError::BodyReadTimeout(
+                                    timeout_ns.unwrap_or_default(),
+                                ));
+                            }
+                            continue;
+                        }
+                        other => other,
+                    }
+                }
+                _ => body_stream.blocking_read(crate::CHUNK_BYTE_SIZE as u64),
+            };
+
+            match read {
                 Err(StreamError::Closed) => break Ok(()),
                 Err(error @ StreamError::LastOperationFailed(_)) => {
                     break Err(error.into());
@@ -48,6 +100,8 @@ pub mod p2 {
                 }
             }
         };
+        drop(readable);
+        drop(deadline);
 
         drop(body_stream);
         IncomingBody::finish(incoming_body);
@@ -102,6 +156,9 @@ pub mod p2 {
         /// The request body exceeded the configured limit.
         #[error("request body exceeds limit of {0} bytes")]
         BodyTooLarge(usize),
+        /// The request body did not arrive in full within its budget.
+        #[error("request body exceeded its {0} ns read budget")]
+        BodyReadTimeout(u64),
         /// The incoming body resource had already been consumed.
         #[error("incoming request body was already consumed")]
         BodyAlreadyConsumed,

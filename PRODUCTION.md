@@ -53,6 +53,14 @@ this support matrix.
   the Wasmtime/Spin ingress, not only a body-size limit; a size limit does not
   bound how long one request holds an instance, and a guest cannot reliably
   cancel a client that the host continues to feed.
+- `HandlerConfig::with_request_body_timeout_ns` adds an optional guest-side
+  budget for the whole body, off by default. It is defense in depth for a
+  deployment whose ingress cannot supply a read deadline, not a replacement
+  for one: the guest still cannot cancel a client the host keeps feeding, and
+  enabling it converts a slow upload into `408 Request Timeout`. The budget
+  spans the whole body rather than the gap between chunks, so both previews
+  mean the same thing by it and a client trickling one byte at a time cannot
+  refresh it.
 - Server-function middleware executes in Leptos order. Authentication,
   authorization, rate limiting, and tracing layers must still be supplied by
   the application, a composed component, or the ingress at the appropriate
