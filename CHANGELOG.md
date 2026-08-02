@@ -19,6 +19,20 @@ All notable changes to this project will be documented in this file.
   second application served the first application's routes. Function pointers
   and capturing closures now re-run route discovery.
 
+### Changed
+
+- Every response the crate emits now carries `X-Content-Type-Options: nosniff`,
+  not only static assets. The crate's own error bodies — 404, the static 405,
+  and the 413/400 request-policy rejections — additionally declare
+  `text/plain; charset=utf-8`; they previously carried no content type at all,
+  which is the case content sniffing exploits. The default is applied once, at
+  the end of the shared render path, and only when the header is absent, so an
+  application that sets its own value through `ResponseOptions` still wins. The
+  WASIp2 internal-error response is constructed outside that path and sets both
+  headers itself. This also makes the 0.4.0 note about static routes adding
+  `X-Content-Type-Options` true of the 405 response, which previously carried
+  only `Allow`.
+
 ### Added
 
 - Unit coverage for the previously untested request, response, redirect, and
