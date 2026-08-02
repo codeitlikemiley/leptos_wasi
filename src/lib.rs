@@ -22,7 +22,7 @@ pub mod utils;
 pub use executor::ExecutorError;
 pub use handler::{
     DEFAULT_MAX_REQUEST_BODY_SIZE, HandlerConfig, RegistrationError,
-    RequestPolicyError,
+    RequestPolicyError, validate_route_table,
 };
 
 /// Implementation details required by generated public bounds.

@@ -732,25 +732,29 @@ impl HandlerCore {
             return Err(RegistrationError::RoutesAlreadyGenerated);
         }
 
-        let routes = registered_routes(&app_fn, &discovery_context)?;
-        let routes = routes.into_iter().filter(|route| {
-            excluded_routes
-                .as_ref()
-                .is_none_or(|excluded| !excluded.contains(&route.0))
-        });
-        let shortcut = self.shortcut();
-        let mut registered_paths = BTreeSet::new();
-        for (path, route_spec, listing) in routes {
-            let collision_key = route_collision_key(&route_spec);
-            if !registered_paths.insert(collision_key) {
-                return Err(RegistrationError::DuplicateRoute(path));
-            }
-            if matches!(listing.mode(), SsrMode::Static(_)) {
-                return Err(RegistrationError::UnsupportedStaticSsr(path));
-            }
-            if shortcut {
-                continue;
-            }
+        // A claimed request never consults the SSR router: a server function,
+        // a preset response, and a known 404 all resolve without it. Route
+        // discovery renders the whole application to extract its `<Routes/>`,
+        // so running it here only to drop every entry below is the single
+        // largest avoidable cost on those paths - 183 us of a 1054 us request,
+        // measured on `/api/get_test`. Both hosts instantiate a fresh
+        // component per request, so this is paid on every one of them.
+        //
+        // Skipping also skips the validation below, which is why it is gated
+        // on `shortcut()` rather than applied unconditionally: an SSR request
+        // still builds the router and still rejects duplicate or static-mode
+        // routes. A misconfigured route table therefore surfaces on any
+        // request that would actually use it.
+        if self.shortcut() {
+            self.routes_registered = true;
+            return Ok(self);
+        }
+
+        for (route_spec, listing) in validated_route_table(
+            &app_fn,
+            excluded_routes.as_deref(),
+            &discovery_context,
+        )? {
             match self.ssr_router.add(route_spec, listing) {
                 Ok(()) => {}
                 Err(infallible) => match infallible {},
@@ -884,6 +888,79 @@ fn route_collision_key(route: &RouteSpec) -> Vec<RouteCollisionSegment> {
             Segment::Wildcard => RouteCollisionSegment::Wildcard,
         })
         .collect()
+}
+
+/// Discovers an application's routes and rejects an unusable table.
+///
+/// Shared by the request path and by [`validate_route_table`] so the rules a
+/// deployment enforces and the rules a test suite checks cannot drift apart.
+fn validated_route_table<IV, AppFn, ContextFn>(
+    app_fn: &AppFn,
+    excluded_routes: Option<&[String]>,
+    discovery_context: &ContextFn,
+) -> Result<Vec<(RouteSpec, RouteListing)>, RegistrationError>
+where
+    IV: IntoView + 'static,
+    AppFn: Fn() -> IV + 'static + Send + Clone,
+    ContextFn: Fn() + 'static + Send + Clone,
+{
+    let routes = registered_routes(app_fn, discovery_context)?;
+    let mut registered_paths = BTreeSet::new();
+    let mut validated = Vec::new();
+    for (path, route_spec, listing) in routes {
+        if excluded_routes.is_some_and(|excluded| excluded.contains(&path)) {
+            continue;
+        }
+        let collision_key = route_collision_key(&route_spec);
+        if !registered_paths.insert(collision_key) {
+            return Err(RegistrationError::DuplicateRoute(path));
+        }
+        if matches!(listing.mode(), SsrMode::Static(_)) {
+            return Err(RegistrationError::UnsupportedStaticSsr(path));
+        }
+        validated.push((route_spec, listing));
+    }
+    Ok(validated)
+}
+
+/// Checks an application's route table without serving a request.
+///
+/// Route discovery renders the whole application, so the request path runs it
+/// only when a request will actually consult the SSR router: a server
+/// function, a static asset, or an already-selected response resolves without
+/// it and skips the work. A route table that is only ever reached through
+/// those paths is therefore never validated in production.
+///
+/// Call this once from a test to close that gap. It applies exactly the rules
+/// the request path applies - duplicate patterns, including ones that differ
+/// only by parameter name, and unsupported [`SsrMode::Static`] routes.
+///
+/// ```no_run
+/// # use leptos::prelude::*;
+/// # fn app() -> AnyView { todo!() }
+/// #[test]
+/// fn route_table_is_valid() {
+///     leptos_wasi::validate_route_table(app, None, || {})
+///         .expect("route table should be valid");
+/// }
+/// ```
+///
+/// # Errors
+///
+/// Returns [`RegistrationError::DuplicateRoute`] for colliding patterns and
+/// [`RegistrationError::UnsupportedStaticSsr`] for static-mode routes.
+pub fn validate_route_table<IV, AppFn, ContextFn>(
+    app: AppFn,
+    excluded_routes: Option<Vec<String>>,
+    discovery_context: ContextFn,
+) -> Result<(), RegistrationError>
+where
+    IV: IntoView + 'static,
+    AppFn: Fn() -> IV + 'static + Send + Clone,
+    ContextFn: Fn() + 'static + Send + Clone,
+{
+    validated_route_table(&app, excluded_routes.as_deref(), &discovery_context)
+        .map(|_| ())
 }
 
 fn registered_routes<IV, AppFn, ContextFn>(
@@ -2126,12 +2203,11 @@ mod tests {
     }
 
     #[test]
-    fn static_ssr_is_rejected_after_a_response_was_selected() {
+    fn static_ssr_is_rejected_on_a_request_that_uses_the_router() {
         let core = HandlerCore::new(
             Request::new(Bytes::new()),
             HandlerConfig::default(),
-        )
-        .with_preset(plain_response(StatusCode::OK, "selected"), "test");
+        );
 
         let result = core
             .generate_routes_with_exclusions_and_discovery_context(
@@ -2144,6 +2220,61 @@ mod tests {
             Err(RegistrationError::UnsupportedStaticSsr(path))
                 if path == "/static"
         ));
+    }
+
+    /// The cost of skipping discovery on claimed requests, stated as a test so
+    /// it is a decision on the record rather than a surprise. An application
+    /// served only through server functions and static assets never validates
+    /// its route table in production; [`validate_route_table`] is the
+    /// replacement, and the two tests below pin both halves of that trade.
+    #[test]
+    fn a_claimed_request_does_not_reject_an_invalid_route_table() {
+        let core = HandlerCore::new(
+            Request::new(Bytes::new()),
+            HandlerConfig::default(),
+        )
+        .with_preset(plain_response(StatusCode::OK, "selected"), "test");
+
+        let result = core
+            .generate_routes_with_exclusions_and_discovery_context(
+                static_route_app,
+                None,
+                || {},
+            );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_route_table_rejects_what_the_request_path_would() {
+        assert!(matches!(
+            validate_route_table(static_route_app, None, || {}),
+            Err(RegistrationError::UnsupportedStaticSsr(path))
+                if path == "/static"
+        ));
+        assert!(matches!(
+            validate_route_table(semantic_duplicate_route_app, None, || {}),
+            Err(RegistrationError::DuplicateRoute(path))
+                if path == "/users/:slug"
+        ));
+    }
+
+    #[test]
+    fn validate_route_table_accepts_a_sound_table() {
+        assert!(validate_route_table(alpha_app, None, || {}).is_ok());
+    }
+
+    #[test]
+    fn validate_route_table_honours_exclusions() {
+        // An excluded route is not registered, so it must not be rejected
+        // either - otherwise excluding a static-mode route would still fail.
+        assert!(
+            validate_route_table(
+                static_route_app,
+                Some(vec!["/static".to_owned()]),
+                || {}
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -2171,8 +2302,7 @@ mod tests {
         let core = HandlerCore::new(
             Request::new(Bytes::new()),
             HandlerConfig::default(),
-        )
-        .with_preset(plain_response(StatusCode::OK, "selected"), "test");
+        );
 
         let result = core
             .generate_routes_with_exclusions_and_discovery_context(
@@ -2252,8 +2382,7 @@ mod tests {
             let core = HandlerCore::new(
                 Request::new(Bytes::new()),
                 HandlerConfig::default(),
-            )
-            .with_preset(plain_response(StatusCode::OK, "selected"), "test");
+            );
             let result = core
                 .generate_routes_with_exclusions_and_discovery_context(
                     counted_route_app,
@@ -2264,6 +2393,29 @@ mod tests {
         }
 
         assert_eq!(ROUTE_GENERATIONS.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn a_claimed_request_never_discovers_routes() {
+        // The saving that motivates the shortcut: an already-selected response
+        // resolves without the SSR router, and discovery renders the whole
+        // application. Measured at 183 us of a 1054 us request, paid on every
+        // request because each one gets a fresh component instance.
+        ROUTE_GENERATIONS.store(0, Ordering::Relaxed);
+        let core = HandlerCore::new(
+            Request::new(Bytes::new()),
+            HandlerConfig::default(),
+        )
+        .with_preset(plain_response(StatusCode::OK, "selected"), "test");
+        let result = core
+            .generate_routes_with_exclusions_and_discovery_context(
+                counted_route_app,
+                None,
+                || {},
+            );
+
+        assert!(result.is_ok());
+        assert_eq!(ROUTE_GENERATIONS.load(Ordering::Relaxed), 0);
     }
 
     #[test]
