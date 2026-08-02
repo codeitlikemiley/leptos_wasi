@@ -56,6 +56,27 @@ is blocked by its default CPU-metrics panic; only Wasmtime 46 is a blocking fina
 runtime. Release evidence must include generated comparison JSON rather than
 reusing the historical RC-era table above.
 
+## Measured 0.3.2 versus 0.4 soak deltas
+
+These are the first numbers produced after the soak gates were repaired; every
+earlier run reported success unconditionally because the checker was piped into
+`tee`, which discarded its exit status.
+
+| Run | Lane | first-byte p99 | total p99 | throughput |
+|---|---|---:|---:|---:|
+| 1 | Wasmtime P2 | +8.59% | +8.55% | -6.62% |
+| 2 | Wasmtime P2 | — | — | -7.11% |
+
+The two throughput samples differ by half a percentage point, so the
+regression reproduces rather than being runner variance. It is measured
+against the 0.3.2 worktree, and both sides pin identical third-party
+dependency versions in `tests/test-app/Cargo.lock`, so it is attributable to
+this crate rather than to upstream drift. Locating it is open work.
+
+The absolute Wasmtime P3 lane measured 87.66 ms total p99 and -168 to +88 KiB
+final-quarter RSS growth across runs. Its budget is set from that observation
+and should tighten once several more runs establish the spread.
+
 ## Reproducing release evidence
 
 Pull-request CI runs paired ten-minute, 100-concurrency baseline and candidate

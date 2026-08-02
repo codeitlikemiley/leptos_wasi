@@ -486,12 +486,21 @@ jobs:
           OUTPUT: soak-${{ matrix.host }}-${{ matrix.preview }}-candidate.json
         run: ./scripts/soak-test-app.sh
 
-      - name: Enforce latency and memory gates
+      # Throughput is now enforced, at 10% rather than the 5% used for latency.
+      # Two measured runs of this lane put the candidate at -6.62% and -7.11%
+      # against the 0.3.2 baseline, a spread of half a point, so the regression
+      # is reproducible rather than runner noise. Gating at 5% would only add a
+      # second symptom to a lane the latency budget already fails for the same
+      # underlying cause; 10% catches any further degradation beyond what is
+      # already known. Tighten it to match the latency budget once that
+      # regression is resolved.
+      - name: Enforce latency, throughput, and memory gates
         if: matrix.historical_baseline
         run: >-
           python3 scripts/compare_performance.py
           soak-${{ matrix.host }}-${{ matrix.preview }}-baseline.json
           soak-${{ matrix.host }}-${{ matrix.preview }}-candidate.json
+          --max-throughput-regression 0.10
           | tee soak-${{ matrix.host }}-${{ matrix.preview }}-comparison.json
 
       # The 25 ms figure documented in PERFORMANCE.md and MIDDLEWARE.md is a
