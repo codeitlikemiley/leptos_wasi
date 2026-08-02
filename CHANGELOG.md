@@ -53,6 +53,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `HandlerConfig::with_request_body_timeout_ns` bounds how long a whole request
+  body may take to arrive, and `request_body_timeout_ns` reads it back. It is
+  `None` by default, so no existing deployment changes behaviour: request
+  deadlines remain a deployment responsibility, and this is defense in depth
+  for an ingress that cannot supply one. Exceeding the budget produces
+  `408 Request Timeout`. Preview 2 polls the input stream against a monotonic
+  timer instead of blocking on it, and Preview 3 races the length-limited
+  collect against the same duration, so both previews apply one whole-body
+  budget rather than a per-chunk one.
 - Unit coverage for the previously untested request, response, redirect, and
   executor surfaces: WASI Preview 2 method and scheme conversion, `Accept`
   negotiation, referrer and `Location` sanitization, `utils::redirect`,

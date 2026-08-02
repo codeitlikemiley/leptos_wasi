@@ -215,6 +215,7 @@ fn ssr_mode_name(mode: &SsrMode) -> &'static str {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HandlerConfig {
     max_request_body_size: usize,
+    request_body_timeout_ns: Option<u64>,
 }
 
 impl HandlerConfig {
@@ -230,12 +231,41 @@ impl HandlerConfig {
     pub const fn max_request_body_size(&self) -> usize {
         self.max_request_body_size
     }
+
+    /// Returns a copy that abandons a request body taking longer than
+    /// `nanoseconds` to arrive in full.
+    ///
+    /// This is off by default, because the host, not the guest, is the layer
+    /// that can bound a client it is still feeding. See the request contract in
+    /// `PRODUCTION.md`: the size limit already applied here bounds how much a
+    /// body may be, never how long it may take. Enable this when the ingress
+    /// cannot supply a read deadline of its own, and treat it as defense in
+    /// depth rather than the primary control.
+    ///
+    /// The budget covers the whole body rather than the gap between chunks, so
+    /// a client trickling bytes indefinitely is bounded, and the two previews
+    /// mean the same thing by it.
+    #[must_use]
+    pub const fn with_request_body_timeout_ns(
+        mut self,
+        nanoseconds: u64,
+    ) -> Self {
+        self.request_body_timeout_ns = Some(nanoseconds);
+        self
+    }
+
+    /// Returns the configured whole-body read budget in nanoseconds.
+    #[must_use]
+    pub const fn request_body_timeout_ns(&self) -> Option<u64> {
+        self.request_body_timeout_ns
+    }
 }
 
 impl Default for HandlerConfig {
     fn default() -> Self {
         Self {
             max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
+            request_body_timeout_ns: None,
         }
     }
 }
@@ -286,12 +316,19 @@ pub enum RequestPolicyError {
         /// Configured limit in bytes.
         limit: usize,
     },
+    /// The body did not arrive in full within the configured budget.
+    #[error("request body exceeded its {nanoseconds} ns read budget")]
+    BodyReadTimeout {
+        /// Configured whole-body read budget in nanoseconds.
+        nanoseconds: u64,
+    },
 }
 
 impl RequestPolicyError {
     const fn status(&self) -> StatusCode {
         match self {
             Self::BodyTooLarge { .. } => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::BodyReadTimeout { .. } => StatusCode::REQUEST_TIMEOUT,
             Self::InvalidContentLength | Self::ConflictingContentLength => {
                 StatusCode::BAD_REQUEST
             }
@@ -338,6 +375,7 @@ fn policy_response(error: &RequestPolicyError) -> Response {
 fn trace_policy_rejection(preview: &'static str, error: &RequestPolicyError) {
     let error_class = match error {
         RequestPolicyError::BodyTooLarge { .. } => "body_too_large",
+        RequestPolicyError::BodyReadTimeout { .. } => "body_read_timeout",
         RequestPolicyError::InvalidContentLength => "invalid_content_length",
         RequestPolicyError::ConflictingContentLength => {
             "conflicting_content_length"
@@ -1319,9 +1357,10 @@ pub mod wasip2 {
                 crate::request::p2::request_parts(&request)?,
                 Bytes::new(),
             );
-            match crate::request::p2::from_wasi_request(
+            match crate::request::p2::from_wasi_request_with_deadline(
                 request,
                 config.max_request_body_size(),
+                config.request_body_timeout_ns(),
             ) {
                 Ok(request) => {
                     let core = HandlerCore::new(request, config);
@@ -1333,6 +1372,20 @@ pub mod wasip2 {
                     let policy = RequestPolicyError::BodyTooLarge {
                         limit: config.max_request_body_size(),
                     };
+                    #[cfg(feature = "tracing")]
+                    trace_policy_rejection("p2", &policy);
+                    let response = policy_response(&policy);
+                    let core = HandlerCore::new(rejected_request, config)
+                        .with_preset(response, "request_policy");
+                    #[cfg(feature = "tracing")]
+                    let core = core.with_request_started(request_started);
+                    Ok(Self { core, response_out })
+                }
+                Err(crate::request::p2::RequestError::BodyReadTimeout(
+                    nanoseconds,
+                )) => {
+                    let policy =
+                        RequestPolicyError::BodyReadTimeout { nanoseconds };
                     #[cfg(feature = "tracing")]
                     trace_policy_rejection("p2", &policy);
                     let response = policy_response(&policy);
@@ -1613,7 +1666,46 @@ pub mod wasip3 {
             }
 
             let body = Limited::new(body, config.max_request_body_size());
-            match body.collect().await {
+            // Same total-budget meaning as Preview 2: one timer for the whole
+            // body, raced against the collect. `Limited::collect` is a single
+            // opaque future with no per-frame hook, so a total budget is also
+            // the only shape both previews can agree on.
+            let collected = match config.request_body_timeout_ns() {
+                None => body.collect().await,
+                Some(nanoseconds) => {
+                    let collect = std::pin::pin!(body.collect());
+                    let expiry = std::pin::pin!(
+                        ::wasip3::clocks::monotonic_clock::wait_for(
+                            nanoseconds
+                        )
+                    );
+                    match futures::future::select(collect, expiry).await {
+                        futures::future::Either::Left((collected, _)) => {
+                            collected
+                        }
+                        futures::future::Either::Right(((), _)) => {
+                            let policy = RequestPolicyError::BodyReadTimeout {
+                                nanoseconds,
+                            };
+                            #[cfg(feature = "tracing")]
+                            trace_policy_rejection("p3", &policy);
+                            let core = HandlerCore::new(
+                                Request::from_parts(parts, Bytes::new()),
+                                config,
+                            )
+                            .with_preset(
+                                policy_response(&policy),
+                                "request_policy",
+                            );
+                            #[cfg(feature = "tracing")]
+                            let core =
+                                core.with_request_started(request_started);
+                            return Ok(Self { core });
+                        }
+                    }
+                }
+            };
+            match collected {
                 Ok(body) => {
                     let core = HandlerCore::new(
                         Request::from_parts(parts, body.to_bytes()),
@@ -1905,6 +1997,60 @@ mod tests {
                 </Routes>
             </Router>
         }
+    }
+
+    #[test]
+    fn the_body_read_budget_is_off_by_default() {
+        // The published contract puts request deadlines at the ingress. This
+        // knob is defense in depth, so an upgrade must not start converting
+        // anybody's slow uploads into errors.
+        assert_eq!(HandlerConfig::default().request_body_timeout_ns(), None);
+    }
+
+    #[test]
+    fn the_body_read_budget_round_trips() {
+        let config =
+            HandlerConfig::default().with_request_body_timeout_ns(30_000_000);
+        assert_eq!(config.request_body_timeout_ns(), Some(30_000_000));
+        // The builder must leave the size limit alone.
+        assert_eq!(
+            config.max_request_body_size(),
+            DEFAULT_MAX_REQUEST_BODY_SIZE
+        );
+    }
+
+    #[test]
+    fn a_body_read_timeout_is_reported_as_request_timeout() {
+        let error = RequestPolicyError::BodyReadTimeout {
+            nanoseconds: 30_000_000,
+        };
+        assert_eq!(error.status(), StatusCode::REQUEST_TIMEOUT);
+        // The message must name the budget, since an operator reading a 408
+        // needs to know which limit produced it.
+        assert!(error.to_string().contains("30000000"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_body_read_timeout_response_is_labelled_like_other_rejections() {
+        let core = HandlerCore::new(
+            Request::new(Bytes::new()),
+            HandlerConfig::default(),
+        )
+        .with_preset(
+            policy_response(&RequestPolicyError::BodyReadTimeout {
+                nanoseconds: 1,
+            }),
+            "request_policy",
+        );
+
+        let response = render_plain(core).await;
+
+        assert_eq!(response.0.status(), StatusCode::REQUEST_TIMEOUT);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/plain; charset=utf-8")
+        );
     }
 
     #[test]
