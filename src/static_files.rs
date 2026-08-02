@@ -266,7 +266,9 @@ fn validate_components(decoded: &str) -> Result<String, StaticPathError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{StaticPathError, normalize_static_path};
+    use super::{
+        StaticPathError, normalize_static_path, validate_residual_encoding,
+    };
 
     fn assert_rejected(path: &str, expected: StaticPathError) {
         let actual = normalize_static_path(path)
@@ -435,6 +437,101 @@ mod tests {
             normalize_static_path("pkg/literal-%2541.txt"),
             Ok("pkg/literal-%41.txt".to_owned())
         );
+    }
+
+    /// Bytes that drive every branch of the validator: the escape character,
+    /// both separators, the dot that forms traversal components, hex digits
+    /// that complete an escape, a control byte, and one ordinary character.
+    const INTERESTING: &[u8] = b"%/\\.aF0\x01";
+
+    /// The properties every accepted path must satisfy, whatever the input.
+    ///
+    /// These are the guarantees the static callback relies on to treat its
+    /// argument as a safe relative lookup key. Asserting them over generated
+    /// input catches a class the example-based cases cannot: an unforeseen
+    /// combination that slips through every individual rule.
+    fn assert_accepted_path_is_safe(input: &str, accepted: &str) {
+        let context = || format!("input {input:?} produced {accepted:?}");
+        assert!(!accepted.starts_with('/'), "absolute: {}", context());
+        assert!(!accepted.contains('\\'), "backslash: {}", context());
+        assert!(!accepted.contains('\0'), "NUL: {}", context());
+        assert!(
+            !accepted.bytes().any(|byte| byte < 0x20 || byte == 0x7f),
+            "control byte: {}",
+            context()
+        );
+        // An empty result is valid: it means the request addressed the prefix
+        // itself. Only a non-empty path is decomposed into components.
+        if !accepted.is_empty() {
+            for component in accepted.split('/') {
+                assert!(component != ".", "current dir: {}", context());
+                assert!(component != "..", "parent dir: {}", context());
+                assert!(
+                    !component.is_empty(),
+                    "empty component: {}",
+                    context()
+                );
+            }
+        }
+        // Whatever survives must also be stable: decoding the result again
+        // must not turn it into something the rules above would reject.
+        assert!(
+            validate_residual_encoding(accepted).is_ok(),
+            "residual encoding: {}",
+            context()
+        );
+    }
+
+    #[test]
+    fn exhaustive_short_inputs_never_yield_an_unsafe_path() {
+        // Every string up to four bytes over the interesting alphabet. The
+        // alphabet is small enough that this is exhaustive rather than
+        // sampled, so there is no seed and no flake.
+        let mut checked = 0_u32;
+        let mut accepted = 0_u32;
+        for length in 0..=4 {
+            let total = INTERESTING.len().pow(length as u32);
+            for mut index in 0..total {
+                let mut bytes = Vec::with_capacity(length);
+                for _ in 0..length {
+                    bytes.push(INTERESTING[index % INTERESTING.len()]);
+                    index /= INTERESTING.len();
+                }
+                let Ok(input) = std::str::from_utf8(&bytes) else {
+                    continue;
+                };
+                checked += 1;
+                if let Ok(path) = normalize_static_path(input) {
+                    accepted += 1;
+                    assert_accepted_path_is_safe(input, &path);
+                }
+            }
+        }
+        assert!(checked > 4_000, "expected broad coverage, ran {checked}");
+        assert!(
+            accepted > 0,
+            "every input was rejected; the test is vacuous"
+        );
+    }
+
+    #[test]
+    fn long_generated_inputs_stay_safe_and_bounded() {
+        // A deterministic linear congruential sequence, so a failure is
+        // reproducible and CI cannot flake on a lucky seed.
+        let mut state = 0x2545_F491_4F6C_DD1D_u64;
+        let mut next = move || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            (state >> 33) as usize
+        };
+        for _ in 0..2_000 {
+            let length = next() % 64;
+            let input: String = (0..length)
+                .map(|_| INTERESTING[next() % INTERESTING.len()] as char)
+                .collect();
+            if let Ok(path) = normalize_static_path(&input) {
+                assert_accepted_path_is_safe(&input, &path);
+            }
+        }
     }
 
     #[test]

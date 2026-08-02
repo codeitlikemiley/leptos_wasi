@@ -949,6 +949,13 @@ where
                     } else if supports_out_of_order {
                         app.to_html_stream_out_of_order()
                     } else {
+                        // Unreachable as the flag is derived today: without
+                        // the `islands-router` feature
+                        // `is_islands_router_navigation` is always false, so
+                        // `supports_out_of_order` is always true here. Kept so
+                        // the arm still behaves correctly if that derivation
+                        // ever changes; it is deliberately not covered by a
+                        // test, because no request can currently reach it.
                         app.to_html_stream_in_order()
                     };
                     Box::pin(app.chain(chunks())) as PinnedStream<String>
@@ -2483,6 +2490,75 @@ mod tests {
 
         assert_eq!(generated_paths(alpha_app as AppPointer), ["/alpha"]);
         assert_eq!(generated_paths(beta_app as AppPointer), ["/beta"]);
+    }
+
+    fn ssr_arm_app() -> impl IntoView {
+        view! {
+            <Router>
+                <Routes fallback=|| view! { "not found" }>
+                    <Route path=path!("/rendered") view=|| view! { "rendered" } />
+                </Routes>
+            </Router>
+        }
+    }
+
+    /// The application-override guarantee proven on the SSR arm itself.
+    ///
+    /// `application_nosniff_override_wins` drives the server-function arm, and
+    /// the default is applied once after the shared `extend_response` tail, so
+    /// the mechanism is common to both. Pinning it here as well means a future
+    /// change that moves the default into the individual branches cannot
+    /// silently start clobbering an application's own value on SSR responses.
+    #[tokio::test(flavor = "current_thread")]
+    async fn application_nosniff_override_wins_on_the_ssr_arm() {
+        // `Response::from_app` drives the render through the reactive graph,
+        // which needs a spawner installed before the route can render.
+        let _ = any_spawner::Executor::init_futures_executor();
+
+        let request = Request::builder()
+            .uri("/rendered")
+            .body(Bytes::new())
+            .expect("test request should be valid");
+        let core = HandlerCore::new(request, HandlerConfig::default())
+            .generate_routes_with_exclusions_and_discovery_context(
+                ssr_arm_app,
+                None,
+                || {},
+            )
+            .expect("route registration should succeed");
+
+        let response = core
+            .render(ssr_arm_app, || {
+                let options = use_context::<ResponseOptions>()
+                    .expect("response options should be installed");
+                options.insert_header(
+                    http::header::HeaderName::from_static(
+                        X_CONTENT_TYPE_OPTIONS,
+                    ),
+                    HeaderValue::from_static("off"),
+                );
+            })
+            .await;
+
+        assert_eq!(
+            response
+                .0
+                .headers()
+                .get_all(X_CONTENT_TYPE_OPTIONS)
+                .iter()
+                .count(),
+            1,
+            "the crate must not append a second value"
+        );
+        assert_eq!(
+            response
+                .0
+                .headers()
+                .get(X_CONTENT_TYPE_OPTIONS)
+                .and_then(|value| value.to_str().ok()),
+            Some("off"),
+            "an application value set through ResponseOptions must survive"
+        );
     }
 
     #[cfg(feature = "islands-router")]
