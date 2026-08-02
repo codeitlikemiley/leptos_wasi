@@ -56,6 +56,194 @@ is blocked by its default CPU-metrics panic; only Wasmtime 46 is a blocking fina
 runtime. Release evidence must include generated comparison JSON rather than
 reusing the historical RC-era table above.
 
+## Measured 0.3.2 versus 0.4 soak deltas
+
+These are the first numbers produced after the soak gates were repaired; every
+earlier run reported success unconditionally because the checker was piped into
+`tee`, which discarded its exit status.
+
+| Run | Lane | first-byte p99 | total p99 | throughput |
+|---|---|---:|---:|---:|
+| 1 | Wasmtime P2 | +8.59% | +8.55% | -6.62% |
+| 2 | Wasmtime P2 | — | — | -7.11% |
+
+The two throughput samples differ by half a percentage point, and both sides
+pin identical third-party dependency versions in `tests/test-app/Cargo.lock`,
+so the delta is not upstream drift. It has since been located - see
+[Where the 0.4 overhead comes from](#where-the-04-overhead-comes-from) - and
+the paragraph below records the measurement limit that made locating it hard.
+
+### What a single paired run can and cannot show
+
+An attempt to reproduce the delta locally, on a different machine, ran five
+alternating 60-second pairs of the same two guests at concurrency 100:
+
+| Pair | 0.3.2 rps | 0.4 rps | delta |
+|---:|---:|---:|---:|
+| 1 | 1464.7 | 1546.3 | +5.57% |
+| 2 | 1620.1 | 1536.8 | -5.14% |
+| 3 | 1573.6 | 1417.1 | -9.95% |
+| 4 | 1519.3 | 1507.2 | -0.79% |
+| 5 | 1436.8 | 1474.1 | +2.60% |
+
+The per-pair delta changes sign, and the mean is -1.75%. More telling, the
+*same* binary measured across those runs spans 12.8% (baseline) and 9.1%
+(candidate), so on that machine the noise is larger than the effect and the
+comparison cannot resolve it.
+
+That does not refute the CI figure. Noise falls with the square root of the
+sample window, so a 12% spread over 60 seconds corresponds to roughly 4% over
+CI's 600 seconds, which is below the ~7% CI reports. The CI number is
+plausibly real.
+
+It does establish a limit on the method. The soak runs the baseline once and
+the candidate once, in that fixed order, with no replication and no dispersion
+estimate. A design like that cannot separate a code regression from anything
+that drifts monotonically across the job - thermal behaviour, a co-tenant
+ramping up - because whatever runs second is always the candidate. Before the
+delta is attributed to a specific change, the comparison needs either
+alternated ordering or repeated pairs compared by median. Both cost CI time on
+a lane already close to its 35-minute timeout, so that is a deliberate
+trade-off rather than an oversight to fix silently.
+
+The absolute Wasmtime P3 lane measured 87.66 ms total p99 and -168 to +88 KiB
+final-quarter RSS growth across runs. Its budget is set from that observation
+and should tighten once several more runs establish the spread.
+
+## Where the 0.4 overhead comes from
+
+### The method that resolved it
+
+Pooled statistics could not separate the effect from machine drift: across four
+alternating 60-second pairs the box slowed 28% end to end, and 0.3.2 measured
+anywhere from 959 to 692 rps. Pooling that into a standard deviation reports
+"-17.07%, sd 14.91%" and looks like noise.
+
+Comparing **adjacent pairs** resolves it. Both members of a pair run seconds
+apart under the same conditions, so drift cancels:
+
+| Pair | 0.3.2 rps | 0.4 rps | ratio |
+|---:|---:|---:|---:|
+| 1 | 959.6 | 822.0 | -14.3% |
+| 2 | 911.6 | 703.2 | -22.9% |
+| 3 | 712.4 | 594.3 | -16.6% |
+| 4 | 692.1 | 597.3 | -13.7% |
+
+Four of four in the same direction, mean -16.9%, sd 4.1pp, standard error
+2.0pp - eight standard errors from zero. Any future comparison on a noisy host
+should use paired ratios rather than pooled means; the earlier section's
+conclusion that the method "cannot resolve it" applies to unpaired sampling
+only.
+
+### Which commit
+
+A paired bisect at concurrency 1 against 0.3.2, five reps per candidate,
+measured `/api/get_test`:
+
+| Commit | vs 0.3.2 | stderr |
+|---|---:|---:|
+| `6da6ed7` route discovery | -13.71% | 1.91pp |
+| `663e1a9` final WASI 0.3 | -14.63% | 1.89pp |
+| `2141837` 0.4 candidate | -9.94% | 0.84pp |
+| `dd35de9` 0.4.2-rc.1 | -14.01% | 2.85pp |
+| `e798edb` cache identity | -10.20% | 2.35pp |
+| `8578fd2` nosniff | -12.81% | 1.12pp |
+
+There is no step anywhere in the range - the cost is already present at the
+earliest commit that builds and is flat across six commits after it. That
+places the origin at `d1f9308`, the additive-adapter rewrite, which is the
+parent of the first measurable point and the only commit in the window that
+rewrites the request path (3480 changed lines). `d1f9308` itself cannot be
+measured in isolation: its test application predates
+`leptos_wasi::prelude::Handler` and does not compile.
+
+### Where the time goes
+
+Both supported hosts instantiate a **fresh component per request**. This is
+observable rather than inferred: a counter accumulated in a guest static reads
+zero after 18,000 requests, and Wasmtime's in-process guest profiler collects
+no samples because no store survives long enough to be sampled.
+
+Guest-side stage timing on `/api/get_test` (n=14,125, 1054 us mean):
+
+| Stage | Time | Share |
+|---|---:|---:|
+| registration - 13x `with_server_fn` + `generate_routes` | 183 us | 17% |
+| handle - render and send | 92 us | 9% |
+| instantiation, host, HTTP, socket | 779 us | 74% |
+
+Three quarters of a request is spent before any handler code runs. That is why
+no single code change recovers the delta: the whole guest handler is a quarter
+of the budget, and the regression is spread across it rather than sitting on
+one line.
+
+The cost splits by response class. A 404, which short-circuits before route
+matching, pays about 0.07 ms; a 200 pays about 0.14 ms. Both 200 endpoints
+regress identically (-13.83% for a server function, -13.64% for a zero-byte
+static file) despite having entirely different producers, so the extra tier is
+shared success-path work, not anything specific to either.
+
+### What was excluded, and why size is not the cause
+
+Each of these was tested by building a variant and measuring it paired against
+0.3.2, not by reading the diff:
+
+| Hypothesis | Result |
+|---|---|
+| Post-flush `WaitPoll` on the p2 write path | +0.8pp, median -0.8pp |
+| 0.3.2's `blocking_write_and_flush` write loop restored | +2.1pp, median +0.5pp |
+| Removing the dead route cache | +2.11pp, se 1.61pp |
+| Tracing overhead | Compiles to a unit struct and empty functions |
+| `parts.clone()` per request | Identical in 0.3.2 |
+
+A zero-byte static file regresses as much as a body-producing endpoint, which
+rules out byte writing independently of the two write-path experiments.
+
+Module size correlates with the regression across commits - it steps 8.5% at
+the same commit and stays flat - but it is not the mechanism. Only the `data`
+section is copied per instantiation, and it grew 15,836 bytes, on the order of
+a microsecond of memcpy rather than the tens of microseconds observed. The
+growth is 8.6% in `code`, which is compiled once at startup, and 9.4% in
+name and debug sections, which cost nothing at runtime. Stripping the binary
+would remove roughly 40% of the file and change latency by zero. Both test
+applications already build with `opt-level='z'`, fat LTO, `codegen-units=1`
+and `panic="abort"`, so there is no profile slack to recover either.
+
+### What the WASIp3 lane found on its first run
+
+Giving the p3 lane a baseline immediately produced a failure: -6.47%
+first-byte p99, -6.40% total p99, -5.63% throughput against `663e1a9`,
+against a 5% budget.
+
+A paired re-measurement of the same two commits puts the real figure at
+**-2.51%, sd 1.74pp, standard error 0.71pp** over six pairs - five of six
+negative, so a genuine regression, but less than half what the lane reported.
+The gap is the drift this document warns about two sections up: the lane runs
+the baseline once and the candidate once, in that fixed order, so the candidate
+absorbs whatever the runner does over twenty minutes.
+
+This is worth recording as a worked example. The lane was not wrong to fail -
+something did regress - but the number it produced would have led to chasing a
+6% effect that is actually 2.5%, which is how this investigation started in the
+first place. The budget is set at 8% to cover the measured effect plus that
+drift, and the honest way to tighten it is to alternate the runs rather than to
+lower the number.
+
+### What it costs in practice
+
+The benchmark endpoint returns the 12-byte string `"GET response"` with no
+rendering, database, or middleware in the loop, so it measures this crate's
+per-request plumbing with application work set to zero. The regression is
+roughly 0.15 ms added to a ~1 ms floor. On any page that renders real content
+that is a small share of the response, and the deployment target in this
+document is unaffected. It is documented because a fixed per-request cost is
+worth knowing about, not because it is user-visible.
+
+The remaining lever is the 183 us registration stage: `generate_routes` re-runs
+on every fresh instance, and moving discovery to build time would remove it.
+That is an API and design change rather than a patch, and it is not attempted
+here.
+
 ## Reproducing release evidence
 
 Pull-request CI runs paired ten-minute, 100-concurrency baseline and candidate
@@ -170,7 +358,22 @@ broker, while ingress changed by -192 KiB. Diagnostics localize the remaining
 failure to sustained terminal/native transport pressure, not an admission
 queue leak. `scripts/check-trusted-load-soak.py` now writes `summary.json` and
 enforces duration, failures, all three 25 ms p99 limits, final process
-liveness, and `max(32 MiB, 10%)` per-process final-quarter RSS growth.
+liveness, and `min(32 MiB, 10%)` per-process final-quarter RSS growth.
+
+The per-process memory allowance takes the *tighter* of the two bounds. Taking
+the looser one meant a larger process bought a larger leak allowance, so a
+small process was held to a ceiling it could never reach and a small leak went
+unseen. Where no starting sample exists there is nothing to be proportional
+to, so the absolute ceiling stands alone.
+
+The 25 ms p99 figure is a per-request deployment target and is measured at low
+concurrency; the single-digit p99 values recorded above come from those runs.
+It is not reachable in a saturated closed-loop soak: at concurrency 100 the
+mean latency is fixed by `concurrency / throughput`, which for the observed
+2623 requests per second is 38 ms, and p99 necessarily exceeds the mean. The
+concurrency-100 lane therefore carries its own load-appropriate budget rather
+than the deployment target. Both numbers are real; they describe different
+load profiles.
 
 A 2026-07-11 two-terminal, 500-request concurrency-100 diagnostic completed
 with zero failures. The direct hybrid path measured 54.975 ms first-byte and

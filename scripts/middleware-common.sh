@@ -31,6 +31,28 @@ require_middleware_command() {
   fi
 }
 
+# A substring test accepts a longer version that merely starts with the pinned
+# one - `4.0.2` matches a reported `4.0.21`, `0.10.1` matches `0.10.10` - which
+# defeats the point of recording exact revisions in components.lock.toml.
+# Require the pinned version to appear as a whole version string.
+# A git revision is compared by short prefix on purpose: the lock records a
+# full 40-character SHA while the binary reports a shorter one, so `c34c584`
+# must still match a reported `c34c584d`. That is a prefix test, not a version
+# test, and it must not use the whole-version rule below.
+revision_string_matches() {
+  local expected_prefix="$1"
+  local reported="$2"
+  [[ "${reported}" == *"${expected_prefix}"* ]]
+}
+
+version_string_matches() {
+  local expected="$1"
+  local reported="$2"
+  local escaped
+  escaped="$(sed 's/[.[\*^$()+?{|]/\\&/g' <<<"${expected}")"
+  grep -qE "(^|[^0-9A-Za-z.-])${escaped}([^0-9A-Za-z.-]|\$)" <<<"${reported}"
+}
+
 resolve_middleware_tool() {
   local environment_name="$1"
   local command_name="$2"
@@ -61,7 +83,7 @@ resolve_middleware_tool() {
   else
     actual="$("${selected}" --version 2>&1)"
   fi
-  if [[ "${actual}" != *"${expected_version}"* ]]; then
+  if ! version_string_matches "${expected_version}" "${actual}"; then
     echo "${command_name} version mismatch; expected ${expected_version}, found: ${actual}" >&2
     return 1
   fi
@@ -77,7 +99,7 @@ tool_version_matches() {
   else
     actual="$("${command_name}" --version 2>&1 || true)"
   fi
-  [[ "${actual}" == *"${expected_version}"* ]]
+  version_string_matches "${expected_version}" "${actual}"
 }
 
 resolve_spin_main_tool() {
@@ -90,7 +112,8 @@ resolve_spin_main_tool() {
 
   if [[ -n "${configured}" ]]; then
     selected="${configured}"
-  elif command -v spin >/dev/null 2>&1 && tool_version_matches spin "${short_revision}"; then
+  elif command -v spin >/dev/null 2>&1 \
+    && revision_string_matches "${short_revision}" "$(spin --version 2>&1 || true)"; then
     selected="spin"
   elif [[ -x "${repo_local}" ]]; then
     selected="${repo_local}"
@@ -100,7 +123,7 @@ resolve_spin_main_tool() {
   fi
 
   require_middleware_command "${selected}"
-  tool_version_matches "${selected}" "${short_revision}" || {
+  revision_string_matches "${short_revision}" "$("${selected}" --version 2>&1 || true)" || {
     echo "Spin revision mismatch; expected ${revision}, found: $("${selected}" --version 2>&1)" >&2
     return 1
   }

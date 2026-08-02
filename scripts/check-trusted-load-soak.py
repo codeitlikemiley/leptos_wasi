@@ -114,9 +114,13 @@ def summarize(
             continue
         quarter_start = rss[len(rss) * 3 // 4]
         growth = rss[-1] - quarter_start
-        allowed_growth = max(
-            max_rss_growth_kib,
-            int(rss[0] * max_rss_growth_fraction),
+        # Whichever allowance is TIGHTER. A small process would never reach
+        # the absolute ceiling, so the proportional bound is what makes a
+        # small leak visible.
+        allowed_growth = (
+            min(max_rss_growth_kib, int(rss[0] * max_rss_growth_fraction))
+            if rss[0] > 0
+            else max_rss_growth_kib
         )
         passed = growth <= allowed_growth
         process_summary[str(name)] = {

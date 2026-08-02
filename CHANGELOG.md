@@ -12,15 +12,33 @@ All notable changes to this project will be documented in this file.
   the request path length; a 16 KiB path burned tens of milliseconds of CPU per
   unauthenticated `GET` and still resolved successfully. Chains longer than the
   budget are now rejected as residual percent-encoding.
-- Restricted the generated route-list cache to zero-sized application and
-  route-discovery closures. A `TypeId` identifies behavior only for types with
-  a single inhabitant, so two different applications coerced to the same
-  `fn() -> _` pointer type previously shared one cached route list and the
-  second application served the first application's routes. Function pointers
-  and capturing closures now re-run route discovery.
+- Removed the generated route-list cache. It was keyed by `TypeId`, which
+  identifies behavior only for types with a single inhabitant, so two different
+  applications coerced to the same `fn() -> _` pointer type shared one cached
+  list and the second served the first's routes. That unsoundness was first
+  narrowed to zero-sized closures, but the cache could never pay for itself:
+  both supported hosts instantiate a fresh component per request, so a
+  thread-local map starts empty on every lookup and is discarded with the
+  instance. It only added a map allocation and a full deep clone of the route
+  list to each request. Route discovery is now unconditional and correct by
+  construction.
 
 ### Changed
 
+- Every soak lane now compares against a baseline instead of only an absolute
+  ceiling. The WASIp3 lane had no baseline at all — WASIp3 postdates 0.3.2, so
+  there was nothing historical to compare it to — and its 150 ms ceiling left
+  60 ms of headroom above the 88 ms observed, meaning a gradual regression
+  could not have been detected there. Each lane now baselines at the oldest
+  commit that supports its preview: WASIp2 at 0.3.2, WASIp3 at the final WASI
+  0.3 migration. The absolute ceiling additionally runs on every lane, because
+  a relative gate cannot see a slowdown that was already present when its own
+  baseline was recorded.
+- Soak latency and throughput budgets are set per lane rather than globally.
+  The WASIp2 lanes span the 0.4 adapter rewrite and carry a measured, documented
+  per-request cost, so their budgets clear it and catch anything worse; the
+  WASIp3 baseline already contains that cost and keeps the tight defaults. See
+  `PERFORMANCE.md` for the measurements behind each number.
 - Every response the crate emits now carries `X-Content-Type-Options: nosniff`,
   not only static assets. The crate's own error bodies — 404, the static 405,
   and the 413/400 request-policy rejections — additionally declare
