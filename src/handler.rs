@@ -357,10 +357,35 @@ fn trace_policy_rejection(preview: &'static str, error: &RequestPolicyError) {
     );
 }
 
+/// Builds one of the crate's own error responses.
+///
+/// The body is always a short ASCII sentence, so it is declared as
+/// `text/plain; charset=utf-8`: a body with no declared type is exactly the
+/// case where content sniffing is dangerous.
 fn plain_response(status: StatusCode, message: impl Into<Bytes>) -> Response {
     let mut response = http::Response::new(Body::Sync(message.into()));
     *response.status_mut() = status;
+    response.headers_mut().insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
     response.into()
+}
+
+/// Applies `x-content-type-options: nosniff` unless the response already
+/// carries a value for it.
+///
+/// Insert-if-absent mirrors
+/// [`ExtendResponse::set_default_content_type`](crate::integration::ExtendResponse::set_default_content_type):
+/// an application that deliberately set its own value through
+/// [`ResponseOptions`] keeps it, because `extend_response` has already merged
+/// those headers in by the time this runs.
+fn set_default_nosniff(response: &mut Response) {
+    let name = http::header::HeaderName::from_static(X_CONTENT_TYPE_OPTIONS);
+    let headers = response.0.headers_mut();
+    if !headers.contains_key(&name) {
+        headers.insert(name, HeaderValue::from_static("nosniff"));
+    }
 }
 
 type ServerFnHandler = Box<
@@ -652,12 +677,8 @@ impl HandlerCore {
                         HeaderValue::from_static("application/octet-stream")
                     }),
                 );
-                response.headers_mut().insert(
-                    http::header::HeaderName::from_static(
-                        X_CONTENT_TYPE_OPTIONS,
-                    ),
-                    HeaderValue::from_static("nosniff"),
-                );
+                // `nosniff` is applied centrally in `HandlerCore::render`,
+                // which every static response also funnels through.
                 if let Some(length) = original_length
                     && let Ok(length) =
                         HeaderValue::from_str(&length.to_string())
@@ -801,6 +822,11 @@ impl HandlerCore {
         let mut response = response.unwrap_or_else(|| {
             plain_response(StatusCode::NOT_FOUND, "404 not found")
         });
+        // Single insertion point for every response this crate emits. It sits
+        // after the `extend_response` tail, so an application value merged from
+        // `ResponseOptions` is already present and wins, and after the 404
+        // fallback, which never reaches that tail.
+        set_default_nosniff(&mut response);
         if is_head {
             *response.0.body_mut() = Body::Sync(Bytes::new());
         } else if !response.0.headers().contains_key(CONTENT_LENGTH)
@@ -851,8 +877,15 @@ where
         app: TypeId::of::<AppFn>(),
         context: TypeId::of::<ContextFn>(),
     };
-    if let Some(cached) =
-        ROUTE_CACHE.with(|cache| cache.borrow().get(&key).cloned())
+    // A `TypeId` identifies behavior only when the type has exactly one
+    // inhabitant. Zero-sized function items and non-capturing closures qualify;
+    // function pointers and capturing closures do not, and two distinct
+    // applications coerced to the same `fn()` type would otherwise share one
+    // cached route list.
+    let cacheable = size_of::<AppFn>() == 0 && size_of::<ContextFn>() == 0;
+    if cacheable
+        && let Some(cached) =
+            ROUTE_CACHE.with(|cache| cache.borrow().get(&key).cloned())
     {
         return cached;
     }
@@ -891,9 +924,11 @@ where
             .collect()
     };
 
-    ROUTE_CACHE.with(|cache| {
-        cache.borrow_mut().insert(key, generated.clone());
-    });
+    if cacheable {
+        ROUTE_CACHE.with(|cache| {
+            cache.borrow_mut().insert(key, generated.clone());
+        });
+    }
     generated
 }
 
@@ -1175,7 +1210,11 @@ macro_rules! common_handler_methods {
         /// Generates routes with exclusions and deterministic discovery context.
         ///
         /// Route discovery is cached per concrete application/context closure
-        /// type. The context closure runs against synthetic standard contexts
+        /// type, and only when both are zero-sized (function items or
+        /// non-capturing closures) so that one type cannot describe two
+        /// different applications. Function pointers and capturing closures
+        /// re-run discovery on every request.
+        /// The context closure runs against synthetic standard contexts
         /// only when route discovery executes. Route structure, exclusions,
         /// and discovery context must be deterministic deployment
         /// configuration rather than request-dependent state.
@@ -1493,6 +1532,15 @@ pub mod wasip2 {
 
     fn send_internal_error(response_out: ResponseOutparam) {
         let headers = wasi::http::types::Headers::new();
+        // This response is built outside `HandlerCore::render`, so the
+        // centralized default cannot reach it. Its body is a typeless ASCII
+        // sentence, which is exactly the case content sniffing exploits.
+        let _ = headers.append(
+            CONTENT_TYPE.as_str(),
+            b"text/plain; charset=utf-8".to_vec().as_ref(),
+        );
+        let _ = headers
+            .append(X_CONTENT_TYPE_OPTIONS, b"nosniff".to_vec().as_ref());
         let response = OutgoingResponse::new(headers);
         if response
             .set_status_code(StatusCode::INTERNAL_SERVER_ERROR.as_u16())
@@ -2166,10 +2214,745 @@ mod tests {
         );
     }
 
+    /// `ResponseOptions` is the documented escape hatch for redirects that
+    /// legitimately leave the origin (OAuth authorization endpoints, payment
+    /// providers). `extend_response` runs *after* `apply_server_fn_redirect`
+    /// and `http`'s `Extend` impl replaces rather than appends, so a
+    /// `Location` written through the reactive context wins outright and is
+    /// never reduced to a path. This pins that contract end to end.
+    #[tokio::test(flavor = "current_thread")]
+    async fn response_options_location_survives_server_fn_sanitizing() {
+        const OFF_ORIGIN: &str =
+            "https://accounts.example.com/oauth/authorize?client_id=leptos";
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/api/start_oauth")
+            .header(ACCEPT, "text/html")
+            .header(REFERER, "http://127.0.0.1/previous-page")
+            .body(Bytes::new())
+            .expect("test request should be valid");
+        let mut core = HandlerCore::new(request, HandlerConfig::default());
+        core.server_fn = Some(Box::new(|_| {
+            Box::pin(async {
+                http::Response::new(Body::Sync(Bytes::from_static(b"ok")))
+            })
+        }));
+
+        let response = core
+            .render(
+                || view! { "unused" },
+                || {
+                    use_context::<ResponseOptions>()
+                        .expect("response options should be installed")
+                        .insert_header(
+                            LOCATION,
+                            HeaderValue::from_static(OFF_ORIGIN),
+                        );
+                },
+            )
+            .await;
+
+        // `apply_server_fn_redirect` saw an html form POST with a `Referer`
+        // and still promoted the status, so this is the same code path a real
+        // form redirect takes.
+        assert_eq!(response.0.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.0.headers().get(LOCATION),
+            Some(&HeaderValue::from_static(OFF_ORIGIN)),
+            "a Location set through ResponseOptions must reach the client \
+             unchanged, including the scheme and authority"
+        );
+    }
+
+    /// The complementary half: a `Location` the server function wrote onto its
+    /// own `http::Response` is *not* an escape hatch. It is sanitized down to
+    /// a path, and it takes precedence over the `Referer` fallback.
+    #[tokio::test(flavor = "current_thread")]
+    async fn server_fn_response_location_is_reduced_to_a_path() {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/api/form_submit")
+            .header(ACCEPT, "text/html")
+            .header(REFERER, "http://127.0.0.1/previous-page")
+            .body(Bytes::new())
+            .expect("test request should be valid");
+        let mut core = HandlerCore::new(request, HandlerConfig::default());
+        core.server_fn = Some(Box::new(|_| {
+            Box::pin(async {
+                let mut response =
+                    http::Response::new(Body::Sync(Bytes::from_static(b"ok")));
+                *response.status_mut() = StatusCode::FOUND;
+                response.headers_mut().insert(
+                    LOCATION,
+                    HeaderValue::from_static(
+                        "https://malicious.example.com/steal-session?token=1",
+                    ),
+                );
+                response
+            })
+        }));
+
+        let response = core.render(|| view! { "unused" }, || {}).await;
+
+        assert_eq!(response.0.status(), StatusCode::FOUND);
+        let location = response
+            .0
+            .headers()
+            .get(LOCATION)
+            .expect("redirect should carry a Location")
+            .to_str()
+            .expect("Location should be text");
+        assert_eq!(
+            location, "/steal-session?token=1",
+            "the server function's own Location must be reduced to a \
+             same-origin path, not replaced by the Referer"
+        );
+        assert!(!location.contains("malicious.example.com"));
+    }
+
     #[test]
     fn html_with_zero_quality_is_not_accepted() {
         let mut headers = HeaderMap::new();
         headers.insert(ACCEPT, HeaderValue::from_static("text/html;q=0"));
         assert!(!accepts_html(&headers));
+    }
+
+    fn accept(value: &'static str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(ACCEPT, HeaderValue::from_static(value));
+        headers
+    }
+
+    #[test]
+    fn browser_navigation_accept_headers_are_html() {
+        assert!(accepts_html(&accept(
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        )));
+        assert!(accepts_html(&accept("application/xhtml+xml")));
+        assert!(accepts_html(&accept(" text/html ; charset=utf-8")));
+    }
+
+    #[test]
+    fn non_navigation_accept_headers_are_not_html() {
+        assert!(!accepts_html(&accept("application/json")));
+        assert!(!accepts_html(&accept("*/*")));
+        assert!(!accepts_html(&HeaderMap::new()));
+        assert!(!accepts_html(&accept("text/html;q=0.000")));
+    }
+
+    #[test]
+    fn accept_html_is_detected_across_repeated_headers() {
+        let mut headers = HeaderMap::new();
+        headers.append(ACCEPT, HeaderValue::from_static("application/json"));
+        headers.append(ACCEPT, HeaderValue::from_static("text/html"));
+
+        assert!(accepts_html(&headers));
+    }
+
+    fn sanitized(value: &'static str) -> Option<String> {
+        sanitize_referrer(&HeaderValue::from_static(value))
+            .map(|value| value.to_str().expect("ascii").to_owned())
+    }
+
+    #[test]
+    fn referrers_are_reduced_to_same_origin_paths() {
+        assert_eq!(
+            sanitized("http://127.0.0.1/previous-page"),
+            Some("/previous-page".to_owned())
+        );
+        assert_eq!(
+            sanitized("https://malicious.example.com/steal?a=1"),
+            Some("/steal?a=1".to_owned())
+        );
+        assert_eq!(
+            sanitized("/relative/page"),
+            Some("/relative/page".to_owned())
+        );
+    }
+
+    #[test]
+    fn protocol_relative_and_backslash_referrers_are_rejected() {
+        assert_eq!(sanitized("//evil.example.com/path"), None);
+        assert_eq!(sanitized("http://127.0.0.1/\\evil.example.com"), None);
+        assert_eq!(sanitized("http://127.0.0.1/%5Cevil.example.com"), None);
+        assert_eq!(sanitized("http://127.0.0.1/%5cevil.example.com"), None);
+        assert_eq!(sanitized("mailto:someone@example.com"), None);
+    }
+
+    fn redirected(
+        status: StatusCode,
+        location: Option<&'static str>,
+        accepts_html: bool,
+        referrer: Option<&'static str>,
+    ) -> (StatusCode, Option<String>) {
+        let mut response =
+            http::Response::new(Body::Sync(Bytes::from_static(b"body")));
+        *response.status_mut() = status;
+        if let Some(location) = location {
+            response
+                .headers_mut()
+                .insert(LOCATION, HeaderValue::from_static(location));
+        }
+        apply_server_fn_redirect(
+            &mut response,
+            accepts_html,
+            referrer.map(HeaderValue::from_static),
+        );
+        let location = response
+            .headers()
+            .get(LOCATION)
+            .map(|value| value.to_str().expect("ascii").to_owned());
+        (response.status(), location)
+    }
+
+    #[test]
+    fn html_form_posts_redirect_back_to_a_same_origin_referrer() {
+        assert_eq!(
+            redirected(
+                StatusCode::OK,
+                None,
+                true,
+                Some("http://127.0.0.1/previous-page")
+            ),
+            (StatusCode::FOUND, Some("/previous-page".to_owned()))
+        );
+    }
+
+    #[test]
+    fn html_form_posts_fall_back_to_root_for_unusable_referrers() {
+        assert_eq!(
+            redirected(
+                StatusCode::OK,
+                None,
+                true,
+                Some("http://127.0.0.1/%5Cevil.example.com")
+            ),
+            (StatusCode::FOUND, Some("/".to_owned()))
+        );
+    }
+
+    #[test]
+    fn cross_origin_locations_are_reduced_to_their_path() {
+        assert_eq!(
+            redirected(
+                StatusCode::FOUND,
+                Some("https://evil.example.com/take-over"),
+                false,
+                None
+            ),
+            (StatusCode::FOUND, Some("/take-over".to_owned()))
+        );
+    }
+
+    #[test]
+    fn api_clients_keep_an_explicit_same_origin_location() {
+        assert_eq!(
+            redirected(StatusCode::OK, Some("/dashboard"), false, None),
+            (StatusCode::OK, Some("/dashboard".to_owned()))
+        );
+    }
+
+    #[test]
+    fn responses_without_a_location_are_left_alone() {
+        assert_eq!(
+            redirected(StatusCode::OK, None, false, None),
+            (StatusCode::OK, None)
+        );
+    }
+
+    fn alpha_app() -> leptos::prelude::AnyView {
+        use leptos::prelude::IntoAny;
+        view! {
+            <Router>
+                <Routes fallback=|| view! { "not found" }>
+                    <Route path=path!("/alpha") view=|| view! { "alpha" } />
+                </Routes>
+            </Router>
+        }
+        .into_any()
+    }
+
+    fn beta_app() -> leptos::prelude::AnyView {
+        use leptos::prelude::IntoAny;
+        view! {
+            <Router>
+                <Routes fallback=|| view! { "not found" }>
+                    <Route path=path!("/beta") view=|| view! { "beta" } />
+                </Routes>
+            </Router>
+        }
+        .into_any()
+    }
+
+    fn generated_paths<AppFn>(app: AppFn) -> Vec<String>
+    where
+        AppFn: Fn() -> leptos::prelude::AnyView + 'static + Send + Clone,
+    {
+        let noop: fn() = || {};
+        registered_routes(&app, &noop)
+            .expect("route generation should succeed")
+            .into_iter()
+            .map(|(path, _, _)| path)
+            .collect()
+    }
+
+    #[test]
+    fn function_pointer_applications_do_not_share_a_cached_route_list() {
+        type AppPointer = fn() -> leptos::prelude::AnyView;
+
+        assert_eq!(generated_paths(alpha_app as AppPointer), ["/alpha"]);
+        assert_eq!(generated_paths(beta_app as AppPointer), ["/beta"]);
+    }
+
+    #[cfg(feature = "islands-router")]
+    mod islands_router_streaming {
+        use super::*;
+        use leptos::prelude::{ElementChild, Suspend, Suspense};
+        use std::{
+            task::{Context, Poll},
+            time::{Duration, Instant},
+        };
+
+        /// How long the suspended resource stays unresolved. Waking the poller
+        /// immediately is not enough: the `Suspense` boundary settles on a
+        /// worker thread, so it can win the race and inline the resolved
+        /// markup even in out-of-order mode. A wall-clock gate keeps the first
+        /// poll reliably pending.
+        const RESOURCE_DELAY: Duration = Duration::from_millis(50);
+
+        /// Stays pending until [`RESOURCE_DELAY`] has elapsed, forcing an
+        /// out-of-order stream to emit the `Suspense` fallback first.
+        struct PendingResource(Instant);
+
+        impl Default for PendingResource {
+            fn default() -> Self {
+                Self(Instant::now() + RESOURCE_DELAY)
+            }
+        }
+
+        impl Future for PendingResource {
+            type Output = ();
+
+            fn poll(
+                self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+            ) -> Poll<Self::Output> {
+                let now = Instant::now();
+                if now >= self.0 {
+                    return Poll::Ready(());
+                }
+                // The reactive graph may poll this from any thread, so wake
+                // from a plain thread instead of a runtime-bound timer.
+                let remaining = self.0 - now;
+                let waker = cx.waker().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(remaining);
+                    waker.wake();
+                });
+                Poll::Pending
+            }
+        }
+
+        fn out_of_order_app() -> impl IntoView {
+            view! {
+                <Router>
+                    <Routes fallback=|| view! { "not found" }>
+                        <Route
+                            path=path!("/streamed")
+                            ssr=SsrMode::OutOfOrder
+                            view=|| {
+                                view! {
+                                    <Suspense fallback=|| view! { <p>"pending"</p> }>
+                                        {move || Suspend::new(async move {
+                                            PendingResource::default().await;
+                                            view! { <p>"resolved"</p> }
+                                        })}
+                                    </Suspense>
+                                }
+                            }
+                        />
+                    </Routes>
+                </Router>
+            }
+        }
+
+        async fn render_streamed(islands_navigation: bool) -> String {
+            // `Suspense` drives its boundary with an isomorphic effect, so the
+            // reactive graph needs a spawner before this route can render.
+            let _ = any_spawner::Executor::init_futures_executor();
+
+            let mut builder = Request::builder().uri("/streamed");
+            if islands_navigation {
+                builder = builder.header(ISLANDS_ROUTER_HEADER, "1");
+            }
+            let request = builder
+                .body(Bytes::new())
+                .expect("test request should be valid");
+            let core = HandlerCore::new(request, HandlerConfig::default())
+                .generate_routes_with_exclusions_and_discovery_context(
+                    out_of_order_app,
+                    None,
+                    || {},
+                )
+                .expect("route registration should succeed");
+            let response = core.render(out_of_order_app, || {}).await;
+            match response.0.into_body() {
+                Body::Sync(bytes) => String::from_utf8(bytes.to_vec())
+                    .expect("rendered body should be UTF-8"),
+                Body::Async(stream) => {
+                    stream
+                        .map(|chunk| {
+                            let chunk =
+                                chunk.expect("stream chunk should not fail");
+                            String::from_utf8(chunk.to_vec())
+                                .expect("rendered chunk should be UTF-8")
+                        })
+                        .collect::<String>()
+                        .await
+                }
+            }
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn islands_router_navigation_downgrades_out_of_order_streaming() {
+            let streamed = render_streamed(false).await;
+            let navigated = render_streamed(true).await;
+
+            // Branching markup is selected by the cargo feature, so both
+            // responses carry it; only the streaming order reacts to the header.
+            assert!(
+                streamed.contains("<!--bo-"),
+                "branching markup should be emitted without the header, got: {streamed}"
+            );
+            assert!(
+                navigated.contains("<!--bo-"),
+                "branching markup should survive the downgrade, got: {navigated}"
+            );
+
+            // Out-of-order streaming ships the `Suspense` fallback first and
+            // defers the resolved markup into a trailing `<template>`.
+            assert!(
+                streamed.contains("<p>pending</p>"),
+                "out-of-order streaming should emit the Suspense fallback, got: {streamed}"
+            );
+            let deferred = streamed.find("<template id=").unwrap_or_else(|| {
+                panic!(
+                    "out-of-order streaming should defer markup into a template, got: {streamed}"
+                )
+            });
+            let resolved =
+                streamed.find("<p>resolved</p>").unwrap_or_else(|| {
+                    panic!(
+                        "out-of-order streaming should still emit the resolved markup, got: {streamed}"
+                    )
+                });
+            assert!(
+                deferred < resolved,
+                "resolved markup should only appear inside the deferred template, got: {streamed}"
+            );
+
+            // An islands-router navigation downgrades to in-order streaming:
+            // the resolved markup is inlined and none of the out-of-order
+            // machinery (fallback, template, suspense markers) is present.
+            assert!(
+                navigated.contains("<p>resolved</p>"),
+                "in-order streaming should inline the resolved markup, got: {navigated}"
+            );
+            assert!(
+                !navigated.contains("<template id="),
+                "an islands-router navigation must not defer markup into a template, got: {navigated}"
+            );
+            assert!(
+                !navigated.contains("<p>pending</p>"),
+                "an islands-router navigation must not emit the Suspense fallback, got: {navigated}"
+            );
+            assert!(
+                !navigated.contains("<!--s-"),
+                "an islands-router navigation must not emit suspense stream markers, got: {navigated}"
+            );
+        }
+    }
+    fn header_of<'a>(response: &'a Response, name: &str) -> Option<&'a str> {
+        response
+            .0
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+    }
+
+    fn nosniff_of(response: &Response) -> Option<&str> {
+        header_of(response, X_CONTENT_TYPE_OPTIONS)
+    }
+
+    fn static_asset_core(method: Method) -> HandlerCore {
+        HandlerCore::new(
+            Request::builder()
+                .method(method)
+                .uri("/static/app.js")
+                .body(Bytes::new())
+                .expect("test request should be valid"),
+            HandlerConfig::default(),
+        )
+        .static_files_handler("/static", |_| {
+            Some(Body::Sync(Bytes::from_static(b"console.log(1)")))
+        })
+        .expect("static registration should succeed")
+    }
+
+    async fn render_plain(core: HandlerCore) -> Response {
+        core.render(|| view! { "unused" }, || {}).await
+    }
+
+    /// Covers the shape an SSR render reaches `render`'s tail in: a response
+    /// that already carries the `text/html; charset=utf-8` installed by
+    /// `set_default_content_type` inside `Response::from_app`.
+    ///
+    /// This drives the preset arm rather than the SSR arm, so it pins the
+    /// content-type interaction but not SSR-specific precedence. That is not a
+    /// coverage hole: the default is applied once, after the shared
+    /// `extend_response` tail, so every arm that produced a response reaches
+    /// it by the same path. `application_nosniff_override_wins` proves the
+    /// precedence itself through the server-function arm.
+    #[tokio::test(flavor = "current_thread")]
+    async fn html_responses_gain_nosniff_and_keep_their_content_type() {
+        let mut html = http::Response::new(Body::Sync(Bytes::from_static(
+            b"<!DOCTYPE html><html></html>",
+        )));
+        html.headers_mut().insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        );
+        let core = HandlerCore::new(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/rendered")
+                .body(Bytes::new())
+                .expect("test request should be valid"),
+            HandlerConfig::default(),
+        )
+        .with_preset(html.into(), "ssr");
+
+        let response = render_plain(core).await;
+
+        assert_eq!(response.0.status(), StatusCode::OK);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/html; charset=utf-8")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn preset_responses_carry_nosniff() {
+        let core = HandlerCore::new(
+            Request::new(Bytes::new()),
+            HandlerConfig::default(),
+        )
+        .with_preset(plain_response(StatusCode::OK, "selected"), "test");
+
+        let response = render_plain(core).await;
+
+        assert_eq!(response.0.status(), StatusCode::OK);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/plain; charset=utf-8")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn server_fn_responses_carry_nosniff() {
+        let mut core = HandlerCore::new(
+            Request::builder()
+                .uri("/api/echo")
+                .body(Bytes::new())
+                .expect("test request should be valid"),
+            HandlerConfig::default(),
+        );
+        core.server_fn = Some(Box::new(|_| {
+            Box::pin(async {
+                let mut response =
+                    http::Response::new(Body::Sync(Bytes::from_static(b"{}")));
+                response.headers_mut().insert(
+                    CONTENT_TYPE,
+                    HeaderValue::from_static("application/json"),
+                );
+                response
+            })
+        }));
+
+        let response = render_plain(core).await;
+
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("application/json")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn not_found_fallback_carries_nosniff() {
+        let core = HandlerCore::new(
+            Request::builder()
+                .uri("/missing")
+                .body(Bytes::new())
+                .expect("test request should be valid"),
+            HandlerConfig::default(),
+        );
+
+        let response = render_plain(core).await;
+
+        assert_eq!(response.0.status(), StatusCode::NOT_FOUND);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/plain; charset=utf-8")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn policy_rejections_carry_nosniff() {
+        let core = HandlerCore::new(
+            Request::new(Bytes::new()),
+            HandlerConfig::default(),
+        )
+        .with_preset(
+            policy_response(&RequestPolicyError::BodyTooLarge { limit: 16 }),
+            "request_policy",
+        );
+
+        let response = render_plain(core).await;
+
+        assert_eq!(response.0.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/plain; charset=utf-8")
+        );
+    }
+
+    /// The server-function body guard builds its own 413 and returns it
+    /// through the `server_fn` arm, so it reaches the wire by a different path
+    /// than the request-policy 413 injected as a preset.
+    #[tokio::test(flavor = "current_thread")]
+    async fn server_fn_body_limit_rejection_carries_nosniff() {
+        let limit = 8_usize;
+        let mut core = HandlerCore::new(
+            Request::builder()
+                .uri("/api/upload")
+                .body(Bytes::from_static(b"oversized payload"))
+                .expect("test request should be valid"),
+            HandlerConfig::default().with_max_request_body_size(limit),
+        );
+        core.server_fn = Some(Box::new(move |request| {
+            Box::pin(async move {
+                let (_, bytes) = request.into_parts();
+                assert!(bytes.len() > limit, "fixture must exceed the limit");
+                plain_response(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    format!("request body exceeds limit of {limit} bytes"),
+                )
+                .0
+            })
+        }));
+
+        let response = render_plain(core).await;
+
+        assert_eq!(response.0.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/plain; charset=utf-8")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn static_method_not_allowed_carries_nosniff() {
+        let response = render_plain(static_asset_core(Method::POST)).await;
+
+        assert_eq!(response.0.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(header_of(&response, "allow"), Some("GET, HEAD"));
+        assert_eq!(
+            header_of(&response, "content-type"),
+            Some("text/plain; charset=utf-8")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn static_files_still_carry_nosniff_after_centralisation() {
+        let response = render_plain(static_asset_core(Method::GET)).await;
+
+        assert_eq!(response.0.status(), StatusCode::OK);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert!(
+            header_of(&response, "content-type")
+                .is_some_and(|value| value.contains("javascript"))
+        );
+        assert_eq!(
+            response
+                .0
+                .headers()
+                .get_all(X_CONTENT_TYPE_OPTIONS)
+                .iter()
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn head_responses_keep_nosniff() {
+        let response = render_plain(static_asset_core(Method::HEAD)).await;
+
+        assert_eq!(response.0.status(), StatusCode::OK);
+        assert_eq!(nosniff_of(&response), Some("nosniff"));
+        assert_eq!(header_of(&response, "content-length"), Some("14"));
+        assert!(
+            matches!(response.0.body(), Body::Sync(bytes) if bytes.is_empty())
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn application_nosniff_override_wins() {
+        let mut core = HandlerCore::new(
+            Request::builder()
+                .uri("/api/echo")
+                .body(Bytes::new())
+                .expect("test request should be valid"),
+            HandlerConfig::default(),
+        );
+        core.server_fn = Some(Box::new(|_| {
+            Box::pin(async {
+                http::Response::new(Body::Sync(Bytes::from_static(b"ok")))
+            })
+        }));
+
+        let response = core
+            .render(
+                || view! { "unused" },
+                || {
+                    use_context::<ResponseOptions>()
+                        .expect("response options should be installed")
+                        .insert_header(
+                            http::header::HeaderName::from_static(
+                                X_CONTENT_TYPE_OPTIONS,
+                            ),
+                            HeaderValue::from_static("off"),
+                        );
+                },
+            )
+            .await;
+
+        assert_eq!(nosniff_of(&response), Some("off"));
+        assert_eq!(
+            response
+                .0
+                .headers()
+                .get_all(X_CONTENT_TYPE_OPTIONS)
+                .iter()
+                .count(),
+            1
+        );
     }
 }

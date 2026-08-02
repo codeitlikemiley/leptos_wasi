@@ -261,9 +261,93 @@ conflicting Content-Length values receive `400 Bad Request`.
 Incoming bodies are currently buffered. Request-body streaming, WebSockets,
 HTTP trailers, static SSR generation, byte ranges, and automatic precompressed
 asset negotiation are not supported. Configure request deadlines, concurrency,
-memory limits, and filesystem capabilities in Wasmtime or Spin. See
+memory limits, and filesystem capabilities in Wasmtime or Spin. The configured
+limit bounds body size, not the time a body takes to arrive: a client that
+trickles or stalls without closing holds the guest instance until the host ends
+the request, so the host needs a request-read/idle deadline and a
+concurrent-instance cap as well. See
 [Production Support](./PRODUCTION.md) for the complete contract and
 [Performance Baseline](./PERFORMANCE.md) for the recorded 0.3.2 comparison.
+
+A redirect carried by a server-function response has its `Location` reduced to
+a same-origin path before it is sent. A `Location` written through
+`ResponseOptions`, including by `leptos_wasi::prelude::redirect`, is sent as
+written. See [Production Support](./PRODUCTION.md#request-and-response-contract)
+for the exact rule and how it differs from `leptos_axum` and `leptos_actix`.
+
+## Content Security Policy
+
+`leptos_wasi` provides a fresh Leptos nonce for every request, alongside the
+other standard contexts, and stamps it onto the inline hydration and streaming
+`<script>` elements it emits. It does not emit a `Content-Security-Policy`
+header. An application can emit one with no additional `leptos_wasi` API by
+writing the header through `ResponseOptions` while the first chunk of the
+document is rendered:
+
+```rust
+use http::{HeaderValue, header::CONTENT_SECURITY_POLICY};
+use leptos::prelude::use_context;
+use leptos_wasi::prelude::ResponseOptions;
+
+#[cfg(feature = "ssr")]
+fn provide_csp() {
+    let (Some(res), Some(nonce)) =
+        (use_context::<ResponseOptions>(), leptos::nonce::use_nonce())
+    else {
+        return;
+    };
+    let policy = format!(
+        "default-src 'self'; \
+         script-src 'self' 'nonce-{nonce}' 'wasm-unsafe-eval'; \
+         style-src 'self'; \
+         connect-src 'self'; \
+         object-src 'none'; \
+         base-uri 'self'; \
+         frame-ancestors 'none'"
+    );
+    if let Ok(value) = HeaderValue::from_str(&policy) {
+        res.insert_header(CONTENT_SECURITY_POLICY, value);
+    }
+}
+
+#[component]
+pub fn App() -> impl IntoView {
+    provide_meta_context();
+    #[cfg(feature = "ssr")]
+    provide_csp();
+    // ...
+}
+```
+
+`ResponseOptions` is merged into the response after the first body chunk has
+been awaited, so a header written synchronously from the application component
+reaches the client. A header written later, from inside a `Suspense` boundary
+that resolves after the first chunk, does not.
+
+Two constraints shape any workable policy:
+
+- Leptos hydration compiles and instantiates WebAssembly from JavaScript. A
+  `script-src` that omits `'wasm-unsafe-eval'` stops hydration in browsers that
+  enforce the WebAssembly CSP integration.
+- `leptos_meta`'s `Stylesheet` and `Link` components accept no `nonce`
+  attribute; only `Script` and `Style` do, and only when the
+  `leptos_meta/nonce` feature is enabled. A `style-src` restricted to
+  `'nonce-…'` therefore blocks the external stylesheet that
+  `examples/counter` and `tests/test-app` load through `<Stylesheet href=… />`.
+  Either keep `'self'` in `style-src`, as above, or write the
+  `<link rel="stylesheet">` directly in the shell's `<head>` with
+  `nonce=leptos::nonce::use_nonce()`.
+
+The helper is gated on `ssr` because `leptos_wasi` is a server-only dependency.
+`leptos_wasi` enables `leptos/nonce`, so `leptos::nonce` is available in the
+server build without further feature configuration; enable `leptos_meta/nonce`
+as well if you want `leptos_meta`'s `Script` and `Style` to carry the nonce
+automatically.
+
+The reference production topology in [WASIp3 HTTP Middleware](./MIDDLEWARE.md)
+places response security headers at the ingress. Emitting the policy from the
+guest is what lets it carry the per-request nonce; an ingress that does not see
+that nonce can only send a nonce-free policy.
 
 ## Static assets
 
@@ -281,7 +365,11 @@ let handler = handler.static_files_handler("/pkg", serve_static_files)?;
 The handler accepts GET and HEAD, rejects encoded separators and traversal,
 and passes only a normalized relative path to the callback. The callback must
 still prevent symlinks inside its asset root from resolving outside that root.
-For high-volume production assets, prefer a host fileserver or CDN.
+Guest-served responses set `Content-Type`, `X-Content-Type-Options: nosniff`,
+and `Content-Length`; they set no `Cache-Control`, `ETag`, or `Last-Modified`,
+and conditional requests are not answered with `304`. For high-volume
+production assets, or anywhere caching and revalidation headers matter, prefer
+a host fileserver or CDN.
 
 ## Islands and split browser WASM
 

@@ -41,13 +41,41 @@ this support matrix.
   the collected size is checked independently.
 - Invalid or conflicting Content-Length values receive 400. Bodies over the
   configured limit receive 413.
-- Request deadlines are a deployment responsibility. Configure them at the
-  Wasmtime/Spin ingress because a guest cannot reliably cancel a client that
-  the host continues to feed.
+- Body size is bounded on both previews; body read time is bounded on neither.
+  Preview 2 collects the body with a blocking-read loop over the WASI input
+  stream and Preview 3 awaits a length-limited `collect`. Both stop at the
+  configured byte limit, and both end when the client closes the connection.
+  Neither imposes a deadline of its own, so a client that holds the connection
+  open while sending slowly, or stops sending without closing, occupies the
+  guest instance until the host terminates the request.
+- Request deadlines are therefore a deployment responsibility. Configure a
+  request-read/idle deadline and a cap on concurrent component invocations at
+  the Wasmtime/Spin ingress, not only a body-size limit; a size limit does not
+  bound how long one request holds an instance, and a guest cannot reliably
+  cancel a client that the host continues to feed.
 - Server-function middleware executes in Leptos order. Authentication,
   authorization, rate limiting, and tracing layers must still be supplied by
   the application, a composed component, or the ingress at the appropriate
   scope.
+- A redirect carried by a server-function response is reduced to a same-origin
+  path before the response leaves the handler. The request `Referer`
+  (or `Referrer`) header and any `Location` already on the server-function
+  response go through the same check: the value must parse as a URI, must not
+  contain a backslash or an encoded backslash (`%5c`/`%5C`), and its
+  path-and-query must begin with a single `/`. Anything else — an absolute
+  `https://` URL, a protocol-relative `//host/path` — is replaced with `/`.
+- That reduction covers the server-function path only. A `Location` written
+  from reactive context through `ResponseOptions`, which is what
+  `leptos_wasi::prelude::redirect` does, is merged into the response after that
+  step and is sent as written, including an absolute off-origin URL.
+  Applications that build a redirect target from request data should validate
+  it before passing it to `redirect` or `ResponseOptions::insert_header`, or
+  constrain the allowed origins at the ingress.
+- Both behaviours differ from `leptos_axum` and `leptos_actix`, which pass
+  server-function `Location` values through unchanged. An application ported
+  from those integrations may find that a cross-origin server-function redirect
+  which worked there is rewritten to `/` here, while the `ResponseOptions` path
+  behaves as it did upstream.
 - WASIp3 component middleware is currently an experimental compatibility path,
   not part of the stable support claim. Middleware must strip untrusted
   identity headers before adding validated identity metadata, and only the
@@ -66,6 +94,14 @@ this support matrix.
   its status can no longer be changed.
 - Internal host errors are not returned verbatim to clients. Capture details
   through host logs or the optional `tracing` feature.
+- A per-request Leptos nonce is provided with the standard contexts and is
+  applied to the inline hydration and streaming scripts the handler emits. No
+  `Content-Security-Policy` header is sent by the crate. An application that
+  wants a nonce-based policy writes the header itself through
+  `ResponseOptions` during the first rendered chunk; see [Content Security
+  Policy](./README.md#content-security-policy). Header-only policies with no
+  per-request input belong at the ingress with the other response security
+  headers.
 
 ## Static assets
 
@@ -83,6 +119,19 @@ one of these deployment patterns:
 3. Canonicalize the asset root and candidate in the callback and verify that
    the candidate remains below the root before reading it.
 
+Guest-served static responses set `Content-Type`, `X-Content-Type-Options:
+nosniff`, and, for a synchronous body, `Content-Length`. They set no
+`Cache-Control`, `ETag`, or `Last-Modified`, and the handler does not evaluate
+conditional requests, so `If-None-Match` and `If-Modified-Since` are ignored
+and no `304 Not Modified` is produced. Every request re-reads and re-sends the
+full body, and with no explicit freshness information a browser or intermediary
+may apply heuristic caching — which is the opposite of what the unhashed `/pkg`
+assets this flow deploys need. The two supported deployments already differ
+here: the Spin manifests route `/pkg/...` to `spin-fileserver` with
+`CACHE_CONTROL = "no-cache"`, while the Wasmtime guest callback path sends
+nothing. Serving assets from a host fileserver or CDN, as in pattern 1 above,
+also supplies the caching and revalidation headers the guest callback does not.
+
 Do not grant the component broader filesystem preopens than its callback needs.
 Each host HTTP trigger has its own middleware stack. A middleware dependency on
 the Leptos trigger does not cover a separate static-file trigger or CDN. Keep
@@ -93,7 +142,8 @@ service has an explicit authentication bypass.
 
 Configure these controls outside the crate:
 
-- request and response deadlines;
+- request-read, idle, and response deadlines, since the guest bounds body size
+  but not body read time;
 - maximum concurrent component invocations;
 - component memory and table limits;
 - read-only filesystem preopens;

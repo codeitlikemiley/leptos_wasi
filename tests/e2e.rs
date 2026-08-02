@@ -287,6 +287,66 @@ async fn read_raw_status(stream: &mut TcpStream) -> anyhow::Result<StatusCode> {
     Ok(StatusCode::from_u16(status)?)
 }
 
+/// Asserts a redirect `Location` is genuinely same-origin and relative.
+///
+/// A bare `ends_with("/previous-page")` check also accepts
+/// `https://malicious.example.com/previous-page`, which is exactly the open
+/// redirect these tests exist to rule out. So instead of trusting the suffix
+/// alone, this pins the shape of the value: a single leading `/`, no scheme,
+/// no protocol-relative `//` authority, no backslash (or percent-encoded
+/// backslash) that a browser would normalise into one, and no trace of the
+/// host the `Referer` tried to smuggle in.
+fn assert_same_origin_location(
+    location: &str,
+    expected_suffix: &str,
+    forbidden_host: &str,
+) {
+    assert!(
+        location.starts_with('/'),
+        "Location must be origin-relative, got: {}",
+        location
+    );
+    assert!(
+        !location.starts_with("//"),
+        "Location must not be protocol-relative, got: {}",
+        location
+    );
+    let lowered = location.to_ascii_lowercase();
+    assert!(
+        !lowered.contains("://"),
+        "Location must not carry a scheme, got: {}",
+        location
+    );
+    for scheme in ["http:", "https:", "javascript:", "data:"] {
+        assert!(
+            !lowered.contains(scheme),
+            "Location must not carry the {} scheme, got: {}",
+            scheme,
+            location
+        );
+    }
+    assert!(
+        !location.contains('\\')
+            && !lowered.contains("%5c")
+            && !lowered.contains("%2f%2f"),
+        "Location must not contain backslash or encoded-slash bypasses, \
+         got: {}",
+        location
+    );
+    assert!(
+        !lowered.contains(&forbidden_host.to_ascii_lowercase()),
+        "Location must not echo the referring host {}, got: {}",
+        forbidden_host,
+        location
+    );
+    assert!(
+        location.ends_with(expected_suffix),
+        "Expected Location to resolve to {}, got: {}",
+        expected_suffix,
+        location
+    );
+}
+
 async fn run_assertions(
     port: u16,
     capabilities: RuntimeCapabilities,
@@ -441,13 +501,7 @@ async fn run_assertions(
             .get("Location")
             .expect("Location header missing");
         let loc_clean = loc.to_str()?.trim_end_matches('?');
-        assert!(
-            loc_clean == "/previous-page"
-                || loc_clean.ends_with("/previous-page"),
-            "Expected relative /previous-page or absolute ending with \
-             /previous-page, got: {}",
-            loc_clean
-        );
+        assert_same_origin_location(loc_clean, "/previous-page", "127.0.0.1");
     }
 
     // 7. POST /api/form_submit_test (with Referrer spelling)
@@ -465,12 +519,7 @@ async fn run_assertions(
             .get("Location")
             .expect("Location header missing");
         let loc_clean = loc.to_str()?.trim_end_matches('?');
-        assert!(
-            loc_clean == "/other-page" || loc_clean.ends_with("/other-page"),
-            "Expected relative /other-page or absolute ending with \
-             /other-page, got: {}",
-            loc_clean
-        );
+        assert_same_origin_location(loc_clean, "/other-page", "127.0.0.1");
     }
 
     // Adversarial Test 1: Open Redirect Vulnerability Prevention
@@ -488,12 +537,10 @@ async fn run_assertions(
             .get("Location")
             .expect("Location header missing");
         let loc_clean = loc.to_str()?.trim_end_matches('?');
-        assert!(
-            loc_clean == "/steal-session"
-                || loc_clean.ends_with("/steal-session"),
-            "Expected relative /steal-session or absolute ending with \
-             /steal-session, got: {}",
-            loc_clean
+        assert_same_origin_location(
+            loc_clean,
+            "/steal-session",
+            "malicious.example.com",
         );
     }
 
@@ -589,6 +636,40 @@ async fn run_assertions(
         assert!(
             text.contains("data-islands-router-navigation=\"true\""),
             "Expected islands-router navigation context, got: {}",
+            text
+        );
+    }
+
+    // The requests above hit an `SsrMode::Async` route, whose stream builder
+    // ignores the out-of-order flag entirely. Repeat them against the
+    // `SsrMode::OutOfOrder` route so the arm that actually reads the flag runs
+    // both ways. `SsrOutOfOrderView`'s resource is ready on first poll, so the
+    // downgrade to in-order streaming must not change the rendered document.
+    for (header, expected) in [(None, "false"), (Some("1"), "true")] {
+        let mut request = client.get(format!("{}/ssr/out-of-order", base_url));
+        if let Some(header) = header {
+            request = request.header("Islands-Router", header);
+        }
+        let res = request.send().await?;
+        assert_eq!(res.status(), StatusCode::OK);
+        let text = res.text().await?;
+        assert!(
+            text.contains(&format!(
+                "data-islands-router-navigation=\"{}\"",
+                expected
+            )),
+            "Expected islands-router navigation {} on an OutOfOrder route, got: {}",
+            expected,
+            text
+        );
+        assert!(
+            text.contains("OutOfOrder View"),
+            "Expected the OutOfOrder view to render, got: {}",
+            text
+        );
+        assert!(
+            text.contains("OutOfOrder resource resolved"),
+            "Expected the OutOfOrder resource to resolve, got: {}",
             text
         );
     }
@@ -782,6 +863,34 @@ async fn run_assertions(
                     StatusCode::BAD_REQUEST | StatusCode::NOT_FOUND
                 ),
                 "unsafe static path {path} returned {status}"
+            );
+        }
+
+        // A deeply nested percent-encoding chain must be rejected by the
+        // bounded validator rather than driving a quadratic decode loop. The
+        // guest is compared against a plain 404 so a regression shows up as a
+        // latency blow-up rather than a wrong status.
+        {
+            let chain = format!("/static/%{}41", "25".repeat(4_000));
+            let baseline = Instant::now();
+            let _ = raw_http_status(port, "/static/does-not-exist.png").await?;
+            let baseline = baseline.elapsed();
+
+            let started = Instant::now();
+            let status = raw_http_status(port, &chain).await?;
+            let elapsed = started.elapsed();
+
+            assert!(
+                matches!(
+                    status,
+                    StatusCode::BAD_REQUEST | StatusCode::NOT_FOUND
+                ),
+                "nested encoding chain returned {status}"
+            );
+            assert!(
+                elapsed < baseline + Duration::from_millis(250),
+                "nested encoding chain cost {elapsed:?} against a {baseline:?} \
+                 baseline"
             );
         }
     }

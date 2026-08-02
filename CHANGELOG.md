@@ -4,6 +4,72 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Bounded static asset path validation to a fixed number of residual
+  percent-decoding passes. A path such as `/static/%2525…2541` previously drove
+  a decode loop that shrank by two bytes per pass, costing time quadratic in
+  the request path length; a 16 KiB path burned tens of milliseconds of CPU per
+  unauthenticated `GET` and still resolved successfully. Chains longer than the
+  budget are now rejected as residual percent-encoding.
+- Restricted the generated route-list cache to zero-sized application and
+  route-discovery closures. A `TypeId` identifies behavior only for types with
+  a single inhabitant, so two different applications coerced to the same
+  `fn() -> _` pointer type previously shared one cached route list and the
+  second application served the first application's routes. Function pointers
+  and capturing closures now re-run route discovery.
+
+### Changed
+
+- Every response the crate emits now carries `X-Content-Type-Options: nosniff`,
+  not only static assets. The crate's own error bodies — 404, the static 405,
+  and the 413/400 request-policy rejections — additionally declare
+  `text/plain; charset=utf-8`; they previously carried no content type at all,
+  which is the case content sniffing exploits. The default is applied once, at
+  the end of the shared render path, and only when the header is absent, so an
+  application that sets its own value through `ResponseOptions` still wins. The
+  WASIp2 internal-error response is constructed outside that path and sets both
+  headers itself. This also makes the 0.4.0 note about static routes adding
+  `X-Content-Type-Options` true of the 405 response, which previously carried
+  only `Allow`.
+
+### Added
+
+- Unit coverage for the previously untested request, response, redirect, and
+  executor surfaces: WASI Preview 2 method and scheme conversion, `Accept`
+  negotiation, referrer and `Location` sanitization, `utils::redirect`,
+  `axum_core` and boxed-error body streaming, `ResponseOptions` application
+  semantics, pollable dispatch through an injected poller, and both executor
+  scheduling modes.
+- An end-to-end regression asserting that a nested percent-encoding chain is
+  rejected without a latency blow-up relative to a plain 404.
+- Coverage for `Location` handling through the whole render path, rather than
+  only through `apply_server_fn_redirect` in isolation: a `Location` written
+  through `ResponseOptions` reaches the client unchanged, including an
+  off-origin scheme and authority, while a `Location` set on a server
+  function's own response is reduced to a same-origin path. The end-to-end
+  open-redirect assertions now require an exact same-origin path instead of a
+  matching suffix, which an absolute URL could satisfy.
+
+### Documentation
+
+- Documented the per-request Leptos nonce the handler already provides and a
+  recipe for emitting a `Content-Security-Policy` from the application through
+  `ResponseOptions`, including the `'wasm-unsafe-eval'` requirement for
+  hydration and the fact that `leptos_meta`'s `Stylesheet` and `Link`
+  components accept no nonce attribute.
+- Recorded that guest-served static responses carry no `Cache-Control`,
+  `ETag`, or `Last-Modified` and answer no conditional request with `304`, and
+  that the Spin manifests obtain `Cache-Control` from `spin-fileserver` rather
+  than from this crate.
+- Separated body size, which is bounded on both previews, from body read time,
+  which is bounded on neither. The host supplies the request-read/idle deadline
+  and the concurrent-instance cap in addition to a size limit.
+- Documented that a server-function response has its `Location` reduced to a
+  same-origin path, that a `Location` written through `ResponseOptions`
+  bypasses that reduction, and that both differ from `leptos_axum` and
+  `leptos_actix`.
+
 ## [0.4.2-rc.1] — 2026-07-12
 
 ### Added

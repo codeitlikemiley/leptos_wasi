@@ -150,4 +150,77 @@ pub mod p2 {
             }
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{Method, Scheme, method_wasi_to_http, scheme_wasi_to_http};
+
+        #[test]
+        fn standard_methods_map_one_to_one() {
+            let mapped = [
+                (Method::Connect, http::Method::CONNECT),
+                (Method::Delete, http::Method::DELETE),
+                (Method::Get, http::Method::GET),
+                (Method::Head, http::Method::HEAD),
+                (Method::Options, http::Method::OPTIONS),
+                (Method::Patch, http::Method::PATCH),
+                (Method::Post, http::Method::POST),
+                (Method::Put, http::Method::PUT),
+                (Method::Trace, http::Method::TRACE),
+            ];
+
+            for (wasi, expected) in mapped {
+                assert_eq!(
+                    method_wasi_to_http(wasi).expect("standard method"),
+                    expected
+                );
+            }
+        }
+
+        #[test]
+        fn extension_methods_are_preserved() {
+            assert_eq!(
+                method_wasi_to_http(Method::Other("PROPFIND".to_owned()))
+                    .expect("extension method"),
+                "PROPFIND"
+            );
+        }
+
+        #[test]
+        fn methods_with_invalid_tokens_are_rejected() {
+            for method in ["", "GET POST", "GET\r\nX: 1"] {
+                assert!(
+                    method_wasi_to_http(Method::Other(method.to_owned()))
+                        .is_err(),
+                    "method `{method}` should be rejected"
+                );
+            }
+        }
+
+        #[test]
+        fn standard_schemes_map_one_to_one() {
+            assert_eq!(
+                scheme_wasi_to_http(Scheme::Http).expect("http scheme"),
+                http::uri::Scheme::HTTP
+            );
+            assert_eq!(
+                scheme_wasi_to_http(Scheme::Https).expect("https scheme"),
+                http::uri::Scheme::HTTPS
+            );
+        }
+
+        #[test]
+        fn extension_schemes_are_preserved_and_validated() {
+            assert_eq!(
+                scheme_wasi_to_http(Scheme::Other("ws".to_owned()))
+                    .expect("extension scheme")
+                    .as_str(),
+                "ws"
+            );
+            assert!(
+                scheme_wasi_to_http(Scheme::Other("not a scheme".to_owned()))
+                    .is_err()
+            );
+        }
+    }
 }

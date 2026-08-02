@@ -11,6 +11,14 @@ that is not publicly reachable. The terminal validates and removes that wire
 envelope, then installs typed identity in `http::Extensions` before constructing
 the `leptos_wasi::Handler`.
 
+One response security header has a per-request input the ingress does not see:
+a `Content-Security-Policy` built around the nonce Leptos generates while
+rendering. An ingress that does not know that nonce can only send a nonce-free
+policy. An application that wants a nonce-based policy emits the header from
+the terminal component through `ResponseOptions`; see [Content Security
+Policy](./README.md#content-security-policy). The remaining response security
+headers stay with the ingress components.
+
 Reusable WASIp3 components remain available as a portable experimental mode.
 The same artifact can wrap other WASIp3 HTTP services, while each HTTP trigger
 selects its own ordered stack.

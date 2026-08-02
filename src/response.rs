@@ -247,6 +247,13 @@ impl ResponseOptions {
     pub fn append_header(&self, key: HeaderName, value: HeaderValue) {
         self.0.write().headers.append(key, value);
     }
+
+    /// Returns a copy of the parts collected so far.
+    #[cfg(test)]
+    #[inline]
+    pub(crate) fn snapshot(&self) -> ResponseParts {
+        self.0.read().clone()
+    }
 }
 
 impl ExtendResponse for Response {
@@ -353,5 +360,141 @@ mod tests {
             Body::Sync(bytes) => assert_eq!(bytes, "generic response"),
             Body::Async(_) => panic!("synchronous generic body became async"),
         }
+    }
+
+    async fn collect(body: Body) -> Result<Vec<u8>, throw_error::Error> {
+        let Body::Async(mut stream) = body else {
+            panic!("expected a streaming body");
+        };
+        let mut collected = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            collected.extend_from_slice(&chunk?);
+        }
+        Ok(collected)
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn axum_bodies_stream_every_frame() {
+        let body: Body =
+            axum_core::body::Body::from("axum streaming body").into();
+
+        assert_eq!(
+            collect(body).await.expect("body should not error"),
+            b"axum streaming body"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn axum_body_errors_surface_as_stream_errors() {
+        use http_body_util::BodyExt;
+
+        let failing =
+            http_body_util::StreamBody::new(futures::stream::once(async {
+                Err::<http_body::Frame<Bytes>, std::io::Error>(
+                    std::io::Error::other("upstream failure"),
+                )
+            }));
+        let body: Body =
+            axum_core::body::Body::new(failing.map_err(axum_core::Error::new))
+                .into();
+
+        let error = collect(body)
+            .await
+            .expect_err("a failing frame should end the stream with an error");
+        assert!(error.to_string().contains("upstream failure"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn boxed_error_bodies_stream_every_frame() {
+        use http_body_util::BodyExt;
+
+        let boxed = http_body_util::Full::new(Bytes::from_static(
+            b"boxed streaming body",
+        ))
+        .map_err(|error: std::convert::Infallible| -> Box<
+            dyn std::error::Error + Send + Sync,
+        > { match error {} })
+        .boxed();
+        let body: Body = boxed.into();
+
+        assert_eq!(
+            collect(body).await.expect("body should not error"),
+            b"boxed streaming body"
+        );
+    }
+
+    #[test]
+    fn response_options_apply_status_and_headers_once() {
+        let options = ResponseOptions::default();
+        options.set_status(StatusCode::IM_A_TEAPOT);
+        options.insert_header(
+            HeaderName::from_static("x-first"),
+            HeaderValue::from_static("1"),
+        );
+        options.append_header(
+            HeaderName::from_static("x-first"),
+            HeaderValue::from_static("2"),
+        );
+
+        let mut response =
+            Response(http::Response::new(Body::Sync(Bytes::new())));
+        response.extend_response(&options);
+
+        assert_eq!(response.0.status(), StatusCode::IM_A_TEAPOT);
+        assert_eq!(
+            response
+                .0
+                .headers()
+                .get_all("x-first")
+                .iter()
+                .collect::<Vec<_>>(),
+            ["1", "2"]
+        );
+
+        // Applying the same options again must not duplicate the headers.
+        let mut second =
+            Response(http::Response::new(Body::Sync(Bytes::new())));
+        second.extend_response(&options);
+        assert!(second.0.headers().is_empty());
+    }
+
+    #[test]
+    fn overwrite_replaces_previously_collected_parts() {
+        let options = ResponseOptions::default();
+        options.set_status(StatusCode::IM_A_TEAPOT);
+        options.insert_header(
+            HeaderName::from_static("x-stale"),
+            HeaderValue::from_static("1"),
+        );
+
+        let mut parts = ResponseParts::default();
+        parts.set_status(StatusCode::CREATED);
+        options.overwrite(parts);
+
+        let snapshot = options.snapshot();
+        assert_eq!(snapshot.status(), Some(StatusCode::CREATED));
+        assert!(snapshot.headers().is_empty());
+    }
+
+    #[test]
+    fn default_content_type_never_overrides_an_explicit_one() {
+        let mut response =
+            Response(http::Response::new(Body::Sync(Bytes::new())));
+        response.set_default_content_type("text/html; charset=utf-8");
+        response.set_default_content_type("application/json");
+
+        assert_eq!(
+            response.0.headers().get(http::header::CONTENT_TYPE),
+            Some(&HeaderValue::from_static("text/html; charset=utf-8"))
+        );
+    }
+
+    #[test]
+    fn response_parts_status_can_be_cleared() {
+        let mut parts = ResponseParts::default();
+        parts.set_status(StatusCode::FOUND);
+        parts.clear_status();
+
+        assert_eq!(parts.status(), None);
     }
 }
