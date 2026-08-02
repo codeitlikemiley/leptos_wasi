@@ -31,6 +31,18 @@ require_middleware_command() {
   fi
 }
 
+# A substring test accepts a longer version that merely starts with the pinned
+# one - `4.0.2` matches a reported `4.0.21`, `0.10.1` matches `0.10.10` - which
+# defeats the point of recording exact revisions in components.lock.toml.
+# Require the pinned version to appear as a whole version string.
+version_string_matches() {
+  local expected="$1"
+  local reported="$2"
+  local escaped
+  escaped="$(sed 's/[.[\*^$()+?{|]/\\&/g' <<<"${expected}")"
+  grep -qE "(^|[^0-9A-Za-z.-])${escaped}([^0-9A-Za-z.-]|\$)" <<<"${reported}"
+}
+
 resolve_middleware_tool() {
   local environment_name="$1"
   local command_name="$2"
@@ -61,7 +73,7 @@ resolve_middleware_tool() {
   else
     actual="$("${selected}" --version 2>&1)"
   fi
-  if [[ "${actual}" != *"${expected_version}"* ]]; then
+  if ! version_string_matches "${expected_version}" "${actual}"; then
     echo "${command_name} version mismatch; expected ${expected_version}, found: ${actual}" >&2
     return 1
   fi
@@ -77,10 +89,7 @@ tool_version_matches() {
   else
     actual="$("${command_name}" --version 2>&1 || true)"
   fi
-  # A substring test accepts a longer version that merely starts with the
-  # pinned one - `4.0.2` matches a reported `4.0.21` - which defeats the point
-  # of pinning exact tool revisions. Require a whole-version match.
-  grep -qE "(^|[^0-9A-Za-z.-])$(sed 's/[.[\*^$()+?{|]/\\&/g' <<<"${expected_version}")([^0-9A-Za-z.-]|$)" <<<"${actual}"
+  version_string_matches "${expected_version}" "${actual}"
 }
 
 resolve_spin_main_tool() {
