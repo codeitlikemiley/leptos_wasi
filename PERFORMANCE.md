@@ -209,6 +209,26 @@ would remove roughly 40% of the file and change latency by zero. Both test
 applications already build with `opt-level='z'`, fat LTO, `codegen-units=1`
 and `panic="abort"`, so there is no profile slack to recover either.
 
+### What the WASIp3 lane found on its first run
+
+Giving the p3 lane a baseline immediately produced a failure: -6.47%
+first-byte p99, -6.40% total p99, -5.63% throughput against `663e1a9`,
+against a 5% budget.
+
+A paired re-measurement of the same two commits puts the real figure at
+**-2.51%, sd 1.74pp, standard error 0.71pp** over six pairs - five of six
+negative, so a genuine regression, but less than half what the lane reported.
+The gap is the drift this document warns about two sections up: the lane runs
+the baseline once and the candidate once, in that fixed order, so the candidate
+absorbs whatever the runner does over twenty minutes.
+
+This is worth recording as a worked example. The lane was not wrong to fail -
+something did regress - but the number it produced would have led to chasing a
+6% effect that is actually 2.5%, which is how this investigation started in the
+first place. The budget is set at 8% to cover the measured effect plus that
+drift, and the honest way to tighten it is to alternate the runs rather than to
+lower the number.
+
 ### What it costs in practice
 
 The benchmark endpoint returns the 12-byte string `"GET response"` with no
