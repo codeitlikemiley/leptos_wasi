@@ -61,6 +61,15 @@ this support matrix.
   spans the whole body rather than the gap between chunks, so both previews
   mean the same thing by it and a client trickling one byte at a time cannot
   refresh it.
+- Route discovery does not run on requests that cannot use the SSR router. A
+  server function, a static asset, and an already-selected response all resolve
+  without it, and discovery renders the whole application, so skipping it is
+  worth about 183 us on those requests. The consequence is that a malformed
+  route table is no longer rejected while serving such a request: an
+  application reached only through server functions and static assets never
+  validates its routes in production. Call `leptos_wasi::validate_route_table`
+  once from a test to close that gap. It applies exactly the rules the request
+  path applies and shares their implementation, so the two cannot drift.
 - Server-function middleware executes in Leptos order. Authentication,
   authorization, rate limiting, and tracing layers must still be supplied by
   the application, a composed component, or the ingress at the appropriate
