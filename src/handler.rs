@@ -3,10 +3,7 @@
 //! Shared Leptos request handling and runtime-specific WASI HTTP adapters.
 
 use std::{
-    collections::BTreeSet,
-    future::Future,
-    marker::PhantomData,
-    pin::Pin,
+    collections::BTreeSet, future::Future, marker::PhantomData, pin::Pin,
     sync::Arc,
 };
 #[cfg(feature = "tracing")]
