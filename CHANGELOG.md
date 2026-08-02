@@ -100,6 +100,21 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+- Documented `validate_route_table` and `with_request_body_timeout_ns` in the
+  README and the production contract. Both shipped in this cycle without
+  reaching either document, and `validate_route_table` in particular is the
+  mitigation for route-table validation no longer running on claimed requests,
+  so its absence from the operational contract was the more consequential gap.
+- Recorded that the companion pins are deliberately behind upstream. This
+  repository pins `wasi-auth 0.1.0-alpha.4`; upstream has moved to
+  `0.1.0-rc.1`, which consolidates its workspace crates. Advancing the pin
+  requires regenerating and re-attesting the artifact bundle, which the
+  promotion gate already blocks on. The legacy middleware workspace is
+  unaffected and remains `0.2.0-alpha.3` upstream, matching the pin.
+- Reorganised the README's runtime section, which had grown into a single
+  paragraph covering composition, Spin canaries, companion components, and
+  post-0.5 scope. It is now split by subject, with the per-runtime composition
+  status as a table.
 - Documented component instance reuse, which is the largest throughput lever
   available to a WASIp2 deployment and is not controlled by this crate.
   `wasmtime serve --max-instance-reuse-count` defaults to 1 for WASIp2 and 128

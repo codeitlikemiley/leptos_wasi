@@ -131,6 +131,13 @@ checksum, SBOM, WIT report, OCI manifest, provenance statement, and signature,
 and update the artifact-set digest; the default audit intentionally fails
 until that work is complete.
 
+Upstream `wasi-auth` has since moved to `0.1.0-rc.1`, which consolidates its
+workspace crates behind the single publishable `wasi-auth` crate. The pin here
+stays at `0.1.0-alpha.4` deliberately: advancing it means regenerating and
+re-attesting the whole bundle, which is the same work the paragraph above
+already blocks on. The legacy middleware workspace is unaffected — it remains
+`0.2.0-alpha.3` upstream, exactly what this repository pins.
+
 The exact experimental runtime, SDK, WIT, and composition-tool revisions are
 recorded in
 [`tests/middleware/components.lock.toml`](tests/middleware/components.lock.toml).
