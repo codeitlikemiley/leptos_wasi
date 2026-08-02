@@ -58,6 +58,18 @@ def request_once(
     )
 
 
+def final_quarter_start(samples: list[int]) -> int:
+    """Index the final quarter starts at, never the last sample itself.
+
+    At exactly four samples `3 * n // 4` is the last index, so the growth was
+    a sample minus itself: always zero, and a gate that could not fail. Back
+    the boundary off by at least one sample so the window always spans a real
+    interval. Long runs are unaffected.
+    """
+    count = len(samples)
+    return min(count - 2, count * 3 // 4)
+
+
 def read_rss_kib(pid: int) -> int | None:
     try:
         output = subprocess.check_output(
@@ -178,8 +190,7 @@ def main() -> int:
             "samples": len(rss_samples),
             "timeline": rss_timeline,
             "last_quarter_growth": (
-                rss_samples[-1]
-                - rss_samples[max(0, len(rss_samples) * 3 // 4)]
+                rss_samples[-1] - rss_samples[final_quarter_start(rss_samples)]
                 if len(rss_samples) >= 4
                 else None
             ),

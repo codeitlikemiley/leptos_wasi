@@ -77,7 +77,10 @@ tool_version_matches() {
   else
     actual="$("${command_name}" --version 2>&1 || true)"
   fi
-  [[ "${actual}" == *"${expected_version}"* ]]
+  # A substring test accepts a longer version that merely starts with the
+  # pinned one - `4.0.2` matches a reported `4.0.21` - which defeats the point
+  # of pinning exact tool revisions. Require a whole-version match.
+  grep -qE "(^|[^0-9A-Za-z.-])$(sed 's/[.[\*^$()+?{|]/\\&/g' <<<"${expected_version}")([^0-9A-Za-z.-]|$)" <<<"${actual}"
 }
 
 resolve_spin_main_tool() {

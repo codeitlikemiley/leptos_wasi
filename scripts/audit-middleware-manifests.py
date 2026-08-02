@@ -486,6 +486,17 @@ def command_version(command: pathlib.Path | str) -> str:
     return f"{result.stdout}\n{result.stderr}".strip()
 
 
+def version_matches(expected: str, reported: str) -> bool:
+    """Require a whole-version match rather than a substring one.
+
+    A plain `in` test accepts a longer version that merely starts with the
+    pinned one - `4.0.2` matches a reported `4.0.21` - which defeats the point
+    of pinning exact tool revisions in `components.lock.toml`.
+    """
+    pattern = rf"(?<![0-9A-Za-z.-]){re.escape(expected)}(?![0-9A-Za-z.-])"
+    return re.search(pattern, reported) is not None
+
+
 def resolve_tool(environment: str, name: str, version: str) -> pathlib.Path | str:
     configured = os.environ.get(environment)
     if configured:
@@ -500,7 +511,7 @@ def resolve_tool(environment: str, name: str, version: str) -> pathlib.Path | st
         cached = cache_root / f"{name}-{version}" / name
         selected = cached if cached.is_file() else name
     actual = command_version(selected)
-    if version not in actual:
+    if not version_matches(version, actual):
         raise AssertionError(
             f"{name} version mismatch; expected {version}, found: {actual}"
         )
@@ -523,12 +534,13 @@ def audit_authn_configuration(primary: dict, route: str) -> None:
     }
     service_id = environment["WASI_MIDDLEWARE_SERVICE_ID"]
     expected_audiences = {f"api://{service_id}"}
+    # The equality check already forces `audiences == {"api://" + service_id}`,
+    # which no service ID can satisfy on its own, so the audience is distinct
+    # from the service ID by construction rather than by a further assertion.
     if audiences != expected_audiences:
         raise AssertionError(
             f"authn audiences for {service_id} must be {expected_audiences}"
         )
-    if service_id in audiences:
-        raise AssertionError("service ID and OAuth audience must remain distinct")
 
     broker_url = environment["WASI_MIDDLEWARE_AUTHN_BROKER_URL"]
     broker_origin = broker_url.split("/authenticate", maxsplit=1)[0]
