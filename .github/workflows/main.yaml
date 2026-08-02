@@ -418,15 +418,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Each lane compares against the oldest commit that supports its
+          # preview. p2 reaches back to 0.3.2. p3 cannot: the preview did not
+          # exist then, so it baselines at the final WASI 0.3 migration, the
+          # first commit that can serve it. A lane without a baseline can only
+          # be gated on an absolute ceiling, which the p3 lane cleared by 60 ms
+          # and so could not have detected a gradual regression.
           - host: wasmtime
             preview: p2
-            historical_baseline: true
+            baseline_ref: 9689c68
           - host: wasmtime
             preview: p3
-            historical_baseline: false
+            baseline_ref: 663e1a9
           - host: spin
             preview: p2
-            historical_baseline: true
+            baseline_ref: 9689c68
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -456,16 +462,16 @@ jobs:
         with:
           version: "v4.0.2"
 
-      - name: Create immutable 0.3.2 comparison worktree
-        if: matrix.historical_baseline
+      - name: Create immutable comparison worktree
+        if: matrix.baseline_ref
         run: >-
           git worktree add --detach
-          "${RUNNER_TEMP}/leptos-wasi-v0.3.2" 9689c68
+          "${RUNNER_TEMP}/leptos-wasi-baseline" ${{ matrix.baseline_ref }}
 
-      - name: Run 0.3.2 sustained baseline
-        if: matrix.historical_baseline
+      - name: Run sustained baseline
+        if: matrix.baseline_ref
         env:
-          PROJECT_ROOT: ${{ runner.temp }}/leptos-wasi-v0.3.2
+          PROJECT_ROOT: ${{ runner.temp }}/leptos-wasi-baseline
           CHECK_POLLABLES: "0"
           HOST: ${{ matrix.host }}
           PREVIEW: ${{ matrix.preview }}
@@ -495,7 +501,7 @@ jobs:
       # already known. Tighten it to match the latency budget once that
       # regression is resolved.
       - name: Enforce latency, throughput, and memory gates
-        if: matrix.historical_baseline
+        if: matrix.baseline_ref
         run: >-
           python3 scripts/compare_performance.py
           soak-${{ matrix.host }}-${{ matrix.preview }}-baseline.json
@@ -512,13 +518,16 @@ jobs:
       # 150 ms sits about 1.7x above the 87.66 ms observed, so the lane catches
       # a genuine slowdown while tolerating runner variance. Tighten it once
       # several runs have established the real spread.
-      - name: Enforce absolute final-WASI latency and memory gates
-        if: ${{ !matrix.historical_baseline }}
+      # Runs on every lane, not just the ones without a baseline. A relative
+      # gate only catches change; it cannot see a slowdown that was already
+      # present when the baseline was recorded. The absolute ceiling is the
+      # floor under both lanes and costs nothing to keep.
+      - name: Enforce absolute latency and memory gates
         run: >-
           python3 scripts/check_soak_candidate.py
           soak-${{ matrix.host }}-${{ matrix.preview }}-candidate.json
           --max-p99-ms 150
-          | tee soak-${{ matrix.host }}-${{ matrix.preview }}-comparison.json
+          | tee soak-${{ matrix.host }}-${{ matrix.preview }}-absolute.json
 
       - name: Retain soak evidence
         if: always()
