@@ -32,12 +32,21 @@ cosign_version = "3.1.1"
 name = "wasi-http-middleware"
 version = "0.2.0-alpha.3"
 relative_path = "../wasi-auth/legacy/wasi-http-middleware"
-# Sourced from legacy/wasi-http-middleware/compatibility.toml ([release]
-# semver_baseline). It predates the subtree import, so it resolves in the
-# standalone wasi-http-middleware history, never in wasi-auth's.
+# Also recorded as [release].semver_baseline in this subtree's own
+# compatibility.toml. It predates the subtree import but is reachable from
+# wasi-auth's main, because the import preserved the standalone repository's
+# history rather than squashing it.
 baseline_revision = "6977a75c4d2cb1558158341c109e419189dc2c52"
-source_revision = "42db2e18c94a4e9734bdf39465f6a9f0bb1f396a"
-artifact_revision = "ff8c6b102bf13df25dda79a5ccf775fdd93bbdfe"
+# This subtree no longer has a checkout of its own: it is imported into
+# wasi-auth, so its source revision is the revision of that one shared
+# checkout, and must equal [authorization].source_revision. The value this
+# replaced, 42db2e18, is a pre-import commit — reachable, but from before the
+# files moved under legacy/wasi-http-middleware — so no checkout could ever
+# report it and the sibling gate could never pass.
+source_revision = "fc66aabefdbc57c37e72924cf7f6746c23b0c1fa"
+# The commit tagged wasi-http-middleware-v0.2.0-alpha.3. Its bundle is recorded
+# from that release's assets; see the note in artifact-sets.toml.
+artifact_revision = "d29dbfcd13033d923cf0425751c852b21321bf3e"
 components = [
   "request-id",
   "security-headers",
@@ -63,6 +72,13 @@ artifact_name = "wasi-authz"
 artifact_version = "0.1.0-rc.3"
 artifact_revision = "fc66aabefdbc57c37e72924cf7f6746c23b0c1fa"
 fixture_manifest = "tests/authz-fixture/Cargo.toml"
+# The companion publishes its own surface manifest, generated from `cargo
+# metadata` across both its workspaces and drift-checked in its CI. Pinning it
+# by digest records all ten companion crates rather than the two named below,
+# so a rename or a version bump upstream surfaces here as a digest mismatch
+# instead of as a build break in a fixture.
+companion_manifest = "companion.toml"
+companion_manifest_sha256 = "e63197ed8d2b10ae8ae2872ff70d9792a2ff83c4103df3ddad8f2691e89b2bcb"
 components = [
   "authz-http-pep",
   "cedar-pdp",

@@ -395,22 +395,22 @@ jobs:
 
       - name: Report cross-repository middleware promotion gate
         run: |
-          echo "::warning title=Middleware bundle unverified::The wasi-http-middleware artifact set is still a local build with no published release, so its signed-bundle gate cannot run here. The authorization bundle is verified by the companion-authz job."
           cat >> "${GITHUB_STEP_SUMMARY}" <<'EOF'
           ## Companion promotion status
 
           Terminal final-WIT checks and both Spin incompatibility canaries ran.
-          The authorization companion is fully gated in CI by the
-          `companion-authz` job, which pins `wasi-auth` by the revision recorded
-          in `tests/middleware/components.lock.toml` and verifies its signed
-          bundle against the assets published for that revision's tag.
 
-          The `wasi-http-middleware` artifact set is not: its digests still come
-          from a local build with no published release to fetch, so
-          `verify-artifact-set.py middleware` has no bundle to check. Until that
-          subtree cuts a tag-gated release, its signed-artifact gate, the
-          Wasmtime full-chain lane, and the browser lanes run only from sibling
-          checkouts — `./scripts/run-middleware-tests.sh` and
+          Both signed companion bundles are gated in CI by the `companion-authz`
+          job, which pins `wasi-auth` by the revision recorded in
+          `tests/middleware/components.lock.toml` and verifies each artifact set
+          against the assets published for its own release tag. Neither bundle
+          is rebuilt: the upstream signing key is ephemeral per run, so only the
+          published assets can satisfy the recorded signature digests.
+
+          What still runs only from sibling checkouts is behaviour, not
+          provenance: the Wasmtime full-chain lane and the browser lanes need a
+          live SpiceDB and a composed component chain. Run them with
+          `./scripts/run-middleware-tests.sh` and
           `./scripts/run-trusted-ingress-browser.sh`. Promotion additionally
           requires `./scripts/benchmark-trusted-ingress.sh` and
           `DURATION=600 CONCURRENCY=100 ./scripts/soak-trusted-ingress.sh`.
@@ -444,9 +444,11 @@ jobs:
           import tomllib
 
           with open("tests/middleware/components.lock.toml", "rb") as source:
-              authorization = tomllib.load(source)["authorization"]
+              lock = tomllib.load(source)
+          authorization = lock["authorization"]
           print(f'revision={authorization["source_revision"]}')
           print(f'tag=wasi-auth-v{authorization["artifact_version"]}')
+          print(f'middleware_tag=wasi-http-middleware-v{lock["middleware"]["version"]}')
           PY
           cat "${GITHUB_OUTPUT}"
 
@@ -533,6 +535,48 @@ jobs:
           cargo clippy --locked
           --manifest-path tests/authz-lifecycle-wasip2/Cargo.toml
           --target wasm32-wasip2 --all-targets -- -D warnings
+
+      # The middleware bundle lives in the same companion checkout but on its
+      # own version line and its own release tag, so it is fetched separately.
+      # `artifacts/` is git-ignored throughout that subtree, so every path here
+      # has to be created before anything lands in it.
+      - name: Install the published middleware bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.pin.outputs.middleware_tag }}
+        run: |
+          assets="${RUNNER_TEMP}/middleware-assets"
+          repository="${GITHUB_WORKSPACE}/wasi-auth/legacy/wasi-http-middleware"
+          gh release download "${TAG}" --repo codeitlikemiley/wasi-auth \
+            --dir "${assets}" --clobber
+          mkdir -p "${repository}/artifacts/components" \
+            "${repository}/artifacts/test-components" \
+            "${repository}/artifacts/sbom" \
+            "${repository}/reports/supply-chain"
+          install -m 0644 "${assets}/SHA256SUMS" \
+            "${assets}/provenance.intoto.json" "${repository}/artifacts/"
+          for component in request-id security-headers cors authn-policy secure-defaults; do
+            install -m 0644 "${assets}/${component}.wasm" \
+              "${repository}/artifacts/components/"
+          done
+          for component in passthrough echo-service mock-authn-broker; do
+            install -m 0644 "${assets}/${component}.wasm" \
+              "${repository}/artifacts/test-components/"
+          done
+          install -m 0644 "${assets}"/*.cdx.json "${repository}/artifacts/sbom/"
+          install -m 0644 "${assets}/manifest.json" \
+            "${assets}/manifest.sigstore.json" \
+            "${assets}/provenance.sigstore.json" \
+            "${assets}/cosign.pub" "${repository}/reports/supply-chain/"
+
+      - name: Confirm the companion checkout is still unmodified
+        run: git -C "${GITHUB_WORKSPACE}/wasi-auth" diff --exit-code
+
+      - name: Verify the signed middleware bundle
+        run: >-
+          python3 scripts/verify-artifact-set.py middleware
+          --repository "${GITHUB_WORKSPACE}/wasi-auth/legacy/wasi-http-middleware"
+          --cosign "${{ github.workspace }}/go-bin/cosign"
 
   soak:
     name: Ten-minute soak / ${{ matrix.host }} / ${{ matrix.preview }}

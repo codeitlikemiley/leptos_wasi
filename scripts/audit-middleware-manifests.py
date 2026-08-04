@@ -207,6 +207,21 @@ def audit_artifact_sets(lock: dict, policy: dict) -> dict[str, dict]:
     return by_id
 
 
+def audit_companion_manifest_record(authorization_lock: dict) -> None:
+    """Require the authorization lock to keep pinning the companion surface.
+
+    Shape only. The companion checkout is what proves the digest, so that
+    comparison lives in `check-authz-companion.sh`, which has the checkout. This
+    keeps the record from being dropped or blanked by a lock edit that never
+    runs the sibling gate.
+    """
+    if not authorization_lock.get("companion_manifest"):
+        raise AssertionError("authorization lock must record the companion surface manifest")
+    digest = authorization_lock.get("companion_manifest_sha256")
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise AssertionError("companion surface manifest digest must be SHA-256")
+
+
 def middleware_dependencies(trigger: dict) -> list[dict]:
     dependencies = trigger.get("dependencies", {})
     middleware = dependencies.get("middleware", [])
@@ -625,6 +640,7 @@ def main() -> int:
             raise AssertionError(f"authorization {key} must be a full Git revision")
     if authorization_lock["baseline_revision"] == authorization_lock["source_revision"]:
         raise AssertionError("authorization source revision must advance beyond its baseline")
+    audit_companion_manifest_record(authorization_lock)
     if root_manifest["dependencies"]["wasip3"]["version"] != "=0.7.0":
         raise AssertionError("the library must pin wasip3 exactly")
     authz_packages = {
