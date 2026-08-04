@@ -45,12 +45,17 @@ revision_string_matches() {
   [[ "${reported}" == *"${expected_prefix}"* ]]
 }
 
+# The leading `v?` accepts a tag-style prefix on the reported version only.
+# Cosign reports `GitVersion:    v3.1.1` and nothing else, so requiring a
+# non-version character immediately before the digits rejected every cosign
+# build ever released. It stays a whole-version test: `v4.0.2` still does not
+# match a reported `v4.0.21`.
 version_string_matches() {
   local expected="$1"
   local reported="$2"
   local escaped
   escaped="$(sed 's/[.[\*^$()+?{|]/\\&/g' <<<"${expected}")"
-  grep -qE "(^|[^0-9A-Za-z.-])${escaped}([^0-9A-Za-z.-]|\$)" <<<"${reported}"
+  grep -qE "(^|[^0-9A-Za-z.-])v?${escaped}([^0-9A-Za-z.-]|\$)" <<<"${reported}"
 }
 
 resolve_middleware_tool() {

@@ -22,6 +22,15 @@ All notable changes to this project will be documented in this file.
   instance. It only added a map allocation and a full deep clone of the route
   list to each request. Route discovery is now unconditional and correct by
   construction.
+- Accepted a `v`-prefixed version when resolving a pinned tool. The whole-version
+  rule required a non-version character immediately before the digits, and
+  `cosign version` reports `GitVersion:    v3.1.1` and nothing else, so no cosign
+  build that has ever shipped could satisfy it. Every gate that verifies a
+  signature was unreachable as a result: both component sync scripts and, through
+  them, the authorization browser lane failed at tool resolution with `cosign
+  3.1.1 is required` while the correct cosign was on `PATH`. The rule is still a
+  whole-version test — `4.0.2` continues to reject a reported `4.0.21`, and
+  `3.1.1` rejects `v13.1.1`.
 
 ### Changed
 
