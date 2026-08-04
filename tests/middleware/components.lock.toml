@@ -37,7 +37,13 @@ relative_path = "../wasi-auth/legacy/wasi-http-middleware"
 # wasi-auth's main, because the import preserved the standalone repository's
 # history rather than squashing it.
 baseline_revision = "6977a75c4d2cb1558158341c109e419189dc2c52"
-source_revision = "42db2e18c94a4e9734bdf39465f6a9f0bb1f396a"
+# This subtree no longer has a checkout of its own: it is imported into
+# wasi-auth, so its source revision is the revision of that one shared
+# checkout, and must equal [authorization].source_revision. The value this
+# replaced, 42db2e18, is a pre-import commit — reachable, but from before the
+# files moved under legacy/wasi-http-middleware — so no checkout could ever
+# report it and the sibling gate could never pass.
+source_revision = "fc66aabefdbc57c37e72924cf7f6746c23b0c1fa"
 # The commit tagged wasi-http-middleware-v0.2.0-alpha.3. Its bundle is recorded
 # from that release's assets; see the note in artifact-sets.toml.
 artifact_revision = "d29dbfcd13033d923cf0425751c852b21321bf3e"
