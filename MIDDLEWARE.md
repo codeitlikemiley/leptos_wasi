@@ -121,24 +121,29 @@ gate runs pinned Cosign verification for both the provenance statement and OCI
 manifest before copying a component. The checked
 `tests/middleware/artifact-sets.toml` record binds those exact files.
 
-The two bundles it binds have different provenance, and the difference matters.
-The middleware bundle is still a local-alpha build whose ephemeral development
-key is evidence for that build, not a production release identity. The
-authorization bundle is not: it is the `wasi-authz 0.1.0-rc.3` set published as
-assets on the upstream
-[`wasi-auth-v0.1.0-rc.3`](https://github.com/codeitlikemiley/wasi-auth/releases/tag/wasi-auth-v0.1.0-rc.3)
-release, rebuilt and signed by the tag-triggered release workflow. Its
-component, SBOM, and WIT digests are fixed by the `rc.3` tree and reproduce on
-every upstream push; its checksum-manifest, provenance, OCI-manifest,
-signature, and key digests are recorded from those release assets and can only
-ever be satisfied by that one immutable bundle, because the signing key is
-generated per run and discarded. Re-verify it by re-downloading the assets, not
-by regenerating the pipeline. `AUTHZ_COMPANION_ALLOW_DIRTY=1` may still bypass
-the name/version comparison for explicit local diagnostics.
+Both bundles are recorded from published releases, each on its own version line
+and its own tag: `wasi-authz 0.1.0-rc.3` from
+[`wasi-auth-v0.1.0-rc.3`](https://github.com/codeitlikemiley/wasi-auth/releases/tag/wasi-auth-v0.1.0-rc.3),
+and `wasi-http-middleware 0.2.0-alpha.3` from
+[`wasi-http-middleware-v0.2.0-alpha.3`](https://github.com/codeitlikemiley/wasi-auth/releases/tag/wasi-http-middleware-v0.2.0-alpha.3).
+Each is rebuilt and signed by a tag-triggered release workflow that refuses any
+tag whose commit is not on `main` or whose name does not match the prepared
+version.
 
-The legacy middleware workspace is unaffected by the authorization move — that
-subtree is byte-identical across the range and remains `0.2.0-alpha.3` upstream,
-exactly what this repository pins.
+Neither may be regenerated locally. The signing key is generated per release run
+and discarded, so `signing_key_sha256`, `provenance_signature_sha256`, and
+`manifest_signature_sha256` can only ever be satisfied by the one immutable
+bundle they were recorded from. Re-verify by re-downloading the assets. The
+component digests are equally unreproducible off the release lane, because the
+component build embeds absolute source paths and so depends on the checkout
+location; the SBOM and WIT digests are not, and hold across rebuilds and
+platforms.
+
+`AUTHZ_COMPANION_ALLOW_DIRTY=1` still bypasses the authorization name/version
+comparison for explicit local diagnostics. Note what that costs: it also skips
+signed artifact-set verification entirely, and a lane that rebuilds the
+components as part of its own setup cannot satisfy the release checksum
+manifest afterwards.
 
 The exact experimental runtime, SDK, WIT, and composition-tool revisions are
 recorded in

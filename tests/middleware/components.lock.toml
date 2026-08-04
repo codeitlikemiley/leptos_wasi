@@ -32,12 +32,15 @@ cosign_version = "3.1.1"
 name = "wasi-http-middleware"
 version = "0.2.0-alpha.3"
 relative_path = "../wasi-auth/legacy/wasi-http-middleware"
-# Sourced from legacy/wasi-http-middleware/compatibility.toml ([release]
-# semver_baseline). It predates the subtree import, so it resolves in the
-# standalone wasi-http-middleware history, never in wasi-auth's.
+# Also recorded as [release].semver_baseline in this subtree's own
+# compatibility.toml. It predates the subtree import but is reachable from
+# wasi-auth's main, because the import preserved the standalone repository's
+# history rather than squashing it.
 baseline_revision = "6977a75c4d2cb1558158341c109e419189dc2c52"
 source_revision = "42db2e18c94a4e9734bdf39465f6a9f0bb1f396a"
-artifact_revision = "ff8c6b102bf13df25dda79a5ccf775fdd93bbdfe"
+# The commit tagged wasi-http-middleware-v0.2.0-alpha.3. Its bundle is recorded
+# from that release's assets; see the note in artifact-sets.toml.
+artifact_revision = "d29dbfcd13033d923cf0425751c852b21321bf3e"
 components = [
   "request-id",
   "security-headers",

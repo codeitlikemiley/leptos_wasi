@@ -92,6 +92,25 @@ All notable changes to this project will be documented in this file.
   belongs to the standalone `wasi-http-middleware` history and is now recorded
   with that provenance instead of presented as a `wasi-auth` commit.
 
+- Recorded the `wasi-http-middleware` artifact set from a published release
+  instead of from a local build. Its digests previously came from whoever last
+  ran the upstream supply-chain script on their own machine, naming files that
+  exist in no checkout — `artifacts/` and `reports/supply-chain/` are
+  git-ignored upstream — so the signed-artifact gate for this bundle could not
+  run at all. Upstream now cuts it from a tag, and the digests here come from
+  those assets. The component digests moved, because they embed absolute source
+  paths and so depend on where the build ran; the SBOM and WIT digests did not
+  move at all, which is what a reproducible record should look like.
+
+  This also corrects a claim made when the authorization pin advanced.
+  `[middleware].baseline_revision` was described as resolvable only in the
+  standalone `wasi-http-middleware` history and never in `wasi-auth`'s. It is
+  reachable from `wasi-auth`'s `main`: the subtree import preserved that
+  history rather than squashing it, and the same is true of the middleware
+  `source_revision` and `artifact_revision`. The one revision that genuinely
+  does not sit on mainline is the authorization `artifact_revision` this cycle
+  already replaced, which is on a diverged branch.
+
 - `scripts/verify-artifact-set.py` compares the authorization bundle's identity
   against the lock's `artifact_name`/`artifact_version` rather than its
   `name`/`version`. Those pairs deliberately differ — the `wasi-auth`
@@ -150,6 +169,10 @@ All notable changes to this project will be documented in this file.
   or tag of its own. The bundle is fetched from the release rather than rebuilt
   because the upstream signing key is ephemeral per run, so a rebuild could
   never reproduce the recorded signature digests.
+
+  The same job also verifies the `wasi-http-middleware` bundle, on its own
+  version line and its own release tag, so both signed artifact sets are now
+  enforced on every push and no gate is left claiming it cannot run.
 
 ### Documentation
 
