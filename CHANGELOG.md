@@ -134,6 +134,22 @@ All notable changes to this project will be documented in this file.
   function's own response is reduced to a same-origin path. The end-to-end
   open-redirect assertions now require an exact same-origin path instead of a
   matching suffix, which an absolute URL could satisfy.
+- A `companion-authz` CI job, so the authorization companion gates run on every
+  push instead of only from a maintainer's checkout. It reads the pinned
+  revision out of `tests/middleware/components.lock.toml`, checks `wasi-auth`
+  out beside this repository at that revision — the layout both the fixtures'
+  relative path dependencies and `authz_repository` require — installs the
+  bundle published for the matching tag, and runs
+  `sync-authz-components.sh`: companion revision and version, baseline
+  ancestry, a clean companion tree, locked fixture clippy, every digest in the
+  artifact set, both `cosign verify-blob` calls, and per-component
+  `wasm-tools validate` with the WIT stack-order assertions. It then builds the
+  WASIp2 lifecycle fixture `--locked` against the same companion.
+
+  Advancing the pin stays a lock edit: the workflow names no revision, version,
+  or tag of its own. The bundle is fetched from the release rather than rebuilt
+  because the upstream signing key is ephemeral per run, so a rebuild could
+  never reproduce the recorded signature digests.
 
 ### Documentation
 
