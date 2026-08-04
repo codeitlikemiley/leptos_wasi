@@ -92,6 +92,22 @@ All notable changes to this project will be documented in this file.
   belongs to the standalone `wasi-http-middleware` history and is now recorded
   with that provenance instead of presented as a `wasi-auth` commit.
 
+- Pinned the companion surface by digest. The lock named two crates while the
+  fixtures compile six, and the four beyond those must still exist in the
+  checkout for a `--locked` build, so a rename or a version bump upstream
+  reached this repository as a resolution failure inside a fixture build.
+  `[authorization]` now records the companion's own `companion.toml` — which
+  upstream generates from `cargo metadata` across both its workspaces and
+  drift-checks in its CI — and `check-authz-companion.sh` verifies that digest
+  before it builds anything.
+
+  The digest alone would only report that something moved, so the same check
+  then names what moved: every directly usable crate must sit on its own
+  workspace's locked version line, the legacy workspace included on its
+  independent one, and the recorded artifact identity and component list must
+  agree with the lock. A bumped crate now fails as `companion crate
+  wasi-authz-cedar is 0.1.0-rc.9, but wasi-auth is locked at 0.1.0-rc.3`.
+
 - Recorded the `wasi-http-middleware` artifact set from a published release
   instead of from a local build. Its digests previously came from whoever last
   ran the upstream supply-chain script on their own machine, naming files that

@@ -72,6 +72,13 @@ artifact_name = "wasi-authz"
 artifact_version = "0.1.0-rc.3"
 artifact_revision = "fc66aabefdbc57c37e72924cf7f6746c23b0c1fa"
 fixture_manifest = "tests/authz-fixture/Cargo.toml"
+# The companion publishes its own surface manifest, generated from `cargo
+# metadata` across both its workspaces and drift-checked in its CI. Pinning it
+# by digest records all ten companion crates rather than the two named below,
+# so a rename or a version bump upstream surfaces here as a digest mismatch
+# instead of as a build break in a fixture.
+companion_manifest = "companion.toml"
+companion_manifest_sha256 = "e63197ed8d2b10ae8ae2872ff70d9792a2ff83c4103df3ddad8f2691e89b2bcb"
 components = [
   "authz-http-pep",
   "cedar-pdp",

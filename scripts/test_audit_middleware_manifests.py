@@ -174,6 +174,23 @@ class DeploymentPolicyNegativeTests(unittest.TestCase):
             ).__setitem__("allows_trusted_response_headers", True)
         )
 
+    def test_companion_manifest_record_is_required(self) -> None:
+        # The shipped lock is the positive case, so this fails if the record is
+        # ever removed rather than only if a mutation slips through.
+        MODULE.audit_companion_manifest_record(self.lock["authorization"])
+        for mutate in (
+            lambda record: record.pop("companion_manifest"),
+            lambda record: record.__setitem__("companion_manifest", ""),
+            lambda record: record.pop("companion_manifest_sha256"),
+            lambda record: record.__setitem__("companion_manifest_sha256", "not-a-digest"),
+            # A short digest is the mutation a hand edit is most likely to make.
+            lambda record: record.__setitem__("companion_manifest_sha256", "a" * 63),
+        ):
+            candidate = copy.deepcopy(self.lock["authorization"])
+            mutate(candidate)
+            with self.assertRaises(AssertionError):
+                MODULE.audit_companion_manifest_record(candidate)
+
 
 if __name__ == "__main__":
     unittest.main()
