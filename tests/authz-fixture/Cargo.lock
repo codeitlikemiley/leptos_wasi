@@ -1258,7 +1258,7 @@ dependencies = [
 
 [[package]]
 name = "leptos-wasi-authz"
-version = "0.1.0-alpha.4"
+version = "0.1.0-rc.3"
 dependencies = [
  "axum-core",
  "bytes",
@@ -2892,7 +2892,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-cedar"
-version = "0.1.0-alpha.4"
+version = "0.1.0-rc.3"
 dependencies = [
  "base64",
  "cedar-policy",
@@ -2904,7 +2904,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-client"
-version = "0.1.0-alpha.4"
+version = "0.1.0-rc.3"
 dependencies = [
  "bytes",
  "futures",
@@ -2917,7 +2917,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-contract"
-version = "0.1.0-alpha.4"
+version = "0.1.0-rc.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -2926,7 +2926,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-http"
-version = "0.1.0-alpha.4"
+version = "0.1.0-rc.3"
 dependencies = [
  "http",
  "wasi-authz-client",
@@ -2937,7 +2937,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-spicedb"
-version = "0.1.0-alpha.4"
+version = "0.1.0-rc.3"
 dependencies = [
  "base64",
  "http",

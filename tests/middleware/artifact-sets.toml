@@ -66,20 +66,25 @@ wit_sha256 = "6907a1a8738866e9402eda194075d9eaa39cfa436d9226047831a453e395807a"
 [[bundle]]
 id = "authorization"
 name = "wasi-authz"
-version = "0.1.0-alpha.3"
-source_revision = "d4a755e7a4a5abe3b38868a71b063bf33592254c"
+version = "0.1.0-rc.3"
+source_revision = "fc66aabefdbc57c37e72924cf7f6746c23b0c1fa"
+# Every digest below is recorded from the published release assets at
+# https://github.com/codeitlikemiley/wasi-auth/releases/tag/wasi-auth-v0.1.0-rc.3
+# The signing key is ephemeral per release run, so the three signature-related
+# digests can only ever be satisfied by that one immutable bundle; a local
+# pipeline rerun will not reproduce them.
 checksum_manifest = "artifacts/RELEASE-SHA256SUMS"
-checksum_manifest_sha256 = "4d2bcba19b9e4a017ea2d80aabb90f283e21c0e59085aaf3b213de5775f31140"
+checksum_manifest_sha256 = "f8f2a78cc2cf9b39fbe2aeaf59dba329bf35e29b51a215ddee86ca38ee52cc62"
 provenance = "artifacts/provenance.intoto.json"
-provenance_sha256 = "1e57266f12e6ec991261cf49b6dd2381971d0f484e794b429c7b0b447f3f2b42"
+provenance_sha256 = "f7929853e46520aecaf0a95840ffc66569219cb0ac6ee69e81c6a41bb1e3fa38"
 oci_manifest = "reports/supply-chain/manifest.json"
-oci_manifest_sha256 = "7fc4db034acdd528f43ff4db1a920a62d3ba8fb395d8bdb1d68cc15b06a13590"
+oci_manifest_sha256 = "ba606511750115dde96a6a7febd7cf2739ea29b1d19ed283412a989c8318e8af"
 provenance_signature = "reports/supply-chain/provenance.intoto.json.sigstore.json"
-provenance_signature_sha256 = "7e488b3d0e6120f76a4ee1c8a4e0cfb76dbde7f81ad6da3252b8550a0ae7ad92"
+provenance_signature_sha256 = "ce09f2a0d65c2af1a7f80b438b0a8a783ee11a5da7021a25072d2feb674ab4fd"
 manifest_signature = "reports/supply-chain/manifest.json.sigstore.json"
-manifest_signature_sha256 = "a313a49ac99157320c6d55f7ec0e82d1de01a1b676ef1f9cba9b7d7dabb1d82d"
+manifest_signature_sha256 = "b6274cfa05860f4f24b8f0594c9abef98b812e1cf70b0ed09a3b88e94d7c099d"
 signing_key = "reports/supply-chain/cosign.pub"
-signing_key_sha256 = "191f01fb70d46b6a1331a3a864bdbe00a43c4c69cb0a3bbbbef8a2a40ace4133"
+signing_key_sha256 = "596fa3d6087e535db05648b6269c1b3b5babad6ec3ee42111d1f13f0f49f2049"
 
 [[bundle.attested_input]]
 path = "reports/wit/cedar-pdp.wit"
@@ -99,26 +104,26 @@ sha256 = "7d602957d91bb3d164fe37a06a6505caed0842d800007bad4f8f81f87855a2c0"
 [[bundle.artifact]]
 component = "authz-http-pep"
 path = "components/authz-http-pep.wasm"
-sha256 = "1adddcd6cbababc46a948a1a735f874f4d12ac90bbb59b7816a57774bb311103"
+sha256 = "dde57ff5eb0bd0a7587809be34458ca2741de898073b1673bf91de82aec85b00"
 sbom = "artifacts/sbom/wasi-authz-http-pep.cdx.json"
-sbom_sha256 = "500b3f2bf449a99e4f8f67d26b811771e3188b4815331e4dc2bf93bce38480b3"
+sbom_sha256 = "ec441f97ca383b65926c628a3fbf48594fb4140c1fa00f5537e244a37dd0027f"
 wit = "reports/wit/http-pep.wit"
 wit_sha256 = "de6325caf43fc271b87215eb7cb5b61999201d954b220a3278da556f55912d93"
 
 [[bundle.artifact]]
 component = "cedar-pdp"
 path = "components/cedar-pdp.wasm"
-sha256 = "a4c9d381fb3794a13ee76dfb4d474ebe37d0673392530b3995b37d8f8432e7c8"
+sha256 = "6806ca026bd42146cec4f1131c4d750c6d98d3b428c6ad0ff78a455de04c63eb"
 sbom = "artifacts/sbom/wasi-authz-cedar-pdp-component.cdx.json"
-sbom_sha256 = "e66ce809e07c6e8866120b11e7fc44a37a4391cb87ccbcc8a5e899f3cf5b4780"
+sbom_sha256 = "a944d138e125629e6edf679138c8fb779c449a94ab941c467af326eabd043731"
 wit = "reports/wit/cedar-pdp.wit"
 wit_sha256 = "7394503ecdd7acbcf9581c83dc29fe8959e572b9bdccfe47d48dba6aaf75629e"
 
 [[bundle.artifact]]
 component = "spicedb-pdp"
 path = "components/spicedb-pdp.wasm"
-sha256 = "875751b6f3b63adc081729e3e80d8dde92f58e02b4715ddef854ff1802a7a917"
+sha256 = "efc423c61a8ec28de809c6938ecf2318f1a5e6c5106bbd376dbdb7a893e328bc"
 sbom = "artifacts/sbom/wasi-authz-spicedb-pdp-component.cdx.json"
-sbom_sha256 = "9606b3631ae49329a090a4fab956f4baf3d33663b903cc88e9d0938e739effd8"
+sbom_sha256 = "520243eb7423f4c2db4799bcc6a735371de0123922bd464aaa0463884cffd0ff"
 wit = "reports/wit/spicedb-pdp.wit"
 wit_sha256 = "7d602957d91bb3d164fe37a06a6505caed0842d800007bad4f8f81f87855a2c0"

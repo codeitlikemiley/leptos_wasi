@@ -119,10 +119,10 @@ handler API. The compatibility middleware implementation and its imported
 history live under `wasi-auth/legacy/wasi-http-middleware`; this repository
 consumes checksum-pinned local artifacts from both.
 
-This repository pins `wasi-auth 0.1.0-alpha.4` and its legacy middleware
-workspace at `0.2.0-alpha.3`. Upstream `wasi-auth` has since moved to
-`0.1.0-rc.1`, which consolidates its workspace crates; the pin here is
-deliberate and is advanced only with regenerated, re-attested artifacts.
+This repository pins `wasi-auth 0.1.0-rc.3` and its legacy middleware workspace
+at `0.2.0-alpha.3`. The authorization bundle is recorded from the assets
+published on the upstream `wasi-auth-v0.1.0-rc.3` release rather than from any
+local pipeline run, because that run's signing key is ephemeral.
 `tests/middleware/components.lock.toml` records the exact revisions.
 
 ### Scope
