@@ -395,20 +395,144 @@ jobs:
 
       - name: Report cross-repository middleware promotion gate
         run: |
-          echo "::warning title=Companion promotion unavailable::The real full-chain, authorization, and browser gates require exact local wasi-http-middleware and wasi-authz source revisions. No remote or release artifact is authorized yet, so this workflow does not claim those production gates."
+          echo "::warning title=Middleware bundle unverified::The wasi-http-middleware artifact set is still a local build with no published release, so its signed-bundle gate cannot run here. The authorization bundle is verified by the companion-authz job."
           cat >> "${GITHUB_STEP_SUMMARY}" <<'EOF'
           ## Companion promotion status
 
           Terminal final-WIT checks and both Spin incompatibility canaries ran.
-          The checksum-pinned Wasmtime full-chain, typed authorization, and
-          browser gates remain a release blocker until both companion
-          repositories have authorized remotes or immutable release artifacts.
-          Run them locally from sibling checkouts with
-          `./scripts/run-middleware-tests.sh` and
+          The authorization companion is fully gated in CI by the
+          `companion-authz` job, which pins `wasi-auth` by the revision recorded
+          in `tests/middleware/components.lock.toml` and verifies its signed
+          bundle against the assets published for that revision's tag.
+
+          The `wasi-http-middleware` artifact set is not: its digests still come
+          from a local build with no published release to fetch, so
+          `verify-artifact-set.py middleware` has no bundle to check. Until that
+          subtree cuts a tag-gated release, its signed-artifact gate, the
+          Wasmtime full-chain lane, and the browser lanes run only from sibling
+          checkouts — `./scripts/run-middleware-tests.sh` and
           `./scripts/run-trusted-ingress-browser.sh`. Promotion additionally
           requires `./scripts/benchmark-trusted-ingress.sh` and
           `DURATION=600 CONCURRENCY=100 ./scripts/soak-trusted-ingress.sh`.
           EOF
+
+  companion-authz:
+    name: Signed authorization companion
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOBIN: ${{ github.workspace }}/go-bin
+    # The fixture manifests declare `wasi-auth` by the relative path
+    # `../../../wasi-auth`, and `authz_repository` resolves the lock's
+    # `relative_path` against the parent of this repository's root. Both only
+    # hold if the two checkouts are siblings, which is why neither uses the
+    # default checkout location.
+    defaults:
+      run:
+        working-directory: leptos_wasi
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          path: leptos_wasi
+
+      # Read the pin rather than restating it, so advancing the companion is a
+      # lock edit and never a workflow edit.
+      - name: Read the pinned authorization companion
+        id: pin
+        run: |
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import tomllib
+
+          with open("tests/middleware/components.lock.toml", "rb") as source:
+              authorization = tomllib.load(source)["authorization"]
+          print(f'revision={authorization["source_revision"]}')
+          print(f'tag=wasi-auth-v{authorization["artifact_version"]}')
+          PY
+          cat "${GITHUB_OUTPUT}"
+
+      # `check-authz-companion.sh` asserts the pinned revision descends from the
+      # locked baseline, which needs history, not just the tip.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: codeitlikemiley/wasi-auth
+          ref: ${{ steps.pin.outputs.revision }}
+          fetch-depth: 0
+          path: wasi-auth
+
+      - name: Install Rust 1.93.0 and the WASI target
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: 1.93.0
+          targets: wasm32-wasip2
+          components: clippy
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: |
+            leptos_wasi -> target
+            leptos_wasi/tests/authz-fixture -> tests/authz-fixture/target
+            leptos_wasi/tests/authz-lifecycle-wasip2 -> tests/authz-lifecycle-wasip2/target
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version: "1.26.2"
+
+      - name: Install pinned verification tools
+        run: |
+          cargo install wasm-tools --version 1.253.0 --locked
+          go install github.com/sigstore/cosign/v3/cmd/cosign@v3.1.1
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ripgrep
+
+      # `reports/supply-chain/` and the release checksum manifest are git-ignored
+      # upstream by design: the bundle is release-run output, not repository
+      # content. The signing key is ephemeral per run, so rebuilding it here
+      # could never reproduce the recorded signature digests — only the
+      # published assets can.
+      - name: Install the published authorization bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.pin.outputs.tag }}
+        run: |
+          assets="${RUNNER_TEMP}/authz-assets"
+          repository="${GITHUB_WORKSPACE}/wasi-auth"
+          gh release download "${TAG}" --repo codeitlikemiley/wasi-auth \
+            --dir "${assets}" --clobber
+          mkdir -p "${repository}/artifacts/components" \
+            "${repository}/artifacts/native" \
+            "${repository}/reports/supply-chain"
+          install -m 0644 "${assets}/RELEASE-SHA256SUMS" \
+            "${assets}/provenance.intoto.json" "${repository}/artifacts/"
+          install -m 0644 "${assets}/authz-http-pep.wasm" "${assets}/cedar-pdp.wasm" \
+            "${assets}/spicedb-pdp.wasm" "${repository}/artifacts/components/"
+          install -m 0644 "${assets}/cedar-pdp-x86_64-unknown-linux-gnu" \
+            "${repository}/artifacts/native/"
+          install -m 0644 "${assets}/native-SHA256SUMS" \
+            "${repository}/artifacts/native/SHA256SUMS"
+          install -m 0644 "${assets}/manifest.json" \
+            "${assets}/manifest.json.sigstore.json" \
+            "${assets}/provenance.intoto.json.sigstore.json" \
+            "${assets}/cosign.pub" "${repository}/reports/supply-chain/"
+
+      # Installing only into ignored paths keeps the companion checkout clean,
+      # which `check-authz-companion.sh` requires.
+      - name: Confirm the companion checkout is unmodified
+        run: git -C "${GITHUB_WORKSPACE}/wasi-auth" diff --exit-code
+
+      # Runs check-authz-companion.sh (revision, version, baseline ancestry,
+      # clean tree, locked fixture clippy), verify-artifact-set.py (every digest
+      # plus both cosign verify-blob calls), and per-component wasm-tools
+      # validation with the WIT stack-order assertions.
+      - name: Verify the signed authorization companion
+        env:
+          COSIGN_BIN: ${{ github.workspace }}/go-bin/cosign
+        run: ./scripts/sync-authz-components.sh
+
+      - name: Build the WASIp2 lifecycle fixture against the pinned companion
+        run: >-
+          cargo clippy --locked
+          --manifest-path tests/authz-lifecycle-wasip2/Cargo.toml
+          --target wasm32-wasip2 --all-targets -- -D warnings
 
   soak:
     name: Ten-minute soak / ${{ matrix.host }} / ${{ matrix.preview }}
