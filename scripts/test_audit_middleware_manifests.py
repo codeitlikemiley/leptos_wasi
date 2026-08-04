@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import pathlib
+import shutil
 import unittest
 
 
@@ -190,6 +191,38 @@ class DeploymentPolicyNegativeTests(unittest.TestCase):
             mutate(candidate)
             with self.assertRaises(AssertionError):
                 MODULE.audit_companion_manifest_record(candidate)
+
+
+class SpinManifestDiscoveryTests(unittest.TestCase):
+    """A scratch checkout parked in an ignored directory is not ours to audit."""
+
+    def setUp(self) -> None:
+        self.scratch = MODULE.ROOT / ".claude" / "worktrees" / "audit-discovery-test"
+        self.manifest = self.scratch / "tests" / "spin.toml"
+        self.manifest.parent.mkdir(parents=True, exist_ok=True)
+        self.manifest.write_text("")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self.relative = self.manifest.relative_to(MODULE.ROOT).as_posix()
+
+    def test_ignored_manifests_are_not_discovered(self) -> None:
+        # The walk still reaches the scratch manifest, so this fails if the
+        # ignore filter is dropped rather than only if the glob stops matching.
+        self.assertIn(
+            self.relative,
+            {
+                path.relative_to(MODULE.ROOT).as_posix()
+                for path in MODULE.ROOT.glob("**/spin*.toml")
+            },
+        )
+        self.assertNotIn(self.relative, MODULE.discover_spin_manifests())
+
+    def test_tracked_manifests_are_still_discovered(self) -> None:
+        self.assertIn("examples/counter/spin.toml", MODULE.discover_spin_manifests())
+
+    def test_the_shipped_policy_holds_beside_a_scratch_checkout(self) -> None:
+        MODULE.audit_deployment_policy(
+            MODULE.load("tests/middleware/components.lock.toml")
+        )
 
 
 if __name__ == "__main__":

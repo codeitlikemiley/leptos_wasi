@@ -222,6 +222,50 @@ def audit_companion_manifest_record(authorization_lock: dict) -> None:
         raise AssertionError("companion surface manifest digest must be SHA-256")
 
 
+def git_ignored(relative_paths: list[str]) -> set[str]:
+    """Return the subset of `relative_paths` that Git ignores.
+
+    Asking Git keeps the exclusion tied to the ignore rules themselves rather
+    than to a hardcoded path list, so it stays correct as those rules change. A
+    checkout without a usable Git reports nothing ignored, which is the walk's
+    pre-existing behaviour.
+    """
+    if not relative_paths:
+        return set()
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "-z", "--stdin"],
+            cwd=ROOT,
+            input="\0".join(relative_paths),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return set()
+    # 0 means at least one path is ignored and 1 means none is; anything else
+    # - no repository, no Git - means the question could not be answered.
+    if result.returncode not in (0, 1):
+        return set()
+    return {path for path in result.stdout.split("\0") if path}
+
+
+def discover_spin_manifests() -> set[str]:
+    """Find every Spin manifest this repository is responsible for auditing.
+
+    Discovery walks the working tree, so an ignored scratch checkout parked
+    inside the repository - `.claude/worktrees/` is both ignored and created by
+    local tooling - would otherwise contribute its own manifests and fail the
+    audit in any clone that happens to have one on disk.
+    """
+    candidates = sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in ROOT.glob("**/spin*.toml")
+        if "target" not in path.parts
+    )
+    return set(candidates) - git_ignored(candidates)
+
+
 def middleware_dependencies(trigger: dict) -> list[dict]:
     dependencies = trigger.get("dependencies", {})
     middleware = dependencies.get("middleware", [])
@@ -475,11 +519,7 @@ def audit_deployment_policy(lock: dict) -> None:
             ) != exemption["source_digest"]:
                 raise AssertionError(f"public exemption source drifted in {name}")
 
-    discovered = {
-        path.relative_to(ROOT).as_posix()
-        for path in ROOT.glob("**/spin*.toml")
-        if "target" not in path.parts
-    }
+    discovered = discover_spin_manifests()
     if declared_manifests != discovered:
         raise AssertionError(
             "every Spin HTTP manifest must have exactly one deployment profile: "
