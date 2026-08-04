@@ -618,8 +618,8 @@ def main() -> int:
             raise AssertionError(f"middleware {key} must be a full Git revision")
     if middleware_lock["baseline_revision"] == middleware_lock["source_revision"]:
         raise AssertionError("middleware source revision must advance beyond its baseline")
-    if authorization_lock["version"] != "0.1.0-alpha.4":
-        raise AssertionError("authorization integration must target consolidated wasi-auth")
+    if authorization_lock["version"] != "0.1.0-rc.3":
+        raise AssertionError("authorization integration must target the released wasi-auth candidate")
     for key in ("baseline_revision", "source_revision", "artifact_revision"):
         if re.fullmatch(r"[0-9a-f]{40}", authorization_lock[key]) is None:
             raise AssertionError(f"authorization {key} must be a full Git revision")
@@ -648,7 +648,7 @@ def main() -> int:
         authorization_lock["leptos_package"]
     ]
     if fixture_dependency["version"] != f'={authorization_lock["version"]}':
-        raise AssertionError("authorization fixture must pin the exact alpha version")
+        raise AssertionError("authorization fixture must pin the exact locked version")
     if not fixture_dependency["path"].endswith(
         authorization_lock["leptos_crate_path"]
     ):
@@ -657,7 +657,7 @@ def main() -> int:
         authorization_lock["client_package"]
     ]
     if client_dependency["version"] != f'={authorization_lock["version"]}':
-        raise AssertionError("authorization fixture must pin the exact client alpha")
+        raise AssertionError("authorization fixture must pin the exact client version")
     if not client_dependency["path"].endswith(
         authorization_lock["client_crate_path"]
     ):

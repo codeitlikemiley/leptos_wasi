@@ -2083,7 +2083,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-client"
-version = "0.1.0-alpha.4"
+version = "0.1.0-rc.3"
 dependencies = [
  "futures",
  "http",
@@ -2094,7 +2094,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-contract"
-version = "0.1.0-alpha.4"
+version = "0.1.0-rc.3"
 dependencies = [
  "serde",
  "serde_json",

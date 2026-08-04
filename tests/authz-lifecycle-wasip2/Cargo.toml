@@ -14,8 +14,8 @@ crate-type = ["cdylib"]
 leptos_wasi = { package = "leptos-wasi-runtime", path = "../..", default-features = false, features = ["wasip2"] }
 thiserror = "2.0"
 wasi = "=0.14.7"
-wasi-authz-client = { path = "../../../wasi-auth/crates/wasi-authz-client", default-features = false, features = ["wasip2"] }
-wasi-authz-contract = { path = "../../../wasi-auth/crates/wasi-authz-contract" }
+wasi-authz-client = { path = "../../../wasi-auth/crates/wasi-authz-client", version = "=0.1.0-rc.3", default-features = false, features = ["wasip2"] }
+wasi-authz-contract = { path = "../../../wasi-auth/crates/wasi-authz-contract", version = "=0.1.0-rc.3" }
 
 [dev-dependencies]
 serde_json = "1.0"

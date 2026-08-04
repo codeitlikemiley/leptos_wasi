@@ -44,6 +44,43 @@ class ArtifactSetNegativeTests(unittest.TestCase):
         with self.assertRaises(MODULE.ArtifactSetError):
             MODULE.validate_artifact_entries(bundle, ["request-id"])
 
+    def test_authorization_bundle_matches_the_artifact_identity(self) -> None:
+        lock = {
+            "name": "wasi-auth",
+            "version": "0.1.0-rc.3",
+            "artifact_name": "wasi-authz",
+            "artifact_version": "0.1.0-rc.3",
+            "artifact_revision": "f" * 40,
+        }
+        bundle = {
+            "name": "wasi-authz",
+            "version": "0.1.0-rc.3",
+            "source_revision": "f" * 40,
+        }
+        MODULE.verify_bundle_identity(bundle, lock)
+        # The repository name is deliberately not what the bundle is called.
+        with self.assertRaises(MODULE.ArtifactSetError):
+            MODULE.verify_bundle_identity({**bundle, "name": "wasi-auth"}, lock)
+        with self.assertRaises(MODULE.ArtifactSetError):
+            MODULE.verify_bundle_identity({**bundle, "version": "0.1.0-rc.2"}, lock)
+        with self.assertRaises(MODULE.ArtifactSetError):
+            MODULE.verify_bundle_identity({**bundle, "source_revision": "a" * 40}, lock)
+
+    def test_bundle_without_artifact_identity_falls_back_to_the_lock_name(self) -> None:
+        lock = {
+            "name": "wasi-http-middleware",
+            "version": "0.2.0-alpha.3",
+            "artifact_revision": "b" * 40,
+        }
+        bundle = {
+            "name": "wasi-http-middleware",
+            "version": "0.2.0-alpha.3",
+            "source_revision": "b" * 40,
+        }
+        MODULE.verify_bundle_identity(bundle, lock)
+        with self.assertRaises(MODULE.ArtifactSetError):
+            MODULE.verify_bundle_identity({**bundle, "name": "wasi-authz"}, lock)
+
     def test_tampered_bundle_key_and_signature_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)

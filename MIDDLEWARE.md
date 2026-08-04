@@ -119,24 +119,26 @@ compatibility tuple, artifact checksums, component WIT, SBOMs, provenance
 subjects, OCI manifest, public key, and detached signature bundles. The sync
 gate runs pinned Cosign verification for both the provenance statement and OCI
 manifest before copying a component. The checked
-`tests/middleware/artifact-sets.toml` record binds those exact local-alpha
-files; its ephemeral development key is evidence for this local build, not a
-production release identity.
+`tests/middleware/artifact-sets.toml` record binds those exact files.
 
-The checked authorization bundle is still the signed pre-consolidation
-`wasi-authz 0.1.0-alpha.3` set. `AUTHZ_COMPANION_ALLOW_DIRTY=1` may bypass its
-name/version comparison only for explicit local diagnostics. A release build
-must use a clean `wasi-auth 0.1.0-alpha.4` revision, regenerate every component,
-checksum, SBOM, WIT report, OCI manifest, provenance statement, and signature,
-and update the artifact-set digest; the default audit intentionally fails
-until that work is complete.
+The two bundles it binds have different provenance, and the difference matters.
+The middleware bundle is still a local-alpha build whose ephemeral development
+key is evidence for that build, not a production release identity. The
+authorization bundle is not: it is the `wasi-authz 0.1.0-rc.3` set published as
+assets on the upstream
+[`wasi-auth-v0.1.0-rc.3`](https://github.com/codeitlikemiley/wasi-auth/releases/tag/wasi-auth-v0.1.0-rc.3)
+release, rebuilt and signed by the tag-triggered release workflow. Its
+component, SBOM, and WIT digests are fixed by the `rc.3` tree and reproduce on
+every upstream push; its checksum-manifest, provenance, OCI-manifest,
+signature, and key digests are recorded from those release assets and can only
+ever be satisfied by that one immutable bundle, because the signing key is
+generated per run and discarded. Re-verify it by re-downloading the assets, not
+by regenerating the pipeline. `AUTHZ_COMPANION_ALLOW_DIRTY=1` may still bypass
+the name/version comparison for explicit local diagnostics.
 
-Upstream `wasi-auth` has since moved to `0.1.0-rc.1`, which consolidates its
-workspace crates behind the single publishable `wasi-auth` crate. The pin here
-stays at `0.1.0-alpha.4` deliberately: advancing it means regenerating and
-re-attesting the whole bundle, which is the same work the paragraph above
-already blocks on. The legacy middleware workspace is unaffected — it remains
-`0.2.0-alpha.3` upstream, exactly what this repository pins.
+The legacy middleware workspace is unaffected by the authorization move — that
+subtree is byte-identical across the range and remains `0.2.0-alpha.3` upstream,
+exactly what this repository pins.
 
 The exact experimental runtime, SDK, WIT, and composition-tool revisions are
 recorded in

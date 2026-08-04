@@ -83,6 +83,29 @@ def validate_artifact_entries(
     return artifacts
 
 
+def verify_bundle_identity(
+    bundle: dict[str, object], lock: dict[str, object]
+) -> None:
+    """Require the bundle to be the one the compatibility lock pins.
+
+    A lock section names the companion repository, which is not always what the
+    bundle it produces is called: `wasi-auth` ships a `wasi-authz` bundle on its
+    own version line. Where the lock records that distinction with
+    `artifact_name`/`artifact_version`, those keys are the ones the bundle must
+    match, exactly as the static manifest audit already requires.
+    """
+    for key in ("name", "version"):
+        lock_key = f"artifact_{key}" if f"artifact_{key}" in lock else key
+        if bundle.get(key) != lock.get(lock_key):
+            raise ArtifactSetError(
+                f"artifact bundle {key} does not match compatibility lock"
+            )
+    if bundle.get("source_revision") != lock.get("artifact_revision"):
+        raise ArtifactSetError(
+            "artifact bundle source revision does not match compatibility lock"
+        )
+
+
 def load_bundle(bundle_id: str) -> tuple[dict[str, object], dict[str, object]]:
     """Load one bundle and its matching compatibility section."""
     with LOCK.open("rb") as source:
@@ -105,11 +128,7 @@ def verify_bundle(
     cosign: pathlib.Path,
 ) -> None:
     """Verify content, provenance subjects, and both local signatures."""
-    for key in ("name", "version"):
-        if bundle.get(key) != lock.get(key):
-            raise ArtifactSetError(f"artifact bundle {key} does not match compatibility lock")
-    if bundle.get("source_revision") != lock.get("artifact_revision"):
-        raise ArtifactSetError("artifact bundle source revision does not match compatibility lock")
+    verify_bundle_identity(bundle, lock)
     expected_components = lock.get("components")
     if not isinstance(expected_components, list) or not all(
         isinstance(component, str) for component in expected_components

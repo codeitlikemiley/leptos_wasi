@@ -65,6 +65,34 @@ All notable changes to this project will be documented in this file.
   `X-Content-Type-Options` true of the 405 response, which previously carried
   only `Allow`.
 
+- Advanced the companion pin from `wasi-auth 0.1.0-alpha.4` to `0.1.0-rc.3`,
+  pinned at the commit its release tag points at rather than at the branch tip.
+  Every symbol the fixtures import is unchanged across the range — upstream
+  reports no `.rs` file touched in any consumer-visible crate — so the move is
+  version metadata, regenerated artifact records, and lockfiles, with no code
+  change on either side. `wasi-http-authn` stays at `0.2.0-alpha.3`, because
+  the legacy middleware subtree is byte-identical across the same range.
+
+  The authorization artifact set is now recorded from the assets published on
+  the upstream release for that tag, not from a local pipeline run. Upstream
+  signs with a key generated per run and discarded, so the signature and key
+  digests a local rerun produces can never match a previously recorded set;
+  one immutable published bundle is the only thing those fields can pin. This
+  also drops two revisions the lock could not resolve: an `artifact_revision`
+  absent from `wasi-auth` history, and a `[middleware].baseline_revision` that
+  belongs to the standalone `wasi-http-middleware` history and is now recorded
+  with that provenance instead of presented as a `wasi-auth` commit.
+
+- `scripts/verify-artifact-set.py` compares the authorization bundle's identity
+  against the lock's `artifact_name`/`artifact_version` rather than its
+  `name`/`version`. Those pairs deliberately differ — the `wasi-auth`
+  repository ships a `wasi-authz` bundle — and the static manifest audit
+  already required the `artifact_*` keys, so the signed-artifact gate could not
+  pass at the same time as the audit. That was true of the records shipped
+  before this change, not a consequence of it; the gate is satisfiable for the
+  first time here. A lock section without `artifact_*` keys, such as the
+  middleware one, still matches on `name`/`version`.
+
 ### Added
 
 - `HandlerConfig::with_request_body_timeout_ns` bounds how long a whole request
@@ -105,12 +133,12 @@ All notable changes to this project will be documented in this file.
   reaching either document, and `validate_route_table` in particular is the
   mitigation for route-table validation no longer running on claimed requests,
   so its absence from the operational contract was the more consequential gap.
-- Recorded that the companion pins are deliberately behind upstream. This
-  repository pins `wasi-auth 0.1.0-alpha.4`; upstream has moved to
-  `0.1.0-rc.1`, which consolidates its workspace crates. Advancing the pin
-  requires regenerating and re-attesting the artifact bundle, which the
-  promotion gate already blocks on. The legacy middleware workspace is
-  unaffected and remains `0.2.0-alpha.3` upstream, matching the pin.
+- Rewrote the companion-pin sections of the README and `MIDDLEWARE.md`. They
+  described the pin as deliberately held behind upstream and the authorization
+  bundle as an unregenerated pre-consolidation set, which the pin move in this
+  same cycle made false. They now state where the bundle comes from and why it
+  cannot be reproduced locally, which is the part a reader needs in order to
+  re-verify it.
 - Reorganised the README's runtime section, which had grown into a single
   paragraph covering composition, Spin canaries, companion components, and
   post-0.5 scope. It is now split by subject, with the per-runtime composition
