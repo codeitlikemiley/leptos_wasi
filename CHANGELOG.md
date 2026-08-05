@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-08-05
+
 ### Fixed
 
 - Bounded static asset path validation to a fixed number of residual

@@ -1,6 +1,6 @@
 # `leptos_wasi` migration guide
 
-## Migrating from 0.4.1 to 0.4.2-rc.1
+## Migrating from 0.4.1 to 0.4.2
 
 The 0.4.2 release candidate gives route-generation context lifecycle-explicit
 names. The previous methods remain as forwarding aliases, so the
@@ -57,13 +57,13 @@ with Preview 2:
 
 ```toml
 # Preview 2 only
-leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1" }
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2" }
 
 # Preview 3 only
-leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1", default-features = false, features = ["wasip3"] }
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2", default-features = false, features = ["wasip3"] }
 
 # Both public adapters
-leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1", features = ["wasip3"] }
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2", features = ["wasip3"] }
 ```
 
 Code that enables neither runtime now receives a compile-time error.
