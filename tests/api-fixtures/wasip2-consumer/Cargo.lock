@@ -920,7 +920,10 @@ dependencies = [
 name = "leptos-wasi-wasip2-consumer"
 version = "0.0.0"
 dependencies = [
+ "leptos",
  "leptos-wasi-runtime",
+ "serde",
+ "server_fn",
 ]
 
 [[package]]

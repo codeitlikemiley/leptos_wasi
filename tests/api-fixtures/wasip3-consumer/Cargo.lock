@@ -921,7 +921,10 @@ name = "leptos-wasi-wasip3-consumer"
 version = "0.0.0"
 dependencies = [
  "http",
+ "leptos",
  "leptos-wasi-runtime",
+ "serde",
+ "server_fn",
  "wasip3",
 ]
 
