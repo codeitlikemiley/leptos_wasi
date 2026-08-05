@@ -164,6 +164,20 @@ command = "./scripts/run-middleware-tests.sh"
 [tasks.ci]
 dependencies = ["ci-wasip2", "ci-wasip3", "ci-dual", "api-fixtures"]
 
+# Deliberately not a dependency of [tasks.ci]. The soak job's own notes record
+# a +/-0.7pp measurement problem on shared runners over a 600-second load
+# test; a microsecond-scale sample stands no chance there. Run this by hand
+# when bumping leptos, which is the regression this covers.
+[tasks.bench]
+command = "cargo"
+args = [
+    "bench",
+    "--locked",
+    "--no-default-features",
+    "--features",
+    "wasip2,islands-router",
+]
+
 [tasks.package]
 command = "cargo"
 args = ["package", "--locked"]

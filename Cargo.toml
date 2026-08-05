@@ -8,6 +8,7 @@ version = "0.4.2-rc.1"
 edition = "2024"
 rust-version = "1.93.0"
 include = [
+    "/benches/**",
     "/src/**",
     "/CHANGELOG.md",
     "/COMPATIBILITY.md",
@@ -49,7 +50,12 @@ async-stream = "0.3.6"
 axum-core = "0.5.6"
 tracing = { version = "0.1.44", optional = true }
 
+[[bench]]
+name = "route_discovery"
+harness = false
+
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+divan = "0.1.21"
 tokio = { version = "1.52", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 anyhow = "1.0"
