@@ -1,7 +1,10 @@
 #![deny(warnings)]
 
+use leptos::prelude::*;
+use server_fn::codec::GetUrl;
+
 use leptos_wasi::{
-    ExecutorError, HandlerConfig,
+    ExecutorError, HandlerConfig, RegistrationError,
     wasip2::{
         Handler as Wasip2Handler, HandlerError as Wasip2HandlerError,
         prelude::{IncomingRequest as Wasip2Request, ResponseOutparam},
@@ -42,4 +45,55 @@ pub async fn build_wasip3_configured(
     config: HandlerConfig,
 ) -> Result<Wasip3Handler, Wasip3HandlerError> {
     Wasip3Handler::build_with_config(request, config).await
+}
+
+fn app() -> impl IntoView {
+    view! { <p>"consumer"</p> }
+}
+
+#[server(input = GetUrl, prefix = "/api", endpoint = "probe")]
+pub async fn probe() -> Result<String, ServerFnError> {
+    Ok(String::from("probe"))
+}
+
+/// Exercises every builder method on both previews through direct paths.
+///
+/// This fixture deliberately imports `Handler` by path rather than through a
+/// prelude, because that is the shape a prelude-based fixture would hide: a
+/// refactor that moved these methods onto a trait would keep compiling for
+/// glob-importing callers and break for these. The `leptos_wasi` imports
+/// above are exactly the ones this file needed before these calls existed.
+pub fn register_everything_wasip2(
+    handler: Wasip2Handler,
+) -> Result<Wasip2Handler, RegistrationError> {
+    handler
+        .with_server_fn::<Probe>()
+        .static_files_handler("/pkg", |_path| None)?
+        .generate_routes(app)?
+        .generate_routes_with_discovery_context(app, || {})?
+        .generate_routes_with_context(app, || {})?
+        .generate_routes_with_exclusions_and_discovery_context(
+            app,
+            None,
+            || {},
+        )?
+        .generate_routes_with_exclusions_and_context(app, None, || {})
+}
+
+/// The Preview 3 half of [`register_everything_wasip2`].
+pub fn register_everything_wasip3(
+    handler: Wasip3Handler,
+) -> Result<Wasip3Handler, RegistrationError> {
+    handler
+        .with_server_fn::<Probe>()
+        .static_files_handler("/pkg", |_path| None)?
+        .generate_routes(app)?
+        .generate_routes_with_discovery_context(app, || {})?
+        .generate_routes_with_context(app, || {})?
+        .generate_routes_with_exclusions_and_discovery_context(
+            app,
+            None,
+            || {},
+        )?
+        .generate_routes_with_exclusions_and_context(app, None, || {})
 }

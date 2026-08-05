@@ -35,6 +35,11 @@ pub struct Response(pub http::Response<Body>);
 #[cfg(feature = "wasip2")]
 impl Response {
     /// Converts the response headers to the WASI Preview 2 native `Headers` type.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResponseError`] if a header name or value is rejected by
+    /// the host.
     pub fn headers(&self) -> Result<Headers, ResponseError> {
         let headers = Headers::new();
         for (name, value) in self.0.headers() {
@@ -132,7 +137,7 @@ impl
                         // We use std::io::Error as an intermediate since boxed trait objects
                         // don't implement std::error::Error themselves
                         yield Err(throw_error::Error::from(std::io::Error::other(
-                            format!("Body frame error: {}", e)
+                            format!("Body frame error: {e}")
                         )));
                     }
                 }
@@ -173,7 +178,7 @@ impl From<axum_core::body::Body> for Body {
 }
 
 /// This struct lets you define headers and override the status of the Response from an Element or a Server Function
-/// Typically contained inside of a ResponseOptions. Setting this is useful for cookies and custom responses.
+/// Typically contained inside of a `ResponseOptions`. Setting this is useful for cookies and custom responses.
 /// Extracted HTTP parts (headers and status code) for configuring response options.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
@@ -230,7 +235,7 @@ impl ResponseOptions {
     /// A simpler way to overwrite the contents of `ResponseOptions` with a new `ResponseParts`.
     #[inline]
     pub fn overwrite(&self, parts: ResponseParts) {
-        *self.0.write() = parts
+        *self.0.write() = parts;
     }
     /// Set the status of the returned Response.
     #[inline]
@@ -345,6 +350,10 @@ impl http_body::Body for Body {
     }
 }
 
+#[expect(
+    clippy::panic,
+    reason = "a failed invariant in a test should abort the test"
+)]
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -34,7 +34,7 @@ pub fn redirect(path: &str) {
                 res.insert_header(header::LOCATION, value);
             }
             Err(e) => {
-                eprintln!("Invalid redirect path: {}, error: {:?}", path, e);
+                eprintln!("Invalid redirect path: {path}, error: {e:?}");
                 res.set_status(StatusCode::BAD_REQUEST);
                 return;
             }
@@ -44,8 +44,7 @@ pub fn redirect(path: &str) {
             .headers
             .get(header::ACCEPT)
             .and_then(|v| v.to_str().ok())
-            .map(|v| v.contains("text/html"))
-            .unwrap_or(false);
+            .is_some_and(|v| v.contains("text/html"));
         if accepts_html {
             // if the request accepts text/html, it's a plain form request and needs
             // to have the 302 code set

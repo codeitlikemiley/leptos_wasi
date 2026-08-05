@@ -14,6 +14,12 @@ pub mod p2 {
 
     /// Converts a WASI Preview 2 request into an `http` request while enforcing
     /// the configured body limit.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RequestError::Policy`] if the body breaches
+    /// `max_body_size`, and the conversion variants of
+    /// [`RequestError`] if the method, scheme, or headers are unusable.
     pub fn from_wasi_request(
         request: IncomingRequest,
         max_body_size: usize,
@@ -29,6 +35,10 @@ pub mod p2 {
     /// client that stalls or trickles cannot hold the instance indefinitely.
     /// The budget spans the whole body rather than the gap between chunks, so
     /// a client feeding one byte per interval is bounded too.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "owns the host resource handle; dropping it releases it"
+    )]
     pub fn from_wasi_request_with_deadline(
         request: IncomingRequest,
         max_body_size: usize,
@@ -43,12 +53,9 @@ pub mod p2 {
         let incoming_body = request
             .consume()
             .map_err(|()| RequestError::BodyAlreadyConsumed)?;
-        let body_stream = match incoming_body.stream() {
-            Ok(stream) => stream,
-            Err(()) => {
-                IncomingBody::finish(incoming_body);
-                return Err(RequestError::BodyStreamUnavailable);
-            }
+        let Ok(body_stream) = incoming_body.stream() else {
+            IncomingBody::finish(incoming_body);
+            return Err(RequestError::BodyStreamUnavailable);
         };
         // One timer for the whole body. Subscribing once rather than per
         // chunk is what makes this a total budget instead of an idle one: a
@@ -174,6 +181,10 @@ pub mod p2 {
     }
 
     /// Converts a WASI Preview 2 method into an `http` method.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an extension method is not a valid HTTP token.
     pub fn method_wasi_to_http(
         value: Method,
     ) -> Result<http::Method, http::Error> {
@@ -195,6 +206,10 @@ pub mod p2 {
     }
 
     /// Converts a WASI Preview 2 scheme into an `http` scheme.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an extension scheme is not a valid URI scheme.
     pub fn scheme_wasi_to_http(
         value: Scheme,
     ) -> Result<http::uri::Scheme, http::Error> {

@@ -7,3 +7,6 @@ publish = false
 
 [dependencies]
 leptos_wasi = { package = "leptos-wasi-runtime", path = "../../..", default-features = false, features = ["wasip2"] }
+leptos = { version = "0.8.20", default-features = false, features = ["ssr"] }
+server_fn = { version = "0.8.12", default-features = false, features = ["axum-no-default"] }
+serde = { version = "1", features = ["derive"] }
