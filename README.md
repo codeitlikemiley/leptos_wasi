@@ -61,7 +61,7 @@ leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2", features = [
 The features are additive. Enabling `wasip3` does not disable or replace the
 `wasip2` API.
 
-The release candidate uses the crates.io package name `leptos-wasi-runtime`
+Releases use the crates.io package name `leptos-wasi-runtime`
 because publication access to the upstream `leptos_wasi` package is not
 available. The dependency alias and library target remain `leptos_wasi`, so
 Rust import paths are unchanged.

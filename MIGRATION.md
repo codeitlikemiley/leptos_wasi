@@ -2,7 +2,7 @@
 
 ## Migrating from 0.4.1 to 0.4.2
 
-The 0.4.2 release candidate gives route-generation context lifecycle-explicit
+0.4.2 gives route-generation context lifecycle-explicit
 names. The previous methods remain as forwarding aliases, so the
 patch release is source compatible while applications migrate.
 
@@ -27,7 +27,7 @@ versioned `leptos-wasi-authz` crate with the trusted
 `leptos_wasi` itself does not establish trust in that header; an application
 that exposes its terminal component directly must not install the bridge.
 
-The 0.4.2 release candidate supports the native terminal path on the maintained
+0.4.2 supports the native terminal path on the maintained
 Spin fork. Portable WAC-composed middleware and an upstream tagged Spin runtime
 remain separate promotion gates. See [PRODUCTION.md](./PRODUCTION.md) and
 [MIDDLEWARE.md](./MIDDLEWARE.md) before enabling experimental composition.
