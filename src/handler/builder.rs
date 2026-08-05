@@ -25,6 +25,11 @@ macro_rules! common_handler_methods {
         }
 
         /// Registers a static-file callback for one URI prefix.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`RegistrationError::InvalidStaticPrefix`] if `prefix`
+        /// is not a usable URI path.
         pub fn static_files_handler<T>(
             mut self,
             prefix: T,
@@ -39,6 +44,15 @@ macro_rules! common_handler_methods {
         }
 
         /// Generates Leptos routes for the application.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`RegistrationError::RoutesAlreadyGenerated`] if routes
+        /// were already generated on this handler, and the errors
+        /// [`crate::validate_route_table`] reports for an unusable table:
+        /// [`RegistrationError::DuplicateRoute`],
+        /// [`RegistrationError::UnsupportedStaticSsr`], and
+        /// [`RegistrationError::InvalidRoute`].
         pub fn generate_routes<IV>(
             self,
             app: impl Fn() -> IV + 'static + Send + Clone,
@@ -62,6 +76,15 @@ macro_rules! common_handler_methods {
         /// other request-dependent state.
         ///
         /// Use [`Self::handle_with_context`] for per-request context.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`RegistrationError::RoutesAlreadyGenerated`] if routes
+        /// were already generated on this handler, and the errors
+        /// [`crate::validate_route_table`] reports for an unusable table:
+        /// [`RegistrationError::DuplicateRoute`],
+        /// [`RegistrationError::UnsupportedStaticSsr`], and
+        /// [`RegistrationError::InvalidRoute`].
         pub fn generate_routes_with_discovery_context<IV>(
             self,
             app: impl Fn() -> IV + 'static + Send + Clone,
@@ -79,6 +102,15 @@ macro_rules! common_handler_methods {
         ///
         /// This method has always applied `context` while discovering routes;
         /// request-dependent context belongs in [`Self::handle_with_context`].
+        ///
+        /// # Errors
+        ///
+        /// Returns [`RegistrationError::RoutesAlreadyGenerated`] if routes
+        /// were already generated on this handler, and the errors
+        /// [`crate::validate_route_table`] reports for an unusable table:
+        /// [`RegistrationError::DuplicateRoute`],
+        /// [`RegistrationError::UnsupportedStaticSsr`], and
+        /// [`RegistrationError::InvalidRoute`].
         pub fn generate_routes_with_context<IV>(
             self,
             app: impl Fn() -> IV + 'static + Send + Clone,
@@ -103,6 +135,15 @@ macro_rules! common_handler_methods {
         /// configuration rather than request-dependent state.
         ///
         /// Use [`Self::handle_with_context`] for per-request context.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`RegistrationError::RoutesAlreadyGenerated`] if routes
+        /// were already generated on this handler, and the errors
+        /// [`crate::validate_route_table`] reports for an unusable table:
+        /// [`RegistrationError::DuplicateRoute`],
+        /// [`RegistrationError::UnsupportedStaticSsr`], and
+        /// [`RegistrationError::InvalidRoute`].
         pub fn generate_routes_with_exclusions_and_discovery_context<IV>(
             mut self,
             app: impl Fn() -> IV + 'static + Send + Clone,
@@ -115,7 +156,9 @@ macro_rules! common_handler_methods {
             self.core = self
                 .core
                 .generate_routes_with_exclusions_and_discovery_context(
-                    app, excluded, context,
+                    app,
+                    excluded.as_deref(),
+                    context,
                 )?;
             Ok(self)
         }
@@ -124,6 +167,15 @@ macro_rules! common_handler_methods {
         ///
         /// This method has always applied `context` while discovering routes;
         /// request-dependent context belongs in [`Self::handle_with_context`].
+        ///
+        /// # Errors
+        ///
+        /// Returns [`RegistrationError::RoutesAlreadyGenerated`] if routes
+        /// were already generated on this handler, and the errors
+        /// [`crate::validate_route_table`] reports for an unusable table:
+        /// [`RegistrationError::DuplicateRoute`],
+        /// [`RegistrationError::UnsupportedStaticSsr`], and
+        /// [`RegistrationError::InvalidRoute`].
         pub fn generate_routes_with_exclusions_and_context<IV>(
             self,
             app: impl Fn() -> IV + 'static + Send + Clone,

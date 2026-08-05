@@ -87,6 +87,12 @@ pub struct Handler {
 
 impl Handler {
     /// Builds a handler using [`HandlerConfig::default`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HandlerError::Request`] if the incoming request cannot be
+    /// converted, which includes a body that breaches the configured size
+    /// or time budget.
     pub fn build(
         request: IncomingRequest,
         response_out: ResponseOutparam,
@@ -95,6 +101,11 @@ impl Handler {
     }
 
     /// Builds a handler with an explicit request policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HandlerError::Request`] if the incoming request cannot be
+    /// converted, which includes a body that breaches `config`.
     pub fn build_with_config(
         request: IncomingRequest,
         response_out: ResponseOutparam,
@@ -167,6 +178,16 @@ impl Handler {
     /// standard request contexts such as [`http::request::Parts`] have been
     /// installed. This is the only handler hook for request-dependent
     /// application context; route-discovery context is request-independent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HandlerError::Response`] if response headers cannot be
+    /// converted, [`HandlerError::ResponseStream`] if the body stream fails,
+    /// [`HandlerError::WasiStream`] or [`HandlerError::WasiResponseBody`] if
+    /// a host stream or body operation fails,
+    /// [`HandlerError::OutgoingResponse`] if the host rejects response
+    /// construction, and [`HandlerError::Executor`] if the Preview 2 executor
+    /// cannot make progress while the body is written.
     pub async fn handle_with_context<IV>(
         self,
         app: impl Fn() -> IV + 'static + Send + Clone,

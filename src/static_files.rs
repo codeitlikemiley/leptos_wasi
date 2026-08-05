@@ -489,10 +489,10 @@ mod tests {
         // sampled, so there is no seed and no flake.
         let mut checked = 0_u32;
         let mut accepted = 0_u32;
-        for length in 0..=4 {
-            let total = INTERESTING.len().pow(length as u32);
+        for length in 0..=4_u32 {
+            let total = INTERESTING.len().pow(length);
             for mut index in 0..total {
-                let mut bytes = Vec::with_capacity(length);
+                let mut bytes = Vec::with_capacity(length as usize);
                 for _ in 0..length {
                     bytes.push(INTERESTING[index % INTERESTING.len()]);
                     index /= INTERESTING.len();
@@ -520,7 +520,9 @@ mod tests {
         // reproducible and CI cannot flake on a lucky seed.
         let mut state = 0x2545_F491_4F6C_DD1D_u64;
         let mut next = move || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
             (state >> 33) as usize
         };
         for _ in 0..2_000 {

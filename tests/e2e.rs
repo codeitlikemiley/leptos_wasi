@@ -1,5 +1,10 @@
 //! End-to-end tests driving built components under Wasmtime and Spin.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a failed unwrap in an e2e test should abort the test"
+)]
+
 use futures::StreamExt as _;
 use reqwest::StatusCode;
 use std::{
@@ -54,7 +59,7 @@ impl Drop for WasmtimeServer {
                 self.port
             );
             for line in log.iter() {
-                eprintln!("{}", line);
+                eprintln!("{line}");
             }
             eprintln!("--------------------------------------------------");
         }
@@ -130,7 +135,7 @@ fn start_server(
     args.push("--addr".to_string());
     args.push("127.0.0.1:0".to_string());
 
-    println!("Spawning wasmtime {:?}", args);
+    println!("Spawning wasmtime {args:?}");
     let wasmtime =
         std::env::var_os("WASMTIME_BIN").unwrap_or_else(|| "wasmtime".into());
     let mut child = Command::new(wasmtime)
@@ -159,7 +164,7 @@ fn start_server(
         if let Ok(mut log) = stderr_log_clone.lock() {
             log.push(trimmed.clone());
         }
-        println!("wasmtime output: {}", trimmed);
+        println!("wasmtime output: {trimmed}");
         if line.contains("Serving HTTP on") && line.rfind(':').is_some() {
             let pos = line.rfind(':').unwrap();
             let port_str = line[pos + 1..].trim().trim_end_matches('/');
@@ -170,8 +175,7 @@ fn start_server(
         }
         if let Ok(Some(status)) = child.try_wait() {
             return Err(anyhow::anyhow!(
-                "wasmtime serve exited early with status: {}",
-                status
+                "wasmtime serve exited early with status: {status}"
             ));
         }
     }
@@ -316,26 +320,21 @@ fn assert_same_origin_location(
 ) {
     assert!(
         location.starts_with('/'),
-        "Location must be origin-relative, got: {}",
-        location
+        "Location must be origin-relative, got: {location}"
     );
     assert!(
         !location.starts_with("//"),
-        "Location must not be protocol-relative, got: {}",
-        location
+        "Location must not be protocol-relative, got: {location}"
     );
     let lowered = location.to_ascii_lowercase();
     assert!(
         !lowered.contains("://"),
-        "Location must not carry a scheme, got: {}",
-        location
+        "Location must not carry a scheme, got: {location}"
     );
     for scheme in ["http:", "https:", "javascript:", "data:"] {
         assert!(
             !lowered.contains(scheme),
-            "Location must not carry the {} scheme, got: {}",
-            scheme,
-            location
+            "Location must not carry the {scheme} scheme, got: {location}"
         );
     }
     assert!(
@@ -343,20 +342,15 @@ fn assert_same_origin_location(
             && !lowered.contains("%5c")
             && !lowered.contains("%2f%2f"),
         "Location must not contain backslash or encoded-slash bypasses, \
-         got: {}",
-        location
+         got: {location}"
     );
     assert!(
         !lowered.contains(&forbidden_host.to_ascii_lowercase()),
-        "Location must not echo the referring host {}, got: {}",
-        forbidden_host,
-        location
+        "Location must not echo the referring host {forbidden_host}, got: {location}"
     );
     assert!(
         location.ends_with(expected_suffix),
-        "Expected Location to resolve to {}, got: {}",
-        expected_suffix,
-        location
+        "Expected Location to resolve to {expected_suffix}, got: {location}"
     );
 }
 
@@ -368,28 +362,27 @@ async fn run_assertions(
         .redirect(reqwest::redirect::Policy::none()) // Don't auto-follow redirects so we can test 302 locations
         .build()?;
 
-    let base_url = format!("http://127.0.0.1:{}", port);
-    println!("Running assertions against {}", base_url);
+    let base_url = format!("http://127.0.0.1:{port}");
+    println!("Running assertions against {base_url}");
 
     // 1. GET /api/get_test
     {
         let res = client
-            .get(format!("{}/api/get_test", base_url))
+            .get(format!("{base_url}/api/get_test"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
         let text = res.text().await?;
         assert!(
             text.contains("GET response"),
-            "Expected 'GET response', got: {}",
-            text
+            "Expected 'GET response', got: {text}"
         );
     }
 
     // 2. POST /api/post_test
     {
         let res = client
-            .post(format!("{}/api/post_test", base_url))
+            .post(format!("{base_url}/api/post_test"))
             .header("Content-Type", "application/json")
             .body(r#"{"msg": "hello"}"#)
             .send()
@@ -398,15 +391,14 @@ async fn run_assertions(
         let text = res.text().await?;
         assert!(
             text.contains("POST response: hello"),
-            "Expected 'POST response: hello', got: {}",
-            text
+            "Expected 'POST response: hello', got: {text}"
         );
     }
 
     // 3. POST /api/custom_test
     {
         let res = client
-            .post(format!("{}/api/custom_test", base_url))
+            .post(format!("{base_url}/api/custom_test"))
             .header("Content-Type", "application/json")
             .body("{}")
             .send()
@@ -415,15 +407,14 @@ async fn run_assertions(
         let text = res.text().await?;
         assert!(
             text.contains("Custom response"),
-            "Expected 'Custom response', got: {}",
-            text
+            "Expected 'Custom response', got: {text}"
         );
     }
 
     // Server-function middleware runs in the same order as upstream Leptos.
     {
         let res = client
-            .post(format!("{}/api/middleware_header_test", base_url))
+            .post(format!("{base_url}/api/middleware_header_test"))
             .header("Content-Type", "application/json")
             .body("{}")
             .send()
@@ -443,7 +434,7 @@ async fn run_assertions(
     // explicitly authorized request.
     {
         let rejected = client
-            .post(format!("{}/api/auth_test", base_url))
+            .post(format!("{base_url}/api/auth_test"))
             .header("Content-Type", "application/json")
             .body("{}")
             .send()
@@ -452,7 +443,7 @@ async fn run_assertions(
         assert!(rejected.text().await?.contains("authentication required"));
 
         let accepted = client
-            .post(format!("{}/api/auth_test", base_url))
+            .post(format!("{base_url}/api/auth_test"))
             .header("Content-Type", "application/json")
             .header("x-test-auth", "allowed")
             .body("{}")
@@ -465,7 +456,7 @@ async fn run_assertions(
     // Middleware failures use the server function's configured serializer.
     {
         let res = client
-            .post(format!("{}/api/middleware_error_test", base_url))
+            .post(format!("{base_url}/api/middleware_error_test"))
             .header("Content-Type", "application/json")
             .body("{}")
             .send()
@@ -477,7 +468,7 @@ async fn run_assertions(
     // 5. POST /api/panic_test
     {
         let res = client
-            .post(format!("{}/api/panic_test", base_url))
+            .post(format!("{base_url}/api/panic_test"))
             .header("Content-Type", "application/json")
             .body("{}")
             .send()
@@ -488,13 +479,13 @@ async fn run_assertions(
             assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
         } else {
             // Spin may drop the connection or return a non-200 status
-            match res {
-                Ok(res) => assert_ne!(
+            if let Ok(res) = res {
+                assert_ne!(
                     res.status(),
                     StatusCode::OK,
                     "Panic endpoint should not return 200 OK"
-                ),
-                Err(_) => { /* connection dropped — acceptable for Spin */ }
+                );
+            } else { /* connection dropped — acceptable for Spin */
             }
         }
     }
@@ -502,7 +493,7 @@ async fn run_assertions(
     // 6. POST /api/form_submit_test (with Referer)
     {
         let res = client
-            .post(format!("{}/api/form_submit_test", base_url))
+            .post(format!("{base_url}/api/form_submit_test"))
             .header("Accept", "text/html")
             .header("Referer", "http://127.0.0.1/previous-page")
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -520,7 +511,7 @@ async fn run_assertions(
     // 7. POST /api/form_submit_test (with Referrer spelling)
     {
         let res = client
-            .post(format!("{}/api/form_submit_test", base_url))
+            .post(format!("{base_url}/api/form_submit_test"))
             .header("Accept", "text/html")
             .header("Referrer", "http://127.0.0.1/other-page")
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -538,7 +529,7 @@ async fn run_assertions(
     // Adversarial Test 1: Open Redirect Vulnerability Prevention
     {
         let res = client
-            .post(format!("{}/api/form_submit_test", base_url))
+            .post(format!("{base_url}/api/form_submit_test"))
             .header("Accept", "text/html")
             .header("Referer", "https://malicious.example.com/steal-session")
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -565,7 +556,7 @@ async fn run_assertions(
         ];
         for ref_url in backslash_referrers {
             let res = client
-                .post(format!("{}/api/form_submit_test", base_url))
+                .post(format!("{base_url}/api/form_submit_test"))
                 .header("Accept", "text/html")
                 .header("Referer", ref_url)
                 .header("Content-Type", "application/x-www-form-urlencoded")
@@ -583,8 +574,7 @@ async fn run_assertions(
                     || (!loc_clean.contains("evil.com")
                         && !loc_clean.contains('\\')),
                 "Expected location to fall back to '/' or at least not \
-                 contain evil.com or backslashes, got: {}",
-                loc_clean
+                 contain evil.com or backslashes, got: {loc_clean}"
             );
         }
     }
@@ -592,7 +582,7 @@ async fn run_assertions(
     // Adversarial Test 2: Process Panic on Malformed Header Redirects Prevention
     {
         let res = client
-            .post(format!("{}/api/malformed_redirect_test", base_url))
+            .post(format!("{base_url}/api/malformed_redirect_test"))
             .header("Content-Type", "application/json")
             .body("{}")
             .send()
@@ -602,23 +592,19 @@ async fn run_assertions(
 
     // Adversarial Test 3: Overlapping Prefix Route Hijacking Prevention
     {
-        let res = client
-            .get(format!("{}/static-page", base_url))
-            .send()
-            .await?;
+        let res = client.get(format!("{base_url}/static-page")).send().await?;
         assert_eq!(res.status(), StatusCode::OK);
         let text = res.text().await?;
         assert!(
             text.contains("Static Page SSR View"),
-            "Expected 'Static Page SSR View', got: {}",
-            text
+            "Expected 'Static Page SSR View', got: {text}"
         );
     }
 
     // Adversarial Test 4: URL Decoded Path Serving (static files only)
     if capabilities.static_files {
         let res = client
-            .get(format!("{}/static/my%20file.css", base_url))
+            .get(format!("{base_url}/static/my%20file.css"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -628,19 +614,18 @@ async fn run_assertions(
 
     // Islands router requests receive navigation context while normal SSR does not.
     {
-        let res = client.get(format!("{}/ssr/async", base_url)).send().await?;
+        let res = client.get(format!("{base_url}/ssr/async")).send().await?;
         assert_eq!(res.status(), StatusCode::OK);
         let text = res.text().await?;
         assert!(
             text.contains("data-islands-router-navigation=\"false\""),
-            "Expected a normal SSR response, got: {}",
-            text
+            "Expected a normal SSR response, got: {text}"
         );
     }
 
     {
         let res = client
-            .get(format!("{}/ssr/async", base_url))
+            .get(format!("{base_url}/ssr/async"))
             .header("Islands-Router", "1")
             .send()
             .await?;
@@ -648,8 +633,7 @@ async fn run_assertions(
         let text = res.text().await?;
         assert!(
             text.contains("data-islands-router-navigation=\"true\""),
-            "Expected islands-router navigation context, got: {}",
-            text
+            "Expected islands-router navigation context, got: {text}"
         );
     }
 
@@ -659,7 +643,7 @@ async fn run_assertions(
     // both ways. `SsrOutOfOrderView`'s resource is ready on first poll, so the
     // downgrade to in-order streaming must not change the rendered document.
     for (header, expected) in [(None, "false"), (Some("1"), "true")] {
-        let mut request = client.get(format!("{}/ssr/out-of-order", base_url));
+        let mut request = client.get(format!("{base_url}/ssr/out-of-order"));
         if let Some(header) = header {
             request = request.header("Islands-Router", header);
         }
@@ -668,22 +652,17 @@ async fn run_assertions(
         let text = res.text().await?;
         assert!(
             text.contains(&format!(
-                "data-islands-router-navigation=\"{}\"",
-                expected
+                "data-islands-router-navigation=\"{expected}\""
             )),
-            "Expected islands-router navigation {} on an OutOfOrder route, got: {}",
-            expected,
-            text
+            "Expected islands-router navigation {expected} on an OutOfOrder route, got: {text}"
         );
         assert!(
             text.contains("OutOfOrder View"),
-            "Expected the OutOfOrder view to render, got: {}",
-            text
+            "Expected the OutOfOrder view to render, got: {text}"
         );
         assert!(
             text.contains("OutOfOrder resource resolved"),
-            "Expected the OutOfOrder resource to resolve, got: {}",
-            text
+            "Expected the OutOfOrder resource to resolve, got: {text}"
         );
     }
 
@@ -691,7 +670,7 @@ async fn run_assertions(
     // installed after the standard Leptos request contexts.
     {
         let res = client
-            .get(format!("{}/ssr/query?name=leptos%20wasi", base_url))
+            .get(format!("{base_url}/ssr/query?name=leptos%20wasi"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -712,7 +691,7 @@ async fn run_assertions(
             include_bytes!("test-app/static/app.js").len().to_string();
         // js
         let res = client
-            .get(format!("{}/static/app.js", base_url))
+            .get(format!("{base_url}/static/app.js"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -739,7 +718,7 @@ async fn run_assertions(
 
         // HEAD returns the GET metadata without a response body.
         let res = client
-            .head(format!("{}/static/app.js", base_url))
+            .head(format!("{base_url}/static/app.js"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -765,7 +744,7 @@ async fn run_assertions(
 
         // Methods other than GET and HEAD are rejected deterministically.
         let res = client
-            .post(format!("{}/static/app.js", base_url))
+            .post(format!("{base_url}/static/app.js"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
@@ -778,7 +757,7 @@ async fn run_assertions(
 
         // A component containing two dots is a valid filename, not traversal.
         let res = client
-            .get(format!("{}/static/app..min.js", base_url))
+            .get(format!("{base_url}/static/app..min.js"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -786,7 +765,7 @@ async fn run_assertions(
 
         // css
         let res = client
-            .get(format!("{}/static/app.css", base_url))
+            .get(format!("{base_url}/static/app.css"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -800,7 +779,7 @@ async fn run_assertions(
 
         // html
         let res = client
-            .get(format!("{}/static/app.html", base_url))
+            .get(format!("{base_url}/static/app.html"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -814,7 +793,7 @@ async fn run_assertions(
 
         // wasm
         let res = client
-            .get(format!("{}/static/app.wasm", base_url))
+            .get(format!("{base_url}/static/app.wasm"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -828,7 +807,7 @@ async fn run_assertions(
 
         // zero-byte
         let res = client
-            .get(format!("{}/static/zero.txt", base_url))
+            .get(format!("{base_url}/static/zero.txt"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -836,7 +815,7 @@ async fn run_assertions(
 
         // nested icons/logo.svg
         let res = client
-            .get(format!("{}/static/assets/icons/logo.svg", base_url))
+            .get(format!("{base_url}/static/assets/icons/logo.svg"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -850,7 +829,7 @@ async fn run_assertions(
 
         // 404 missing file
         let res = client
-            .get(format!("{}/static/does-not-exist.png", base_url))
+            .get(format!("{base_url}/static/does-not-exist.png"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
@@ -913,7 +892,7 @@ async fn run_assertions(
     {
         let started = Instant::now();
         let res = client
-            .get(format!("{}/static/delayed.stream", base_url))
+            .get(format!("{base_url}/static/delayed.stream"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -946,7 +925,7 @@ async fn run_assertions(
     // not an immediate frame/error race before socket delivery.
     {
         let response = client
-            .get(format!("{}/static/failing.stream", base_url))
+            .get(format!("{base_url}/static/failing.stream"))
             .send()
             .await;
         if let Ok(res) = response {
@@ -981,7 +960,7 @@ async fn run_assertions(
 
         let healthy = tokio::time::timeout(
             Duration::from_secs(5),
-            client.get(format!("{}/api/get_test", base_url)).send(),
+            client.get(format!("{base_url}/api/get_test")).send(),
         )
         .await??;
         assert_eq!(healthy.status(), StatusCode::OK);
@@ -990,22 +969,19 @@ async fn run_assertions(
     // 9. SSR Modes
     {
         // Async mode
-        let res = client.get(format!("{}/ssr/async", base_url)).send().await?;
+        let res = client.get(format!("{base_url}/ssr/async")).send().await?;
         assert_eq!(res.status(), StatusCode::OK);
         let text = res.text().await?;
         assert!(text.contains("Async View"));
         assert!(text.contains("Async resource resolved"));
 
-        let res = client
-            .head(format!("{}/ssr/async", base_url))
-            .send()
-            .await?;
+        let res = client.head(format!("{base_url}/ssr/async")).send().await?;
         assert_eq!(res.status(), StatusCode::OK);
         assert!(res.bytes().await?.is_empty());
 
         // InOrder mode
         let res = client
-            .get(format!("{}/ssr/in-order", base_url))
+            .get(format!("{base_url}/ssr/in-order"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -1015,7 +991,7 @@ async fn run_assertions(
 
         // OutOfOrder mode (with chunked encoding assertion)
         let res = client
-            .get(format!("{}/ssr/out-of-order", base_url))
+            .get(format!("{base_url}/ssr/out-of-order"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -1024,8 +1000,7 @@ async fn run_assertions(
             let is_chunked = res
                 .headers()
                 .get("Transfer-Encoding")
-                .map(|v| v.to_str().unwrap().contains("chunked"))
-                .unwrap_or(false);
+                .is_some_and(|v| v.to_str().unwrap().contains("chunked"));
             assert!(
                 is_chunked,
                 "OutOfOrder SSR mode must use chunked transfer encoding"
@@ -1036,7 +1011,7 @@ async fn run_assertions(
         assert!(text.contains("OutOfOrder resource resolved"));
 
         // Meta tags
-        let res = client.get(format!("{}/ssr/meta", base_url)).send().await?;
+        let res = client.get(format!("{base_url}/ssr/meta")).send().await?;
         assert_eq!(res.status(), StatusCode::OK);
         let text = res.text().await?;
         assert!(text.contains("<title>Meta Test Title</title>"));
@@ -1045,20 +1020,20 @@ async fn run_assertions(
         ));
 
         // SSR Panic
-        let res = client.get(format!("{}/ssr/panic", base_url)).send().await;
+        let res = client.get(format!("{base_url}/ssr/panic")).send().await;
         if capabilities.panic_returns_status {
             // Wasmtime returns 500 Internal Server Error
             let res = res?;
             assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
         } else {
             // Spin may drop the connection or return a non-200 status
-            match res {
-                Ok(res) => assert_ne!(
+            if let Ok(res) = res {
+                assert_ne!(
                     res.status(),
                     StatusCode::OK,
                     "SSR panic endpoint should not return 200 OK"
-                ),
-                Err(_) => { /* connection dropped — acceptable for Spin */ }
+                );
+            } else { /* connection dropped — acceptable for Spin */
             }
         }
     }
@@ -1075,7 +1050,7 @@ async fn run_assertions(
         let body_json = format!(r#"{{"data":"{}"}}"#, "a".repeat(data_len));
         assert_eq!(body_json.len(), LIMIT);
         let res = client
-            .post(format!("{}/api/large_body_test", base_url))
+            .post(format!("{base_url}/api/large_body_test"))
             .header("Content-Type", "application/json")
             .body(body_json)
             .send()
@@ -1093,7 +1068,7 @@ async fn run_assertions(
             "a".repeat(LIMIT + 1 - JSON_OVERHEAD)
         );
         let res = client
-            .post(format!("{}/api/large_body_test", base_url))
+            .post(format!("{base_url}/api/large_body_test"))
             .header("Content-Type", "application/json")
             .body(body_json)
             .send()
@@ -1128,7 +1103,7 @@ async fn run_assertions(
         tokio::time::sleep(Duration::from_millis(50)).await;
         let healthy = tokio::time::timeout(
             Duration::from_secs(5),
-            client.get(format!("{}/api/get_test", base_url)).send(),
+            client.get(format!("{base_url}/api/get_test")).send(),
         )
         .await??;
         assert_eq!(healthy.status(), StatusCode::OK);
@@ -1138,7 +1113,7 @@ async fn run_assertions(
     // zero-shaped probe so the release script has one stable endpoint.
     {
         let res = client
-            .get(format!("{}/api/pollable_depth", base_url))
+            .get(format!("{base_url}/api/pollable_depth"))
             .send()
             .await?;
         assert_eq!(res.status(), StatusCode::OK);
@@ -1309,25 +1284,25 @@ async fn run_middleware_transport_profile(wasm_path: &str) {
 }
 
 #[tokio::test]
-#[ignore] // Run via ./run_tests.sh (requires wasmtime + pre-built WASM guests)
+#[ignore = "Run via ./run_tests.sh (requires wasmtime + pre-built WASM guests)"]
 async fn test_e2e_wasip2() {
     run_e2e_tests("tests/test-app-p2.wasm", false).await;
 }
 
 #[tokio::test]
-#[ignore] // Run via ./run_tests.sh (requires wasmtime + pre-built WASM guests)
+#[ignore = "Run via ./run_tests.sh (requires wasmtime + pre-built WASM guests)"]
 async fn test_e2e_wasip3() {
     run_e2e_tests("tests/test-app-p3.wasm", true).await;
 }
 
 #[tokio::test]
-#[ignore] // Run via ./scripts/run-middleware-tests.sh (requires Wasmtime + composed guests)
+#[ignore = "Run via ./scripts/run-middleware-tests.sh (requires Wasmtime + composed guests)"]
 async fn experimental_middleware_wasmtime_wasip3() {
     run_e2e_tests_with_middleware("tests/test-app-p3-middleware.wasm").await;
 }
 
 #[tokio::test]
-#[ignore] // Diagnostic profile selected through LEPTOS_WASI_MIDDLEWARE_WASM
+#[ignore = "Diagnostic profile selected through LEPTOS_WASI_MIDDLEWARE_WASM"]
 async fn experimental_middleware_transport_profile_wasip3() {
     let wasm_path = std::env::var("LEPTOS_WASI_MIDDLEWARE_WASM")
         .expect("LEPTOS_WASI_MIDDLEWARE_WASM must select a composed profile");
@@ -1358,7 +1333,7 @@ impl Drop for SpinServer {
                 self.port
             );
             for line in log.iter() {
-                eprintln!("{}", line);
+                eprintln!("{line}");
             }
             eprintln!("--------------------------------------------------");
         }
@@ -1367,7 +1342,7 @@ impl Drop for SpinServer {
 
 fn start_spin_server(manifest_path: &str) -> anyhow::Result<SpinServer> {
     let args = vec!["up", "-f", manifest_path, "--listen", "127.0.0.1:0"];
-    println!("Spawning spin {:?}", args);
+    println!("Spawning spin {args:?}");
     let spin = std::env::var_os("SPIN_BIN").unwrap_or_else(|| "spin".into());
     let mut child = Command::new(spin)
         .args(&args)
@@ -1396,7 +1371,7 @@ fn start_spin_server(manifest_path: &str) -> anyhow::Result<SpinServer> {
         if let Ok(mut log) = stdout_log_clone.lock() {
             log.push(trimmed.clone());
         }
-        println!("spin output: {}", trimmed);
+        println!("spin output: {trimmed}");
         // Look for "Serving http://127.0.0.1:PORT"
         let p = trimmed
             .contains("Serving http")
@@ -1416,8 +1391,7 @@ fn start_spin_server(manifest_path: &str) -> anyhow::Result<SpinServer> {
         }
         if let Ok(Some(status)) = child.try_wait() {
             return Err(anyhow::anyhow!(
-                "spin up exited early with status: {}",
-                status
+                "spin up exited early with status: {status}"
             ));
         }
     }
@@ -1465,19 +1439,19 @@ async fn run_spin_e2e_tests_with_middleware(manifest_path: &str) {
 }
 
 #[tokio::test]
-#[ignore] // Run via ./run_tests.sh (requires spin + pre-built WASM guests)
+#[ignore = "Run via ./run_tests.sh (requires spin + pre-built WASM guests)"]
 async fn test_e2e_spin_wasip2() {
     run_spin_e2e_tests("tests/spin.toml").await;
 }
 
 #[tokio::test]
-#[ignore] // Promotion fixture: stable Spin 4 currently fails the final-WASI canary
+#[ignore = "Promotion fixture: stable Spin 4 currently fails the final-WASI canary"]
 async fn test_e2e_spin_wasip3() {
     run_spin_e2e_tests("tests/spin-p3.toml").await;
 }
 
 #[tokio::test]
-#[ignore] // Promotion fixture: stable Spin 4 currently fails the final-WASI canary
+#[ignore = "Promotion fixture: stable Spin 4 currently fails the final-WASI canary"]
 async fn experimental_middleware_spin_wasip3() {
     run_spin_e2e_tests_with_middleware(
         "tests/spin-p3-middleware-composed.toml",

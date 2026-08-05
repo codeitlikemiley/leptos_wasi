@@ -47,6 +47,10 @@ pub struct Handler {
 
 impl Handler {
     /// Builds a handler using [`HandlerConfig::default`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HandlerError::Wasi`] if the request body cannot be read.
     pub async fn build(
         request: Request<::wasip3::http_compat::IncomingRequestBody>,
     ) -> Result<Self, HandlerError> {
@@ -54,6 +58,12 @@ impl Handler {
     }
 
     /// Builds a handler with an explicit request policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HandlerError::Wasi`] if the request body cannot be read.
+    /// A body that breaches `config` is reported as a rejection response
+    /// rather than an error.
     pub async fn build_with_config(
         request: Request<::wasip3::http_compat::IncomingRequestBody>,
         config: HandlerConfig,
@@ -139,9 +149,9 @@ impl Handler {
             Err(error) => {
                 let code = error
                     .downcast::<::wasip3::http::types::ErrorCode>()
-                    .map(|code| *code)
-                    .unwrap_or(
+                    .map_or(
                         ::wasip3::http::types::ErrorCode::InternalError(None),
+                        |code| *code,
                     );
                 Err(HandlerError::Wasi(code))
             }
@@ -156,6 +166,11 @@ impl Handler {
     /// standard request contexts such as [`http::request::Parts`] have been
     /// installed. This is the only handler hook for request-dependent
     /// application context; route-discovery context is request-independent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HandlerError::Wasi`] if the response cannot be converted
+    /// to the host representation.
     pub async fn handle_with_context<IV>(
         self,
         app: impl Fn() -> IV + 'static + Send + Clone,

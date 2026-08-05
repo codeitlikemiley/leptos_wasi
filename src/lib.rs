@@ -62,6 +62,7 @@ pub mod __private {
     /// Returns the current Preview 2 pollable queue depth for release probes.
     #[cfg(feature = "wasip2")]
     #[doc(hidden)]
+    #[must_use]
     pub fn wasip2_pollable_queue_depth() -> usize {
         crate::executor::pollable_queue_depth()
     }

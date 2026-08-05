@@ -50,7 +50,7 @@ pub enum ExecutorError {
     #[error("the WASI Preview 2 executor stalled with no live pollables")]
     Stalled,
 
-    /// The global `any_spawner` executor was initialized before the WASIp3 executor.
+    /// The global `any_spawner` executor was initialized before the `WASIp3` executor.
     #[error("the global task spawner has already been initialized")]
     SpawnerAlreadyInitialized,
 }

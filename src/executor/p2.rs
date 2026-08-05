@@ -72,7 +72,7 @@ impl WaitRegistration {
             }
             RegistrationStatus::Pending => {
                 if !inner.task_waker.will_wake(waker) {
-                    inner.task_waker = waker.clone();
+                    inner.task_waker.clone_from(waker);
                 }
                 Poll::Pending
             }
@@ -588,7 +588,7 @@ fn initialize_preview2_with(
 
     let executor = create(mode)?;
     let initialized = match install(executor.clone()) {
-        Ok(()) => Preview2InitState::Initialized(executor.clone()),
+        Ok(()) => Preview2InitState::Initialized(executor),
         Err(_) => Preview2InitState::Conflict,
     };
 
@@ -650,6 +650,10 @@ impl CustomExecutor for Executor {
     }
 }
 
+#[expect(
+    clippy::panic,
+    reason = "a failed invariant in a test should abort the test"
+)]
 #[cfg(test)]
 mod tests {
     use std::task::{Wake, Waker};
@@ -706,9 +710,8 @@ mod tests {
         Executor::new(Mode::Stalled)
             .expect("first initialization should succeed");
 
-        let error = match Executor::new(Mode::Preemptive) {
-            Ok(_) => panic!("mode change unexpectedly succeeded"),
-            Err(error) => error,
+        let Err(error) = Executor::new(Mode::Preemptive) else {
+            panic!("mode change unexpectedly succeeded")
         };
 
         assert_eq!(error, ExecutorError::Preview2ModeMismatch);

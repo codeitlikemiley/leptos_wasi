@@ -97,6 +97,12 @@ impl HandlerCore {
         RequestTrace::new(self, preview)
     }
 
+    // Mirrors the signature of the `tracing` arm above, which does read
+    // `self`; the two must stay interchangeable at the call sites.
+    #[expect(
+        clippy::unused_self,
+        reason = "signature must match the tracing arm"
+    )]
     #[cfg(not(feature = "tracing"))]
     pub(super) fn request_trace(&self, _: &'static str) -> TraceHandle {
         TraceHandle
@@ -224,12 +230,10 @@ impl HandlerCore {
         } else {
             stripped.strip_prefix('/').unwrap_or(stripped)
         };
-        let decoded = match crate::static_files::normalize_static_path(raw) {
-            Ok(path) => path,
-            Err(_) => {
-                self.should_404 = true;
-                return Ok(self);
-            }
+        let Ok(decoded) = crate::static_files::normalize_static_path(raw)
+        else {
+            self.should_404 = true;
+            return Ok(self);
         };
 
         #[cfg(feature = "tracing")]
@@ -284,7 +288,7 @@ impl HandlerCore {
     >(
         mut self,
         app_fn: AppFn,
-        excluded_routes: Option<Vec<String>>,
+        excluded_routes: Option<&[String]>,
         discovery_context: ContextFn,
     ) -> Result<Self, RegistrationError>
     where
@@ -314,11 +318,9 @@ impl HandlerCore {
             return Ok(self);
         }
 
-        for (route_spec, listing) in validated_route_table(
-            &app_fn,
-            excluded_routes.as_deref(),
-            &discovery_context,
-        )? {
+        for (route_spec, listing) in
+            validated_route_table(&app_fn, excluded_routes, &discovery_context)?
+        {
             match self.ssr_router.add(route_spec, listing) {
                 Ok(()) => {}
                 Err(infallible) => match infallible {},

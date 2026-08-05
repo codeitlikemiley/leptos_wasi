@@ -60,6 +60,29 @@ unsafe_code = "forbid"
 missing_docs = "deny"
 
 [lints.clippy]
+# Warn rather than deny: a bare `cargo clippy` then shows contributors exactly
+# what CI checks, and the `-D warnings` the Makefile already passes promotes
+# every one of these to an error there. Denying here would collapse that split
+# and make each clippy release a hard local block for no gain.
+pedantic = { level = "warn", priority = -1 }
+
+too_many_lines = "allow"          # 2 hits, both test functions
+struct_excessive_bools = "allow"  # 1 hit, a test config struct
+module_name_repetitions = "allow" # 0 hits; matches the three tests/ crates
+
+# Zero hits in production code. Denying them costs only the #[expect] on the
+# three test modules that legitimately panic, and it matters more here than in
+# a typical library: a panic in a WASI component traps the instance - no
+# unwind, nothing to catch it, and the host loses the store.
+#
+# expect_used is deliberately absent. [lints] is package-scoped, and the
+# Makefile passes -D warnings, so any level above "allow" would deny
+# `.expect("...")` in tests too - where a message-carrying assertion is
+# exactly what you want. The three production sites in src/integration.rs
+# are a code-review question, not a lint one.
+unwrap_used = "deny"
+panic = "deny"
+
 # Zero hits across src/ and tests/ today. Free to deny, and each rules out a
 # class of accident that matters more than usual in a component that traps
 # instead of unwinding: a panic takes the whole instance down.

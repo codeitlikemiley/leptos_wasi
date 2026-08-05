@@ -39,8 +39,7 @@ pub(super) fn accepts_html(headers: &HeaderMap) -> bool {
             let media_type = fields.next().unwrap_or_default().trim();
             let quality = fields
                 .filter_map(|field| field.trim().strip_prefix("q="))
-                .filter_map(|value| value.parse::<f32>().ok())
-                .next()
+                .find_map(|value| value.parse::<f32>().ok())
                 .unwrap_or(1.0);
             quality > 0.0
                 && matches!(media_type, "text/html" | "application/xhtml+xml")

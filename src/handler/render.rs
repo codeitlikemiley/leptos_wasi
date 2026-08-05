@@ -95,7 +95,7 @@ impl HandlerCore {
                             meta_output,
                             route_context,
                             res_opts.clone(),
-                            render_mode::<IV>(listing.mode().clone()),
+                            render_mode::<IV>(listing.mode()),
                             !islands_navigation,
                         )
                         .await,
@@ -140,7 +140,7 @@ type RenderMode<IV> =
     ) -> Pin<Box<dyn Future<Output = PinnedStream<String>> + Send>>;
 
 // Keep this selection in one place so WASIp2 and WASIp3 cannot drift.
-fn render_mode<IV>(mode: SsrMode) -> RenderMode<IV>
+fn render_mode<IV>(mode: &SsrMode) -> RenderMode<IV>
 where
     IV: IntoView + 'static,
 {
@@ -195,6 +195,10 @@ where
     }
 }
 
+#[expect(
+    clippy::panic,
+    reason = "a failed invariant in a test should abort the test"
+)]
 #[cfg(test)]
 mod tests {
     use http::{

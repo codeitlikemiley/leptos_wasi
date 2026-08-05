@@ -58,9 +58,9 @@ impl RequestTrace {
             }
         });
         let ssr_mode = if route_class == "ssr" {
-            best_match
-                .map(|matched| ssr_mode_name(matched.handler().mode()))
-                .unwrap_or("none")
+            best_match.map_or("none", |matched| {
+                ssr_mode_name(matched.handler().mode())
+            })
         } else {
             "none"
         };
@@ -121,6 +121,12 @@ impl RequestTrace {
             return;
         }
         let first_byte = self.state.first_byte_micros.load(Ordering::Relaxed);
+        // A metric, not a measurement anyone computes with. u64 microseconds
+        // only lose f64 precision past 2^53, i.e. roughly 285 years.
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "reported as a metric; loss starts past 285 years"
+        )]
         let first_byte_ms = first_byte
             .checked_sub(1)
             .map(|micros| micros as f64 / 1_000.0);
@@ -148,6 +154,12 @@ pub(super) fn trace_first_byte(trace: &TraceHandle) {
     trace.mark_first_byte();
 }
 
+// Both stand-ins mirror the signatures of the `tracing` arms above, which
+// take `&RequestTrace` by reference because it is not `Copy`.
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "signature must match the tracing arm"
+)]
 #[cfg(all(not(feature = "tracing"), feature = "wasip2"))]
 pub(super) fn trace_first_byte(_: &TraceHandle) {}
 
@@ -162,6 +174,10 @@ pub(super) fn trace_finish(
     trace.finish(status, response_bytes, cancellation, error_class);
 }
 
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "signature must match the tracing arm"
+)]
 #[cfg(all(not(feature = "tracing"), feature = "wasip2"))]
 pub(super) fn trace_finish(
     _: &TraceHandle,

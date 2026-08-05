@@ -109,6 +109,10 @@ where
 ///
 /// Returns [`RegistrationError::DuplicateRoute`] for colliding patterns and
 /// [`RegistrationError::UnsupportedStaticSsr`] for static-mode routes.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "public signature, fixed by semver"
+)]
 pub fn validate_route_table<IV, AppFn, ContextFn>(
     app: AppFn,
     excluded_routes: Option<Vec<String>>,
@@ -219,8 +223,7 @@ impl RouterPathRepresentation for Vec<PathSegment> {
                     path.push_str(value);
                 }
                 PathSegment::Splat(_) => path.push('*'),
-                PathSegment::Unit => {}
-                PathSegment::OptionalParam(_) => {}
+                PathSegment::Unit | PathSegment::OptionalParam(_) => {}
             }
         }
         path
