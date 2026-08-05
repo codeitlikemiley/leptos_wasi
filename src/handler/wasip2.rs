@@ -8,6 +8,7 @@ use wasi::{
     io::streams::{OutputStream, StreamError},
 };
 
+use super::policy::X_CONTENT_TYPE_OPTIONS;
 use super::*;
 
 struct ResponseOutGuard(Option<ResponseOutparam>);
