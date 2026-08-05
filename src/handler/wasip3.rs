@@ -2,6 +2,8 @@
 
 use http_body_util::{BodyExt, Limited};
 
+#[cfg(feature = "tracing")]
+use super::trace::{trace_finish, trace_first_byte, trace_policy_rejection};
 use super::*;
 
 /// Errors returned by the WASI Preview 3 handler.

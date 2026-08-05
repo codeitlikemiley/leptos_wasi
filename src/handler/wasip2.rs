@@ -9,6 +9,9 @@ use wasi::{
 };
 
 use super::policy::X_CONTENT_TYPE_OPTIONS;
+#[cfg(feature = "tracing")]
+use super::trace::trace_policy_rejection;
+use super::trace::{trace_finish, trace_first_byte};
 use super::*;
 
 struct ResponseOutGuard(Option<ResponseOutparam>);
