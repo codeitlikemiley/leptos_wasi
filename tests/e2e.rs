@@ -1,3 +1,5 @@
+//! End-to-end tests driving built components under Wasmtime and Spin.
+
 use futures::StreamExt as _;
 use reqwest::StatusCode;
 use std::{

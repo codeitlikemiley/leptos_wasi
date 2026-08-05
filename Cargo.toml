@@ -55,6 +55,27 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 anyhow = "1.0"
 serde_json = "1.0"
 
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+
+[lints.clippy]
+# Zero hits across src/ and tests/ today. Free to deny, and each rules out a
+# class of accident that matters more than usual in a component that traps
+# instead of unwinding: a panic takes the whole instance down.
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+mem_forget = "deny"
+exit = "deny"
+unwrap_in_result = "deny"
+float_cmp_const = "deny"
+
+# src/ carries no #[allow] at all. Denying these keeps it that way: any
+# future suppression has to be #[expect] and has to say why.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+
 [features]
 default = ["wasip2"]
 wasip2 = ["dep:wasi"]

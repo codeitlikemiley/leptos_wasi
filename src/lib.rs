@@ -5,9 +5,6 @@
 //! bindings, `wasip3` for async Preview 3 bindings, or both when a consumer
 //! needs to compile both adapters.
 
-#![forbid(unsafe_code)]
-#![deny(missing_docs)]
-
 #[cfg(not(any(feature = "wasip2", feature = "wasip3")))]
 compile_error!("enable at least one of the `wasip2` or `wasip3` features");
 
@@ -71,7 +68,6 @@ pub mod __private {
 }
 
 /// Shared response and configuration types.
-#[allow(clippy::pub_use)]
 pub mod prelude {
     pub use crate::{
         ExecutorError, HandlerConfig, RegistrationError, RequestPolicyError,
@@ -101,7 +97,6 @@ pub mod wasip2 {
     }
 
     /// Commonly used WASI Preview 2 integration types.
-    #[allow(clippy::pub_use)]
     pub mod prelude {
         pub use super::{
             Executor as WasiExecutor, Handler, HandlerError, Mode,
@@ -123,7 +118,6 @@ pub mod wasip3 {
     };
 
     /// Commonly used WASI Preview 3 integration types.
-    #[allow(clippy::pub_use)]
     pub mod prelude {
         pub use super::{Handler, HandlerError, init_wasip3_spawner};
         pub use crate::prelude::*;
