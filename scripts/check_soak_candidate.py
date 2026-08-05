@@ -19,12 +19,53 @@ def nested_number(result: dict[str, object], group: str, field: str) -> float:
     return float(value)
 
 
+def closed_loop_report(
+    result: dict[str, object],
+    minimum: float | None,
+    errors: list[str],
+) -> dict[str, object]:
+    """Record - and optionally gate - how closed the closed loop actually was.
+
+    A probe that never reached its requested concurrency measured its own
+    ceiling rather than the server's. Its latency percentiles then describe a
+    barely-loaded server and sail under any absolute ceiling, so a run that
+    failed to apply the load looks healthier here than one that did.
+    """
+    requested = result.get("concurrency")
+    achieved = result.get("achieved_concurrency")
+    ratio: float | None = None
+    if (
+        isinstance(requested, (int, float))
+        and requested > 0
+        and isinstance(achieved, (int, float))
+    ):
+        ratio = float(achieved) / float(requested)
+    if minimum is not None:
+        if ratio is None:
+            errors.append("candidate run does not report achieved concurrency")
+        elif ratio < minimum:
+            errors.append(
+                f"candidate reached only {ratio * 100.0:.1f}% of its requested "
+                f"concurrency (required {minimum * 100.0:.1f}%); the probe was "
+                "the bottleneck, so this run does not measure the server"
+            )
+    return {
+        "requested": requested if isinstance(requested, (int, float)) else None,
+        "achieved": achieved if isinstance(achieved, (int, float)) else None,
+        "ratio_percent": None if ratio is None else ratio * 100.0,
+        "enforced": minimum is not None,
+        "minimum_percent": None if minimum is None else minimum * 100.0,
+    }
+
+
 def main() -> int:
     """Validate correctness, latency, and terminal memory growth."""
     parser = argparse.ArgumentParser()
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--max-p99-ms", type=float, default=25.0)
     parser.add_argument("--max-final-rss-growth-kib", type=int, default=32768)
+    # Reported always, enforced only when a floor is supplied.
+    parser.add_argument("--min-achieved-concurrency", type=float, default=None)
     args = parser.parse_args()
 
     with args.candidate.open(encoding="utf-8") as source:
@@ -34,6 +75,10 @@ def main() -> int:
     failures = candidate.get("failures")
     if failures != 0:
         errors.append(f"candidate recorded {failures!r} failed requests")
+
+    closed_loop = closed_loop_report(
+        candidate, args.min_achieved_concurrency, errors
+    )
 
     p99_values = {
         group: nested_number(candidate, group, "p99")
@@ -74,6 +119,7 @@ def main() -> int:
 
     summary = {
         "candidate": str(args.candidate),
+        "closed_loop": closed_loop,
         "failures": failures,
         "p99_ms": p99_values,
         "max_p99_ms": args.max_p99_ms,

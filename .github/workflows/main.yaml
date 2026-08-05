@@ -690,6 +690,18 @@ jobs:
       # it with margin without hiding a further slowdown. Both tighten to the
       # p3 lane's defaults if the registration cost in PERFORMANCE.md is ever
       # removed.
+      # The 90% concurrency floor is a validity check, not a budget: it asks
+      # whether the run measured the server at all. By Little's Law the mean
+      # number of requests in flight is throughput x mean latency, and in a
+      # closed loop of N looping workers that must approach N. Across 18
+      # recorded lane-phases it sat at 99.9/100 in 17 of them; the exception
+      # collapsed to 6.9/100, where the probe - not the server - was the
+      # bottleneck, and its 2478 rps was a client ceiling that happened to
+      # land mid-range of the legitimate 2312-3461 spread. Comparing that
+      # against a saturated baseline reported a 15% throughput regression on a
+      # commit containing no Rust. 90% is an order of magnitude below anything
+      # observed healthy and an order of magnitude above the failure, so it
+      # separates the two without narrowing the real budgets.
       - name: Enforce latency, throughput, and memory gates
         if: matrix.baseline_ref
         run: >-
@@ -698,6 +710,7 @@ jobs:
           soak-${{ matrix.host }}-${{ matrix.preview }}-candidate.json
           --max-regression ${{ matrix.max_latency_regression }}
           --max-throughput-regression ${{ matrix.max_throughput_regression }}
+          --min-achieved-concurrency 0.90
           | tee soak-${{ matrix.host }}-${{ matrix.preview }}-comparison.json
 
       # The 25 ms figure documented in PERFORMANCE.md and MIDDLEWARE.md is a
@@ -718,6 +731,7 @@ jobs:
           python3 scripts/check_soak_candidate.py
           soak-${{ matrix.host }}-${{ matrix.preview }}-candidate.json
           --max-p99-ms 150
+          --min-achieved-concurrency 0.90
           | tee soak-${{ matrix.host }}-${{ matrix.preview }}-absolute.json
 
       - name: Retain soak evidence

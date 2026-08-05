@@ -23,12 +23,56 @@ def nested_number(result: dict[str, object], group: str, field: str) -> float:
     return float(value)
 
 
+def closed_loop_report(
+    result: dict[str, object],
+    label: str,
+    minimum: float | None,
+    errors: list[str],
+) -> dict[str, object]:
+    """Record - and optionally gate - how closed the closed loop actually was.
+
+    A probe that never reached its requested concurrency measured its own
+    ceiling rather than the server's, and its throughput is not comparable
+    with a run that did. That breaks this gate in BOTH directions: a starved
+    candidate invents a regression, and a starved baseline hides a real one by
+    reporting an improvement. Checking both sides is therefore the point.
+    """
+    requested = result.get("concurrency")
+    achieved = result.get("achieved_concurrency")
+    ratio: float | None = None
+    if (
+        isinstance(requested, (int, float))
+        and requested > 0
+        and isinstance(achieved, (int, float))
+    ):
+        ratio = float(achieved) / float(requested)
+    if minimum is not None:
+        if ratio is None:
+            errors.append(f"{label} run does not report achieved concurrency")
+        elif ratio < minimum:
+            errors.append(
+                f"{label} reached only {ratio * 100.0:.1f}% of its requested "
+                f"concurrency (required {minimum * 100.0:.1f}%); the probe was "
+                "the bottleneck, so this run does not measure the server"
+            )
+    return {
+        "requested": requested if isinstance(requested, (int, float)) else None,
+        "achieved": achieved if isinstance(achieved, (int, float)) else None,
+        "ratio_percent": None if ratio is None else ratio * 100.0,
+        "enforced": minimum is not None,
+        "minimum_percent": None if minimum is None else minimum * 100.0,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("baseline", type=Path)
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--max-regression", type=float, default=0.05)
     parser.add_argument("--max-final-rss-growth-kib", type=int, default=32768)
+    # Reported always, enforced only when a floor is supplied, on the same
+    # terms as the throughput limit below.
+    parser.add_argument("--min-achieved-concurrency", type=float, default=None)
     # Reported always, enforced only when a limit is supplied. The sibling
     # `compare_middleware_profiles.py` gates throughput at 10%; this lane has
     # no measured run-to-run spread yet, so the number is collected first and
@@ -44,6 +88,14 @@ def main() -> int:
 
     comparisons: dict[str, dict[str, float]] = {}
     errors: list[str] = []
+    closed_loop = {
+        "baseline": closed_loop_report(
+            baseline, "baseline", args.min_achieved_concurrency, errors
+        ),
+        "candidate": closed_loop_report(
+            candidate, "candidate", args.min_achieved_concurrency, errors
+        ),
+    }
     for group in ("first_byte_ms", "latency_ms"):
         baseline_p99 = nested_number(baseline, group, "p99")
         candidate_p99 = nested_number(candidate, group, "p99")
@@ -107,6 +159,7 @@ def main() -> int:
     summary = {
         "baseline": str(args.baseline),
         "candidate": str(args.candidate),
+        "closed_loop": closed_loop,
         "comparisons": comparisons,
         "throughput": {
             "baseline_requests_per_second": baseline_rps,
