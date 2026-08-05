@@ -161,6 +161,16 @@ def main() -> int:
         "url": args.url,
         "duration_seconds": elapsed,
         "concurrency": args.concurrency,
+        # How many requests were actually in flight on average, by Little's
+        # Law: the summed time requests spent outstanding, over the wall clock.
+        # In a closed loop this must approach `concurrency` - it is the same
+        # workers looping - so a value far below it means the probe, not the
+        # server, was the bottleneck and the run measured a client limit
+        # rather than server throughput. Reported always; the gates decide
+        # whether to enforce a floor.
+        "achieved_concurrency": (
+            sum(latencies) / (elapsed * 1000.0) if elapsed else 0.0
+        ),
         "requests": len(latencies),
         "requests_per_second": len(latencies) / elapsed if elapsed else 0.0,
         "failures": failures,
