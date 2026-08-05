@@ -2,7 +2,7 @@
 
 //! Shared Leptos request handling and runtime-specific WASI HTTP adapters.
 
-use std::{future::Future, marker::PhantomData, pin::Pin};
+use std::pin::Pin;
 #[cfg(feature = "tracing")]
 use std::{
     sync::Arc,
@@ -14,7 +14,7 @@ use bytes::Bytes;
 use futures::{StreamExt, stream::once};
 use http::{
     HeaderValue, Method, Request, StatusCode, Uri,
-    header::{ALLOW, CONTENT_LENGTH, CONTENT_TYPE, LOCATION, REFERER},
+    header::{ALLOW, CONTENT_LENGTH, CONTENT_TYPE, REFERER},
 };
 use leptos::{
     IntoView,
@@ -26,9 +26,7 @@ use leptos_router::{RouteListing, SsrMode};
 use mime_guess::MimeGuess;
 use routefinder::Router;
 use server_fn::{
-    Protocol, ServerFn,
-    error::{FromServerFnError, ServerFnErrorErr},
-    middleware::{BoxedService, Service},
+    Protocol, ServerFn, error::FromServerFnError, middleware::BoxedService,
 };
 use thiserror::Error;
 
@@ -42,16 +40,20 @@ mod builder;
 mod http_util;
 mod policy;
 mod routes;
+mod server_fns;
 #[cfg(test)]
 mod test_support;
 
 use builder::common_handler_methods;
 use http_util::{
     accepts_html, is_islands_router_navigation, provide_standard_contexts,
-    sanitize_referrer,
 };
 use policy::{plain_response, policy_response, set_default_nosniff};
 use routes::validated_route_table;
+use server_fns::{
+    ReqBody, ResBody, ServerFnHandler, TypedServerFnService,
+    apply_server_fn_redirect,
+};
 
 pub use routes::validate_route_table;
 
@@ -237,54 +239,6 @@ fn trace_policy_rejection(preview: &'static str, error: &RequestPolicyError) {
         error_class,
         "request policy rejected incoming body"
     );
-}
-
-type ServerFnHandler = Box<
-    dyn Fn(
-            Request<Bytes>,
-        )
-            -> Pin<Box<dyn Future<Output = http::Response<Body>> + Send>>
-        + Send,
->;
-
-type ReqBody<T> = <<T as ServerFn>::Server as ServerWithBody<
-    <T as ServerFn>::Error,
-    <T as ServerFn>::InputStreamError,
-    <T as ServerFn>::OutputStreamError,
->>::ReqBody;
-
-type ResBody<T> = <<T as ServerFn>::Server as ServerWithBody<
-    <T as ServerFn>::Error,
-    <T as ServerFn>::InputStreamError,
-    <T as ServerFn>::OutputStreamError,
->>::ResBody;
-
-struct TypedServerFnService<T>(PhantomData<fn() -> T>);
-
-impl<T> Default for TypedServerFnService<T> {
-    fn default() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T> Service<Request<ReqBody<T>>, http::Response<ResBody<T>>>
-    for TypedServerFnService<T>
-where
-    T: ServerFn + 'static,
-    T::Server:
-        ServerWithBody<T::Error, T::InputStreamError, T::OutputStreamError>,
-    ReqBody<T>: Send + 'static,
-    ResBody<T>: Send + 'static,
-{
-    fn run(
-        &mut self,
-        request: Request<ReqBody<T>>,
-        _serialize_error: fn(ServerFnErrorErr) -> Bytes,
-    ) -> Pin<
-        Box<dyn Future<Output = http::Response<ResBody<T>>> + Send + 'static>,
-    > {
-        Box::pin(T::run_on_server(request))
-    }
 }
 
 struct HandlerCore {
@@ -743,36 +697,6 @@ where
     }
 }
 
-fn apply_server_fn_redirect(
-    response: &mut http::Response<Body>,
-    accepts_html: bool,
-    referrer: Option<HeaderValue>,
-) {
-    let mut redirect_target = None;
-    if accepts_html && let Some(referrer) = referrer {
-        let is_default = response
-            .headers()
-            .get(LOCATION)
-            .and_then(|value| value.to_str().ok())
-            == Some("/");
-        let has_location = response.headers().contains_key(LOCATION);
-        if !has_location || is_default {
-            *response.status_mut() = StatusCode::FOUND;
-            redirect_target = sanitize_referrer(&referrer)
-                .or_else(|| Some(HeaderValue::from_static("/")));
-        }
-    }
-    if redirect_target.is_none()
-        && let Some(location) = response.headers().get(LOCATION).cloned()
-    {
-        redirect_target = sanitize_referrer(&location)
-            .or_else(|| Some(HeaderValue::from_static("/")));
-    }
-    if let Some(target) = redirect_target {
-        response.headers_mut().insert(LOCATION, target);
-    }
-}
-
 #[cfg(feature = "wasip2")]
 pub mod wasip2;
 
@@ -782,6 +706,8 @@ pub mod wasip3;
 #[cfg(test)]
 mod tests {
     use http::{header::ACCEPT, request::Parts};
+
+    use http::header::LOCATION;
 
     use super::http_util::ISLANDS_ROUTER_HEADER;
     use super::policy::X_CONTENT_TYPE_OPTIONS;
@@ -1142,87 +1068,6 @@ mod tests {
              same-origin path, not replaced by the Referer"
         );
         assert!(!location.contains("malicious.example.com"));
-    }
-
-    fn redirected(
-        status: StatusCode,
-        location: Option<&'static str>,
-        accepts_html: bool,
-        referrer: Option<&'static str>,
-    ) -> (StatusCode, Option<String>) {
-        let mut response =
-            http::Response::new(Body::Sync(Bytes::from_static(b"body")));
-        *response.status_mut() = status;
-        if let Some(location) = location {
-            response
-                .headers_mut()
-                .insert(LOCATION, HeaderValue::from_static(location));
-        }
-        apply_server_fn_redirect(
-            &mut response,
-            accepts_html,
-            referrer.map(HeaderValue::from_static),
-        );
-        let location = response
-            .headers()
-            .get(LOCATION)
-            .map(|value| value.to_str().expect("ascii").to_owned());
-        (response.status(), location)
-    }
-
-    #[test]
-    fn html_form_posts_redirect_back_to_a_same_origin_referrer() {
-        assert_eq!(
-            redirected(
-                StatusCode::OK,
-                None,
-                true,
-                Some("http://127.0.0.1/previous-page")
-            ),
-            (StatusCode::FOUND, Some("/previous-page".to_owned()))
-        );
-    }
-
-    #[test]
-    fn html_form_posts_fall_back_to_root_for_unusable_referrers() {
-        assert_eq!(
-            redirected(
-                StatusCode::OK,
-                None,
-                true,
-                Some("http://127.0.0.1/%5Cevil.example.com")
-            ),
-            (StatusCode::FOUND, Some("/".to_owned()))
-        );
-    }
-
-    #[test]
-    fn cross_origin_locations_are_reduced_to_their_path() {
-        assert_eq!(
-            redirected(
-                StatusCode::FOUND,
-                Some("https://evil.example.com/take-over"),
-                false,
-                None
-            ),
-            (StatusCode::FOUND, Some("/take-over".to_owned()))
-        );
-    }
-
-    #[test]
-    fn api_clients_keep_an_explicit_same_origin_location() {
-        assert_eq!(
-            redirected(StatusCode::OK, Some("/dashboard"), false, None),
-            (StatusCode::OK, Some("/dashboard".to_owned()))
-        );
-    }
-
-    #[test]
-    fn responses_without_a_location_are_left_alone() {
-        assert_eq!(
-            redirected(StatusCode::OK, None, false, None),
-            (StatusCode::OK, None)
-        );
     }
 
     fn ssr_arm_app() -> impl IntoView {
