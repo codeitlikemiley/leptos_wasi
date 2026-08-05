@@ -151,8 +151,12 @@ script = [
     "cargo check --locked --manifest-path tests/api-fixtures/dual-runtime-consumer/Cargo.toml",
 ]
 
+# Must mirror the middleware-contract CI job's invocation. Without
+# --composition-tools this task passed on changes CI rejected, which is the
+# worst thing a "run before you push" task can do.
 [tasks.middleware-manifest-audit]
 command = "./scripts/audit-middleware-manifests.py"
+args = ["--composition-tools"]
 
 [tasks.middleware-vnext]
 command = "./scripts/run-middleware-tests.sh"
@@ -163,6 +167,11 @@ dependencies = ["ci-wasip2", "ci-wasip3", "ci-dual", "api-fixtures"]
 [tasks.package]
 command = "cargo"
 args = ["package", "--locked"]
+
+# Local mirror of the CI package job, which invokes the same two cargo
+# commands directly rather than installing cargo-make for them.
+[tasks.release-check]
+dependencies = ["package", "publish-dry-run"]
 
 [tasks.publish-dry-run]
 command = "cargo"
