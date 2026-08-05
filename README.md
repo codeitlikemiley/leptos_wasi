@@ -41,21 +41,21 @@ Preview 2:
 
 ```toml
 [dependencies]
-leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1" }
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2" }
 ```
 
 Preview 3:
 
 ```toml
 [dependencies]
-leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1", default-features = false, features = ["wasip3"] }
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2", default-features = false, features = ["wasip3"] }
 ```
 
 Both adapters in one build:
 
 ```toml
 [dependencies]
-leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2-rc.1", features = ["wasip3", "islands-router"] }
+leptos_wasi = { package = "leptos-wasi-runtime", version = "0.4.2", features = ["wasip3", "islands-router"] }
 ```
 
 The features are additive. Enabling `wasip3` does not disable or replace the
