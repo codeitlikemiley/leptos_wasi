@@ -34,6 +34,30 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Split `handler.rs` (3,313 lines) into `src/handler/` and `executor.rs` into
+  `src/executor/`. The handler file held seven unrelated concerns plus both
+  host adapters; it is now a 37-line module root over eleven submodules, and
+  the largest file in the crate is 1,026 lines. This is code movement only:
+  the public API is unchanged (`cargo-semver-checks`: 223 pass, no update
+  required), `lib.rs` and `request.rs` are untouched, and the lib test set is
+  identical test-for-test. Items shared between submodules are `pub(super)`,
+  which is the access they already had while everything lived in one file.
+- Enabled `clippy::pedantic` and moved the lint configuration into
+  `Cargo.toml`'s `[lints]` tables. `forbid(unsafe_code)` and
+  `deny(missing_docs)` now cover tests, benches, and examples rather than the
+  library target alone, and a plain `cargo clippy` reports exactly what CI
+  enforces instead of the weaker default set. `clippy::unwrap_used` and
+  `clippy::panic` are denied: both were already absent from production code,
+  and a panic in a WASI component traps the instance rather than unwinding.
+- Sixteen public fallible APIs now document how they fail. Both `Handler`
+  constructors, both `handle_with_context`, the five route generators,
+  `static_files_handler`, `from_wasi_request`, the two WASI-to-HTTP
+  converters, and `Response::headers` gained `# Errors` sections naming the
+  variants they return.
+- `render_mode` takes `&SsrMode` rather than an owned value, dropping a clone
+  on every SSR render, and the Preview 2 initializer no longer clones an
+  executor it drops immediately afterwards.
+
 - Route discovery no longer runs on requests that cannot use the SSR router. A
   server function, a static asset, and an already-selected response all resolve
   without it, but discovery renders the whole application to extract its
@@ -139,6 +163,20 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `cargo make bench` runs a host-native route-discovery benchmark over 3, 8,
+  and 32 routes. Route discovery is the largest in-guest cost of a request
+  that renders — roughly 183 µs of 1054 µs — and most of it happens inside
+  `leptos_router::RouteList::generate`, which this crate does not own. A
+  leptos bump that regressed discovery by 40% would move an end-to-end request
+  by about 7%, inside the soak job's 8–12% budget, so nothing in CI would see
+  it. Deliberately not wired into push/PR CI: the soak job's own notes record
+  a ±0.7pp measurement problem on shared runners over 600 seconds, which a
+  microsecond-scale sample cannot survive.
+- The public-API fixtures in `tests/api-fixtures/` exercise every builder
+  method. All three previously called only `build`/`build_with_config`, and
+  four of the seven registration methods had no call site anywhere in the
+  repository, so the one CI job whose purpose is compiling external-consumer
+  imports could not have caught a change to them.
 - `HandlerConfig::with_request_body_timeout_ns` bounds how long a whole request
   body may take to arrive, and `request_body_timeout_ns` reads it back. It is
   `None` by default, so no existing deployment changes behaviour: request
