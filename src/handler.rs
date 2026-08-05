@@ -16,8 +16,7 @@ use bytes::Bytes;
 use futures::{StreamExt, stream::once};
 use http::{
     HeaderMap, HeaderValue, Method, Request, StatusCode, Uri,
-    header::{ACCEPT, ALLOW, CONTENT_LENGTH, CONTENT_TYPE, LOCATION, REFERER},
-    request::Parts,
+    header::{ALLOW, CONTENT_LENGTH, CONTENT_TYPE, LOCATION, REFERER},
 };
 use hydration_context::SsrSharedContext;
 use leptos::{
@@ -28,7 +27,6 @@ use leptos::{
 use leptos_meta::ServerMetaContext;
 use leptos_router::{
     ExpandOptionals, PathSegment, RouteList, RouteListing, SsrMode,
-    components::provide_server_redirect, location::RequestUrl,
 };
 use mime_guess::MimeGuess;
 use routefinder::{RouteSpec, Router, Segment};
@@ -43,17 +41,20 @@ use crate::{
     __private::ServerWithBody,
     integration::{ExtendResponse, PinnedStream},
     response::{Body, Response, ResponseOptions},
-    utils::redirect,
 };
 
 mod builder;
+mod http_util;
 
 use builder::common_handler_methods;
+use http_util::{
+    accepts_html, is_islands_router_navigation, provide_standard_contexts,
+    sanitize_referrer,
+};
 
 /// Default maximum request body size: 16 MiB.
 pub const DEFAULT_MAX_REQUEST_BODY_SIZE: usize = 16 * 1024 * 1024;
 
-const ISLANDS_ROUTER_HEADER: &str = "Islands-Router";
 const X_CONTENT_TYPE_OPTIONS: &str = "x-content-type-options";
 
 #[cfg(feature = "tracing")]
@@ -1085,37 +1086,6 @@ where
     }
 }
 
-fn provide_standard_contexts(parts: Parts, response: ResponseOptions) {
-    let request_url = parts
-        .uri
-        .path_and_query()
-        .map_or("/", http::uri::PathAndQuery::as_str);
-    provide_context(RequestUrl::new(request_url));
-    provide_context(parts);
-    provide_context(response);
-    provide_server_redirect(redirect);
-    leptos::nonce::provide_nonce();
-}
-
-fn accepts_html(headers: &HeaderMap) -> bool {
-    headers
-        .get_all(ACCEPT)
-        .iter()
-        .filter_map(|value| value.to_str().ok())
-        .flat_map(|value| value.split(','))
-        .any(|media_range| {
-            let mut fields = media_range.split(';');
-            let media_type = fields.next().unwrap_or_default().trim();
-            let quality = fields
-                .filter_map(|field| field.trim().strip_prefix("q="))
-                .filter_map(|value| value.parse::<f32>().ok())
-                .next()
-                .unwrap_or(1.0);
-            quality > 0.0
-                && matches!(media_type, "text/html" | "application/xhtml+xml")
-        })
-}
-
 fn apply_server_fn_redirect(
     response: &mut http::Response<Body>,
     accepts_html: bool,
@@ -1143,29 +1113,6 @@ fn apply_server_fn_redirect(
     }
     if let Some(target) = redirect_target {
         response.headers_mut().insert(LOCATION, target);
-    }
-}
-
-fn is_islands_router_navigation<B>(request: &Request<B>) -> bool {
-    cfg!(feature = "islands-router")
-        && request.headers().contains_key(ISLANDS_ROUTER_HEADER)
-}
-
-fn sanitize_referrer(referrer: &HeaderValue) -> Option<HeaderValue> {
-    let value = referrer.to_str().ok()?;
-    let uri = value.parse::<Uri>().ok()?;
-    let path = uri.path_and_query()?.as_str();
-    if path.starts_with("/\\")
-        || path.contains('\\')
-        || path.contains("%5c")
-        || path.contains("%5C")
-    {
-        return None;
-    }
-    if path.starts_with('/') && !path.starts_with("//") {
-        HeaderValue::from_str(path).ok()
-    } else {
-        None
     }
 }
 
@@ -1227,6 +1174,9 @@ pub mod wasip3;
 
 #[cfg(test)]
 mod tests {
+    use http::{header::ACCEPT, request::Parts};
+
+    use super::http_util::ISLANDS_ROUTER_HEADER;
     use super::*;
     use leptos::prelude::{use_context, view};
     use leptos_router::{
@@ -1811,75 +1761,6 @@ mod tests {
              same-origin path, not replaced by the Referer"
         );
         assert!(!location.contains("malicious.example.com"));
-    }
-
-    #[test]
-    fn html_with_zero_quality_is_not_accepted() {
-        let mut headers = HeaderMap::new();
-        headers.insert(ACCEPT, HeaderValue::from_static("text/html;q=0"));
-        assert!(!accepts_html(&headers));
-    }
-
-    fn accept(value: &'static str) -> HeaderMap {
-        let mut headers = HeaderMap::new();
-        headers.insert(ACCEPT, HeaderValue::from_static(value));
-        headers
-    }
-
-    #[test]
-    fn browser_navigation_accept_headers_are_html() {
-        assert!(accepts_html(&accept(
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        )));
-        assert!(accepts_html(&accept("application/xhtml+xml")));
-        assert!(accepts_html(&accept(" text/html ; charset=utf-8")));
-    }
-
-    #[test]
-    fn non_navigation_accept_headers_are_not_html() {
-        assert!(!accepts_html(&accept("application/json")));
-        assert!(!accepts_html(&accept("*/*")));
-        assert!(!accepts_html(&HeaderMap::new()));
-        assert!(!accepts_html(&accept("text/html;q=0.000")));
-    }
-
-    #[test]
-    fn accept_html_is_detected_across_repeated_headers() {
-        let mut headers = HeaderMap::new();
-        headers.append(ACCEPT, HeaderValue::from_static("application/json"));
-        headers.append(ACCEPT, HeaderValue::from_static("text/html"));
-
-        assert!(accepts_html(&headers));
-    }
-
-    fn sanitized(value: &'static str) -> Option<String> {
-        sanitize_referrer(&HeaderValue::from_static(value))
-            .map(|value| value.to_str().expect("ascii").to_owned())
-    }
-
-    #[test]
-    fn referrers_are_reduced_to_same_origin_paths() {
-        assert_eq!(
-            sanitized("http://127.0.0.1/previous-page"),
-            Some("/previous-page".to_owned())
-        );
-        assert_eq!(
-            sanitized("https://malicious.example.com/steal?a=1"),
-            Some("/steal?a=1".to_owned())
-        );
-        assert_eq!(
-            sanitized("/relative/page"),
-            Some("/relative/page".to_owned())
-        );
-    }
-
-    #[test]
-    fn protocol_relative_and_backslash_referrers_are_rejected() {
-        assert_eq!(sanitized("//evil.example.com/path"), None);
-        assert_eq!(sanitized("http://127.0.0.1/\\evil.example.com"), None);
-        assert_eq!(sanitized("http://127.0.0.1/%5Cevil.example.com"), None);
-        assert_eq!(sanitized("http://127.0.0.1/%5cevil.example.com"), None);
-        assert_eq!(sanitized("mailto:someone@example.com"), None);
     }
 
     fn redirected(
