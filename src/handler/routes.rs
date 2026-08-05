@@ -238,7 +238,7 @@ mod tests {
 
     use bytes::Bytes;
 
-    use super::super::HandlerCore;
+    use super::super::core::HandlerCore;
     use super::super::policy::HandlerConfig;
     use super::super::test_support::static_route_app;
     use super::*;

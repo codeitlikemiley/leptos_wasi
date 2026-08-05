@@ -20,7 +20,7 @@ use http::StatusCode;
 use leptos_router::SsrMode;
 
 #[cfg(feature = "tracing")]
-use super::HandlerCore;
+use super::core::HandlerCore;
 #[cfg(feature = "tracing")]
 use super::policy::RequestPolicyError;
 
@@ -210,7 +210,7 @@ mod tests {
     use bytes::Bytes;
     use http::{Method, Request};
 
-    use super::super::HandlerCore;
+    use super::super::core::HandlerCore;
     use super::super::policy::HandlerConfig;
     use crate::response::Body;
 
