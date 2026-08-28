@@ -6,7 +6,8 @@ collapsed into one "Spin support" flag.
 | Profile | Expected result |
 |---|---|
 | Tagged Spin 4.0.2 | Rejects final `wasi:http/types@0.3.0` |
-| Pinned Spin `4.1.0-pre0` (`c34c584...`) terminal | Serves SSR, server functions, static callbacks, islands, split WASM, and the SQLite counter client |
+| Tagged Spin 4.1.0 terminal | Serves the final-WASI terminal path; both Spin E2E lanes (Preview 2 and Preview 3) pass on the stock release binary |
+| Pinned Spin `4.1.0-pre0` (`c34c584...`) terminal | Serves SSR, server functions, static callbacks, islands, split WASM, and the SQLite counter client (superseded by tagged 4.1.0) |
 | Pinned Spin main trusted terminal | Passes native-ingress authentication plus Cedar and direct SpiceDB authorization |
 | Pinned Spin main WAC composition | Default build panics in CPU-time call-hook accounting |
 | Pinned Spin main without default features | Composed chain passes, but is diagnostic only |
@@ -53,6 +54,18 @@ tests rather than only changing the interface string.
 
 Production remains native trusted ingress plus a plain terminal. Stable Spin
 support requires a tagged release containing final terminal/outbound HTTP and
-the CPU-accounting fix. Stable native middleware additionally requires final
+the CPU-accounting fix.
+
+Tagged Spin 4.1.0 (2026-08-26) delivers the first half: final terminal and
+outbound HTTP ship in a stock release and both Spin E2E lanes pass against it.
+The CPU-accounting fix has **not** landed — at v4.1.0,
+`CpuTimeCallHook::handle_call_event` still takes and unwraps a single
+timestamp, and the hook is compiled in through the default-enabled
+`cpu-time-metrics` cargo feature — so composed WAC middleware remains gated.
+Separately, stock 4.1.0 can log `worker failed: worker panicked` when the
+process is terminated immediately after an in-flight request completes; the
+backtrace places the panic in `wasmtime_wasi_http::handler::Worker`'s future
+drop during tokio shutdown, host-side and after the response is delivered. No
+request has been observed to fail from it. Stable native middleware additionally requires final
 `dependencies.middleware` support. The no-default-features build never counts
 as release or soak evidence.

@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped the `wasip3` pin from `=0.7.0` to `=0.7.1` across the library, the
+  counter example, and the test fixtures. Both versions carry final
+  `wasi:http@0.3.0` bindings; the point of the bump is version unification:
+  Spin SDK 7 requires `wasip3 ^0.7.1`, and with `=0.7.0` no dependency graph
+  could contain both crates. A component using this library together with
+  `spin-sdk` 7 (key-value verified end to end: persisted increments through
+  `spin_sdk::key_value` inside a native final-WASI export) now resolves to a
+  single `wasip3 0.7.1`. Validated on the bump: the full lib test set, clippy
+  `-D warnings` for the dual feature set, and the Wasmtime and Spin E2E lanes.
+- Recorded tagged Spin 4.1.0 in the compatibility contract. It is the first
+  stock release that links final `wasi:http@0.3.0`; both Spin E2E lanes pass
+  against the release binary, so the pinned Spin main revision is no longer
+  required for the terminal path. The CPU-accounting fix has not landed
+  upstream (the single-timestamp `CpuTimeCallHook` ships enabled by default),
+  so composed WAC middleware remains gated. See SPIN_COMPATIBILITY.md.
+
 ## [0.4.2] — 2026-08-05
 
 ### Fixed
