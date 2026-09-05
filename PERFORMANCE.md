@@ -348,7 +348,7 @@ every SSR request, so the 183 us registration stage is paid again even when
 the instance is reused.
 
 `RouteTable::discover` is that discovery, once per instance.
-`generate_routes_from` installs the table with an `Rc` clone. Host-native
+`generate_routes_from` installs the table with an `Arc` clone. Host-native
 divan (`cargo make bench`, `benches/route_discovery.rs`) on this machine,
 medians:
 
