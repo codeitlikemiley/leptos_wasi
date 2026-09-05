@@ -317,11 +317,12 @@ impl HandlerCore {
             return Ok(self);
         }
 
-        self.ssr_router = Arc::new(router_from_listings(validated_route_table(
-            &app_fn,
-            excluded_routes,
-            &discovery_context,
-        )?));
+        self.ssr_router =
+            Arc::new(router_from_listings(validated_route_table(
+                &app_fn,
+                excluded_routes,
+                &discovery_context,
+            )?));
         self.routes_registered = true;
         Ok(self)
     }
