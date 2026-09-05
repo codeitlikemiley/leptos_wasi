@@ -17,8 +17,6 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-### Fixed
-
 - Route-discovery counter tests take a mutex so parallel `cargo test` cannot
   observe another registration mid-assert.
 - HTML error responses (401/403/422/500) no longer get promoted to 302 when a
