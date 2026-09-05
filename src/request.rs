@@ -56,6 +56,10 @@ pub mod p2 {
     /// happens once. [`from_wasi_request_with_deadline`] still composes both
     /// steps for callers that want a complete `http::Request`.
     ///
+    /// GET and HEAD skip `consume` / `stream` / `finish`. Those methods are
+    /// specified without a body, and opening the stream is host work that
+    /// never produces bytes here.
+    ///
     /// # Errors
     ///
     /// Returns [`RequestError::Policy`] if the declared length is unusable
@@ -77,6 +81,10 @@ pub mod p2 {
             headers,
             max_body_size,
         )?;
+
+        if matches!(request.method(), Method::Get | Method::Head) {
+            return Ok(Bytes::new());
+        }
 
         let incoming_body = request
             .consume()

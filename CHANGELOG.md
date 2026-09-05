@@ -20,7 +20,8 @@ All notable changes to this project will be documented in this file.
   failing the handler. `Body::Sync` writes without wrapping a one-item stream.
   Static assets use a `from_static` mime table for the common web set, reserve
   the body from `Content-Length`, skip residual percent-decoding when `%` is
-  absent, and emit `Content-Length` with `HeaderValue::from(len)`.
+  absent, and emit `Content-Length` with `HeaderValue::from(len)`. GET and
+  HEAD skip opening the Preview 2 incoming body stream.
 - CI now lints, tests, and documents the default feature set (WASIp2 without
   `islands-router`). The MSRV job installs Clippy on 1.93.0 and runs Clippy
   plus rustdoc for every feature-matrix row. Advisory ignores live only in
