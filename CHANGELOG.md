@@ -56,6 +56,36 @@ All notable changes to this project will be documented in this file.
   abandoned. `WaitPoll` uses the current executor's queue (falling back to the
   process queue). `poll_local` no longer swallows `TaskSpawnFailed`.
 
+### Fixed
+
+- HTML error responses (401/403/422/500) no longer get promoted to 302 when a
+  Referer is present. That promotion is axum-parity for successful form posts
+  and real redirects, not for failures.
+- `201 Created` keeps an absolute `Location`. Only 3xx responses run through
+  the same-origin sanitizer.
+- An explicit `Location: /` is a real app target and is no longer overwritten
+  by Referer. Form posts that want a Referer bounce omit `Location`.
+- Requests that only send the `Referrer` spelling have that value copied into
+  `Referer` before the server function runs, so `form-redirects` does not fall
+  back to `Location: /` and skip the alternate spelling.
+- Invalid `redirect()` paths are logged with `escape_debug`, so a CR/LF in the
+  path cannot split the log line.
+- Policy-rejection HTTP bodies are fixed strings (`request body too large`,
+  `request body timed out`, `invalid Content-Length`) and no longer echo the
+  configured limit. `RequestPolicyError`'s `Display` still names the budget for
+  tracing.
+- A timed Preview 2 body read that keeps returning empty is abandoned after 64
+  consecutive empty reads instead of spinning until the deadline.
+- HEAD responses compute `Content-Length` from the original `Body::Sync`
+  before the body is blanked, so HEAD and GET agree on 404, policy rejections,
+  and 405.
+- Preview 2 `run_until` now interleaves `try_recv → run_guest → try_recv →
+  poll_host → try_recv`. `Mode::Preemptive` does a non-blocking `ready()`
+  sweep after a runnable guest task and only blocking-polls when the pool is
+  idle. Leftover pollables after the root completes are probed once and
+  abandoned. `WaitPoll` uses the current executor's queue (falling back to the
+  process queue). `poll_local` no longer swallows `TaskSpawnFailed`.
+
 ## [0.4.2] — 2026-08-05
 
 ### Fixed
