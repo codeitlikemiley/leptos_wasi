@@ -5,6 +5,19 @@ regression baseline, not a universal service-level objective: host hardware,
 component pooling, ingress, and the application route tree materially affect
 the absolute numbers.
 
+## Supported soak budgets
+
+CI (`.github/workflows/main.yaml`) is the gate that ships:
+
+| Lane | max latency regression | max throughput regression |
+|---|---:|---:|
+| Wasmtime Preview 2 | 12% | 10% |
+| Spin Preview 2 | 12% | 10% |
+| Wasmtime Preview 3 | 8% | 8% |
+
+The 0.3.2-versus-0.4.0 table that follows is historical. It used a five-percent
+p99 budget that CI no longer enforces.
+
 ## Historical 0.3.2 versus 0.4.0 candidate
 
 Measured on 2026-07-10 on Apple Silicon with Wasmtime 45.0.0, Spin 4.0.0,
