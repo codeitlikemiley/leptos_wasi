@@ -21,7 +21,8 @@ use leptos_router::SsrMode;
 
 use super::core::HandlerCore;
 use super::http_util::{
-    accepts_html, is_islands_router_navigation, provide_standard_contexts,
+    accepts_html, is_islands_router_navigation, mirror_referrer_spelling,
+    provide_standard_contexts,
 };
 use super::policy::{plain_response, set_default_nosniff};
 use super::server_fns::apply_server_fn_redirect;
@@ -45,7 +46,7 @@ impl HandlerCore {
         let is_head = self.req.method() == Method::HEAD;
         let (parts, body) = self.req.into_parts();
         let context_parts = parts.clone();
-        let req = Request::from_parts(parts, body);
+        let mut req = Request::from_parts(parts, body);
 
         let owner = Owner::new();
         let render = owner.with(|| {
@@ -59,12 +60,12 @@ impl HandlerCore {
                     provide_standard_contexts(context_parts, res_opts.clone());
                     additional_context();
 
+                    // `server_fn` form-redirects only reads `Referer`. Mirror
+                    // the alternate spelling first so it does not fall back to
+                    // `Location: /` before our sanitizer runs.
+                    mirror_referrer_spelling(req.headers_mut());
                     let accepts_html = accepts_html(req.headers());
-                    let referrer = req
-                        .headers()
-                        .get(REFERER)
-                        .or_else(|| req.headers().get("referrer"))
-                        .cloned();
+                    let referrer = req.headers().get(REFERER).cloned();
                     let mut response = server_fn(req).await;
                     apply_server_fn_redirect(
                         &mut response,
@@ -120,13 +121,14 @@ impl HandlerCore {
         // `ResponseOptions` is already present and wins, and after the 404
         // fallback, which never reaches that tail.
         set_default_nosniff(&mut response);
-        if is_head {
-            *response.0.body_mut() = Body::Sync(Bytes::new());
-        } else if !response.0.headers().contains_key(CONTENT_LENGTH)
+        if !response.0.headers().contains_key(CONTENT_LENGTH)
             && let Body::Sync(bytes) = response.0.body()
             && let Ok(value) = HeaderValue::from_str(&bytes.len().to_string())
         {
             response.0.headers_mut().insert(CONTENT_LENGTH, value);
+        }
+        if is_head {
+            *response.0.body_mut() = Body::Sync(Bytes::new());
         }
         response
     }
@@ -654,6 +656,17 @@ mod tests {
         .expect("static registration should succeed")
     }
 
+    fn missing_core(method: Method) -> HandlerCore {
+        HandlerCore::new(
+            Request::builder()
+                .method(method)
+                .uri("/missing")
+                .body(Bytes::new())
+                .expect("test request should be valid"),
+            HandlerConfig::default(),
+        )
+    }
+
     async fn render_plain(core: HandlerCore) -> Response {
         core.render(|| view! { "unused" }, || {}).await
     }
@@ -766,6 +779,20 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn head_not_found_agrees_with_get_content_length() {
+        let get = render_plain(missing_core(Method::GET)).await;
+        let head = render_plain(missing_core(Method::HEAD)).await;
+
+        assert_eq!(head.0.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            header_of(&head, "content-length"),
+            header_of(&get, "content-length")
+        );
+        assert_eq!(header_of(&head, "content-length"), Some("13"));
+        assert!(matches!(head.0.body(), Body::Sync(bytes) if bytes.is_empty()));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn policy_rejections_carry_nosniff() {
         let core = HandlerCore::new(
             Request::new(Bytes::new()),
@@ -784,6 +811,47 @@ mod tests {
             header_of(&response, "content-type"),
             Some("text/plain; charset=utf-8")
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn head_policy_rejection_agrees_with_get_content_length() {
+        let get = render_plain(
+            HandlerCore::new(
+                Request::new(Bytes::new()),
+                HandlerConfig::default(),
+            )
+            .with_preset(
+                policy_response(&RequestPolicyError::BodyTooLarge {
+                    limit: 16,
+                }),
+                "request_policy",
+            ),
+        )
+        .await;
+        let head = render_plain(
+            HandlerCore::new(
+                Request::builder()
+                    .method(Method::HEAD)
+                    .body(Bytes::new())
+                    .expect("test request should be valid"),
+                HandlerConfig::default(),
+            )
+            .with_preset(
+                policy_response(&RequestPolicyError::BodyTooLarge {
+                    limit: 16,
+                }),
+                "request_policy",
+            ),
+        )
+        .await;
+
+        assert_eq!(head.0.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(
+            header_of(&head, "content-length"),
+            header_of(&get, "content-length")
+        );
+        assert_eq!(header_of(&head, "content-length"), Some("22"));
+        assert!(matches!(head.0.body(), Body::Sync(bytes) if bytes.is_empty()));
     }
 
     /// The server-function body guard builds its own 413 and returns it
@@ -805,7 +873,7 @@ mod tests {
                 assert!(bytes.len() > limit, "fixture must exceed the limit");
                 plain_response(
                     StatusCode::PAYLOAD_TOO_LARGE,
-                    format!("request body exceeds limit of {limit} bytes"),
+                    "request body too large",
                 )
                 .0
             })
@@ -832,6 +900,37 @@ mod tests {
             header_of(&response, "content-type"),
             Some("text/plain; charset=utf-8")
         );
+        assert_eq!(header_of(&response, "content-length"), Some("18"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn head_method_not_allowed_agrees_with_post_content_length() {
+        let post = render_plain(static_asset_core(Method::POST)).await;
+        let head = render_plain(
+            HandlerCore::new(
+                Request::builder()
+                    .method(Method::HEAD)
+                    .uri("/static/app.js")
+                    .body(Bytes::new())
+                    .expect("test request should be valid"),
+                HandlerConfig::default(),
+            )
+            .with_preset(
+                plain_response(
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    "method not allowed",
+                ),
+                "static",
+            ),
+        )
+        .await;
+
+        assert_eq!(head.0.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(
+            header_of(&head, "content-length"),
+            header_of(&post, "content-length")
+        );
+        assert!(matches!(head.0.body(), Body::Sync(bytes) if bytes.is_empty()));
     }
 
     #[tokio::test(flavor = "current_thread")]

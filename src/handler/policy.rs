@@ -172,7 +172,15 @@ pub(crate) fn validate_content_length(
 }
 
 pub(super) fn policy_response(error: &RequestPolicyError) -> Response {
-    plain_response(error.status(), error.to_string())
+    let message = match error {
+        RequestPolicyError::BodyTooLarge { .. } => "request body too large",
+        RequestPolicyError::BodyReadTimeout { .. } => "request body timed out",
+        RequestPolicyError::InvalidContentLength
+        | RequestPolicyError::ConflictingContentLength => {
+            "invalid Content-Length"
+        }
+    };
+    plain_response(error.status(), message)
 }
 
 /// Builds one of the crate's own error responses.
@@ -214,6 +222,7 @@ mod tests {
     use http::{HeaderMap, StatusCode, header::CONTENT_LENGTH};
 
     use super::*;
+    use crate::response::Body;
 
     #[test]
     fn the_body_read_budget_is_off_by_default() {
@@ -241,9 +250,34 @@ mod tests {
             nanoseconds: 30_000_000,
         };
         assert_eq!(error.status(), StatusCode::REQUEST_TIMEOUT);
-        // The message must name the budget, since an operator reading a 408
-        // needs to know which limit produced it.
+        // Display keeps the budget for operators; the HTTP body does not.
         assert!(error.to_string().contains("30000000"));
+        assert_eq!(policy_body(&error), "request body timed out");
+    }
+
+    #[test]
+    fn policy_response_bodies_do_not_echo_limits() {
+        assert_eq!(
+            policy_body(&RequestPolicyError::BodyTooLarge { limit: 16 }),
+            "request body too large"
+        );
+        assert_eq!(
+            policy_body(&RequestPolicyError::InvalidContentLength),
+            "invalid Content-Length"
+        );
+        assert_eq!(
+            policy_body(&RequestPolicyError::ConflictingContentLength),
+            "invalid Content-Length"
+        );
+    }
+
+    fn policy_body(error: &RequestPolicyError) -> String {
+        match policy_response(error).0.into_body() {
+            Body::Sync(bytes) => {
+                String::from_utf8(bytes.to_vec()).expect("ascii policy body")
+            }
+            Body::Async(_) => String::new(),
+        }
     }
 
     #[test]
