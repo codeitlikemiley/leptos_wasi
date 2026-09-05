@@ -186,9 +186,9 @@ impl<P> WaitQueue<P> {
     }
 
     fn take_pending(&self) -> Vec<TableEntry<P>> {
-        let drained = self.entries.lock().drain(..).collect::<Vec<_>>();
-        drained
-            .into_iter()
+        self.entries
+            .lock()
+            .drain(..)
             .filter(|entry| entry.registration.is_pending())
             .collect()
     }
@@ -197,11 +197,7 @@ impl<P> WaitQueue<P> {
         &self,
         entries: impl IntoIterator<Item = TableEntry<P>>,
     ) {
-        let pending = entries
-            .into_iter()
-            .filter(|entry| entry.registration.is_pending())
-            .collect::<VecDeque<_>>();
-        self.entries.lock().extend(pending);
+        self.entries.lock().extend(entries);
     }
 
     fn len(&self) -> usize {
@@ -210,6 +206,38 @@ impl<P> WaitQueue<P> {
 }
 
 static POLLABLE_QUEUE: OnceLock<Arc<WaitQueue<Pollable>>> = OnceLock::new();
+
+thread_local! {
+    static CURRENT_QUEUE: RefCell<Option<Arc<WaitQueue<Pollable>>>> = const {
+        RefCell::new(None)
+    };
+}
+
+fn pollable_queue() -> Option<Arc<WaitQueue<Pollable>>> {
+    CURRENT_QUEUE
+        .with(|slot| slot.borrow().clone())
+        .or_else(|| POLLABLE_QUEUE.get().cloned())
+}
+
+struct CurrentQueueGuard {
+    previous: Option<Arc<WaitQueue<Pollable>>>,
+}
+
+impl CurrentQueueGuard {
+    fn install(queue: &Arc<WaitQueue<Pollable>>) -> Self {
+        let previous =
+            CURRENT_QUEUE.with(|slot| slot.replace(Some(Arc::clone(queue))));
+        Self { previous }
+    }
+}
+
+impl Drop for CurrentQueueGuard {
+    fn drop(&mut self) {
+        CURRENT_QUEUE.with(|slot| {
+            *slot.borrow_mut() = self.previous.take();
+        });
+    }
+}
 
 fn initialize_wait_queue(
     registry: &OnceLock<Arc<WaitQueue<Pollable>>>,
@@ -259,6 +287,11 @@ impl WaitPoll {
     pub fn new(pollable: Pollable) -> Self {
         Self(WaitPollInner::Unregistered(pollable))
     }
+
+    #[cfg(test)]
+    fn registered_for_test(registration: Arc<WaitRegistration>) -> Self {
+        Self(WaitPollInner::Registered(registration))
+    }
 }
 
 impl Future for WaitPoll {
@@ -276,7 +309,7 @@ impl Future for WaitPoll {
 
         match current {
             WaitPollInner::Unregistered(pollable) => {
-                let Some(queue) = POLLABLE_QUEUE.get() else {
+                let Some(queue) = pollable_queue() else {
                     let error = ExecutorError::Preview2NotInitialized;
                     this.0 = WaitPollInner::Failed(error);
                     return Poll::Ready(Err(error));
@@ -313,19 +346,27 @@ impl Drop for WaitPoll {
         };
 
         registration.cancel();
-        if let Some(queue) = POLLABLE_QUEUE.get() {
+        if let Some(queue) = pollable_queue() {
             queue.cancel(registration.id());
         }
     }
 }
 
-/// Controls how eagerly [`crate::wasip2::Executor`] checks WASI pollables.
+/// Controls how [`crate::wasip2::Executor`] interleaves guest tasks and host
+/// pollables.
+///
+/// [`Mode::Stalled`] is a scheduling policy. It is unrelated to
+/// [`ExecutorError::Stalled`], which means the root future is pending and
+/// nothing remains that could wake it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Mode {
-    /// Run one guest task before each host poll, favoring I/O responsiveness.
+    /// Run one guest task, then a non-blocking `Pollable::ready` sweep.
+    ///
+    /// Blocking host `poll` runs only when the pool has no runnable work.
     Preemptive,
 
-    /// Run all immediately available guest work before blocking on the host.
+    /// Drain every immediately runnable guest task, then block on host
+    /// pollables.
     Stalled,
 }
 
@@ -352,12 +393,14 @@ struct ExecutorInner {
     pool: RefCell<LocalPool>,
     spawner: LocalSpawner,
     queue: Arc<WaitQueue<Pollable>>,
+    poller: Box<dyn Poller<Pollable>>,
     mode: Mode,
     spawn_failed: Cell<bool>,
 }
 
 trait Poller<P> {
     fn poll(&self, pollables: &[&P]) -> Vec<u32>;
+    fn ready(&self, pollable: &P) -> bool;
 }
 
 struct HostPoller;
@@ -366,13 +409,30 @@ impl Poller<Pollable> for HostPoller {
     fn poll(&self, pollables: &[&Pollable]) -> Vec<u32> {
         poll(pollables)
     }
+
+    fn ready(&self, pollable: &Pollable) -> bool {
+        pollable.ready()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HostWait {
+    Sweep,
+    Block,
+}
+
+const fn host_wait(mode: Mode, guest_progress: bool) -> HostWait {
+    match mode {
+        Mode::Preemptive if guest_progress => HostWait::Sweep,
+        Mode::Preemptive | Mode::Stalled => HostWait::Block,
+    }
 }
 
 /// Polls every pending registration once and wakes the ready tasks.
 ///
 /// Returns `true` when at least one registration was polled, which the
 /// executor reads as "the host may still make progress".
-fn dispatch_ready<P>(queue: &WaitQueue<P>, poller: &impl Poller<P>) -> bool {
+fn dispatch_ready<P>(queue: &WaitQueue<P>, poller: &dyn Poller<P>) -> bool {
     let entries = queue.take_pending();
     if entries.is_empty() {
         return false;
@@ -400,7 +460,7 @@ fn dispatch_ready<P>(queue: &WaitQueue<P>, poller: &impl Poller<P>) -> bool {
             if let Some(waker) = entry.registration.mark_ready() {
                 task_wakers.push(waker);
             }
-        } else if entry.registration.is_pending() {
+        } else {
             pending.push(entry);
         }
     }
@@ -414,6 +474,39 @@ fn dispatch_ready<P>(queue: &WaitQueue<P>, poller: &impl Poller<P>) -> bool {
     }
 
     true
+}
+
+/// Non-blocking `ready()` probe of every leftover registration.
+///
+/// Used after a Preemptive guest step that still had runnable work, so the
+/// executor does not enter a blocking host `poll` while the pool can run.
+fn sweep_ready<P>(queue: &WaitQueue<P>, poller: &dyn Poller<P>) -> bool {
+    let entries = queue.take_pending();
+    if entries.is_empty() {
+        return false;
+    }
+
+    let mut pending = Vec::new();
+    let mut task_wakers = Vec::new();
+    let mut progressed = false;
+    for entry in entries {
+        if poller.ready(&entry.pollable) {
+            progressed = true;
+            if let Some(waker) = entry.registration.mark_ready() {
+                task_wakers.push(waker);
+            }
+        } else {
+            pending.push(entry);
+        }
+    }
+
+    queue.requeue_pending(pending);
+
+    for waker in task_wakers {
+        waker.wake();
+    }
+
+    progressed
 }
 
 impl Executor {
@@ -450,18 +543,31 @@ impl Executor {
     }
 
     fn with_queue(mode: Mode, queue: Arc<WaitQueue<Pollable>>) -> Self {
+        Self::with_queue_and_poller(mode, queue, Box::new(HostPoller))
+    }
+
+    fn with_queue_and_poller(
+        mode: Mode,
+        queue: Arc<WaitQueue<Pollable>>,
+        poller: Box<dyn Poller<Pollable>>,
+    ) -> Self {
         let pool = LocalPool::new();
         let spawner = pool.spawner();
         Self(Rc::new(ExecutorInner {
             pool: RefCell::new(pool),
             spawner,
             queue,
+            poller,
             mode,
             spawn_failed: Cell::new(false),
         }))
     }
 
     /// Drives `future` to completion on the current thread.
+    ///
+    /// When the root future completes, leftover pollable registrations are
+    /// probed once with a non-blocking `ready()` check and otherwise
+    /// abandoned. They are not carried into the next `run_until` call.
     ///
     /// # Errors
     ///
@@ -501,24 +607,39 @@ impl Executor {
         &self,
         receiver: &mut futures::channel::oneshot::Receiver<T>,
     ) -> Result<T, ExecutorError> {
+        let _queue = CurrentQueueGuard::install(&self.0.queue);
         loop {
+            self.consume_spawn_failed()?;
             if let Some(output) = receiver
                 .try_recv()
                 .map_err(|_| ExecutorError::RunUntilCanceled)?
             {
+                self.abandon_leftover_pollables();
                 return Ok(output);
             }
 
-            let can_make_progress = self.poll_once()?;
+            let guest_progress = self.run_guest()?;
+            self.consume_spawn_failed()?;
 
             if let Some(output) = receiver
                 .try_recv()
                 .map_err(|_| ExecutorError::RunUntilCanceled)?
             {
+                self.abandon_leftover_pollables();
                 return Ok(output);
             }
 
-            if !can_make_progress {
+            let host_progress = self.poll_host(guest_progress);
+
+            if let Some(output) = receiver
+                .try_recv()
+                .map_err(|_| ExecutorError::RunUntilCanceled)?
+            {
+                self.abandon_leftover_pollables();
+                return Ok(output);
+            }
+
+            if !guest_progress && !host_progress {
                 return Err(ExecutorError::Stalled);
             }
         }
@@ -530,11 +651,15 @@ impl Executor {
         }
     }
 
-    fn poll_once(&self) -> Result<bool, ExecutorError> {
+    fn consume_spawn_failed(&self) -> Result<(), ExecutorError> {
         if self.0.spawn_failed.replace(false) {
-            return Err(ExecutorError::TaskSpawnFailed);
+            Err(ExecutorError::TaskSpawnFailed)
+        } else {
+            Ok(())
         }
+    }
 
+    fn run_guest(&self) -> Result<bool, ExecutorError> {
         let mut pool = self
             .0
             .pool
@@ -548,17 +673,36 @@ impl Executor {
             }
         };
         drop(pool);
+        Ok(guest_progress)
+    }
 
-        if self.0.spawn_failed.replace(false) {
-            return Err(ExecutorError::TaskSpawnFailed);
+    fn poll_host(&self, guest_progress: bool) -> bool {
+        match host_wait(self.0.mode, guest_progress) {
+            HostWait::Sweep => sweep_ready(&self.0.queue, &*self.0.poller),
+            HostWait::Block => dispatch_ready(&self.0.queue, &*self.0.poller),
         }
+    }
 
-        let pollable_progress = self.poll_registered(&HostPoller);
+    fn poll_once(&self) -> Result<bool, ExecutorError> {
+        let _queue = CurrentQueueGuard::install(&self.0.queue);
+        let guest_progress = self.run_guest()?;
+        let pollable_progress = self.poll_host(guest_progress);
         Ok(guest_progress || pollable_progress)
     }
 
-    fn poll_registered(&self, poller: &impl Poller<Pollable>) -> bool {
-        dispatch_ready(&self.0.queue, poller)
+    fn abandon_leftover_pollables(&self) {
+        let entries = self.0.queue.take_pending();
+        let mut task_wakers = Vec::new();
+        for entry in entries {
+            if self.0.poller.ready(&entry.pollable)
+                && let Some(waker) = entry.registration.mark_ready()
+            {
+                task_wakers.push(waker);
+            }
+        }
+        for waker in task_wakers {
+            waker.wake();
+        }
     }
 }
 
@@ -656,9 +800,10 @@ impl CustomExecutor for Executor {
 )]
 #[cfg(test)]
 mod tests {
-    use std::task::{Wake, Waker};
+    use std::task::{Context, Poll, Wake, Waker};
     use std::{
         cell::Cell,
+        pin::Pin,
         rc::Rc,
         sync::{
             Arc, OnceLock,
@@ -838,11 +983,42 @@ mod tests {
         );
     }
 
-    struct ScriptedPoller(Vec<u32>);
+    struct ScriptedPoller {
+        poll_indices: Vec<u32>,
+        ready: std::collections::HashSet<&'static str>,
+        poll_calls: Cell<usize>,
+        ready_calls: Cell<usize>,
+    }
 
-    impl<P> Poller<P> for ScriptedPoller {
-        fn poll(&self, _: &[&P]) -> Vec<u32> {
-            self.0.clone()
+    impl ScriptedPoller {
+        fn blocking(indices: Vec<u32>) -> Self {
+            Self {
+                poll_indices: indices,
+                ready: std::collections::HashSet::new(),
+                poll_calls: Cell::new(0),
+                ready_calls: Cell::new(0),
+            }
+        }
+
+        fn sweep(ready: impl IntoIterator<Item = &'static str>) -> Self {
+            Self {
+                poll_indices: Vec::new(),
+                ready: ready.into_iter().collect(),
+                poll_calls: Cell::new(0),
+                ready_calls: Cell::new(0),
+            }
+        }
+    }
+
+    impl Poller<&'static str> for ScriptedPoller {
+        fn poll(&self, _: &[&&'static str]) -> Vec<u32> {
+            self.poll_calls.set(self.poll_calls.get() + 1);
+            self.poll_indices.clone()
+        }
+
+        fn ready(&self, pollable: &&'static str) -> bool {
+            self.ready_calls.set(self.ready_calls.get() + 1);
+            self.ready.contains(pollable)
         }
     }
 
@@ -858,7 +1034,8 @@ mod tests {
             .register("second", &waker)
             .expect("registration should succeed");
 
-        let progressed = dispatch_ready(&queue, &ScriptedPoller(vec![0]));
+        let progressed =
+            dispatch_ready(&queue, &ScriptedPoller::blocking(vec![0]));
 
         assert!(progressed);
         assert_eq!(first.status(), RegistrationStatus::Ready);
@@ -874,8 +1051,10 @@ mod tests {
             .register("only", &noop_waker())
             .expect("registration should succeed");
 
-        let progressed =
-            dispatch_ready(&queue, &ScriptedPoller(vec![7, u32::MAX]));
+        let progressed = dispatch_ready(
+            &queue,
+            &ScriptedPoller::blocking(vec![7, u32::MAX]),
+        );
 
         assert!(progressed);
         assert_eq!(registration.status(), RegistrationStatus::Pending);
@@ -886,7 +1065,7 @@ mod tests {
     fn an_empty_queue_reports_no_host_progress() {
         let queue = WaitQueue::<&'static str>::default();
 
-        assert!(!dispatch_ready(&queue, &ScriptedPoller(vec![0])));
+        assert!(!dispatch_ready(&queue, &ScriptedPoller::blocking(vec![0])));
     }
 
     #[test]
@@ -899,7 +1078,8 @@ mod tests {
             .expect("registration should succeed");
         registration.cancel();
 
-        let progressed = dispatch_ready(&queue, &ScriptedPoller(vec![0]));
+        let progressed =
+            dispatch_ready(&queue, &ScriptedPoller::blocking(vec![0]));
 
         assert!(!progressed);
         assert_eq!(registration.status(), RegistrationStatus::Canceled);
@@ -952,6 +1132,126 @@ mod tests {
             .expect("draining the pool should not fail");
 
         assert_eq!((progressed, completed.get()), (false, 3));
+    }
+
+    #[test]
+    fn preemptive_mode_sweeps_instead_of_blocking_while_guest_work_runs() {
+        let queue = WaitQueue::<&'static str>::default();
+        queue
+            .register("io", &noop_waker())
+            .expect("registration should succeed");
+        let poller = ScriptedPoller::sweep(std::iter::empty());
+        let guest_progress = true;
+
+        let host_progress = match host_wait(Mode::Preemptive, guest_progress) {
+            HostWait::Sweep => sweep_ready(&queue, &poller),
+            HostWait::Block => dispatch_ready(&queue, &poller),
+        };
+
+        assert_eq!(
+            (
+                host_progress,
+                poller.poll_calls.get(),
+                poller.ready_calls.get(),
+                queue.len()
+            ),
+            (false, 0, 1, 1)
+        );
+    }
+
+    #[test]
+    fn preemptive_mode_blocks_on_the_host_when_the_pool_is_idle() {
+        let queue = WaitQueue::<&'static str>::default();
+        queue
+            .register("io", &noop_waker())
+            .expect("registration should succeed");
+        let poller = ScriptedPoller::blocking(vec![0]);
+
+        let host_progress = match host_wait(Mode::Preemptive, false) {
+            HostWait::Sweep => sweep_ready(&queue, &poller),
+            HostWait::Block => dispatch_ready(&queue, &poller),
+        };
+
+        assert_eq!(
+            (
+                host_progress,
+                poller.poll_calls.get(),
+                poller.ready_calls.get()
+            ),
+            (true, 1, 0)
+        );
+    }
+
+    #[test]
+    fn sweep_ready_wakes_ready_pollables_without_a_blocking_poll() {
+        let queue = WaitQueue::<&'static str>::default();
+        let counter = Arc::new(CountingWake(AtomicUsize::new(0)));
+        let waker = Waker::from(counter.clone());
+        let first = queue
+            .register("first", &waker)
+            .expect("registration should succeed");
+        let second = queue
+            .register("second", &waker)
+            .expect("registration should succeed");
+        let poller = ScriptedPoller::sweep(["first"]);
+
+        let progressed = sweep_ready(&queue, &poller);
+
+        assert!(progressed);
+        assert_eq!(first.status(), RegistrationStatus::Ready);
+        assert_eq!(second.status(), RegistrationStatus::Pending);
+        assert_eq!(counter.0.load(Ordering::Relaxed), 1);
+        assert_eq!(poller.poll_calls.get(), 0);
+        assert_eq!(queue.len(), 1);
+    }
+
+    #[test]
+    fn wait_poll_register_pending_ready_and_drop_cancel() {
+        let registration =
+            Arc::new(WaitRegistration::new(RegistrationId(1), &noop_waker()));
+        let mut wait = WaitPoll::registered_for_test(Arc::clone(&registration));
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        assert!(matches!(Pin::new(&mut wait).poll(&mut cx), Poll::Pending));
+        registration
+            .mark_ready()
+            .expect("pending registration should become ready");
+        assert!(matches!(
+            Pin::new(&mut wait).poll(&mut cx),
+            Poll::Ready(Ok(()))
+        ));
+
+        let registration =
+            Arc::new(WaitRegistration::new(RegistrationId(2), &noop_waker()));
+        drop(WaitPoll::registered_for_test(Arc::clone(&registration)));
+        assert_eq!(registration.status(), RegistrationStatus::Canceled);
+    }
+
+    #[test]
+    fn wait_poll_without_a_queue_is_preview2_not_initialized() {
+        assert_eq!(
+            Option::<Arc<WaitQueue<&'static str>>>::None
+                .ok_or(ExecutorError::Preview2NotInitialized)
+                .err(),
+            Some(ExecutorError::Preview2NotInitialized)
+        );
+    }
+
+    #[test]
+    fn poll_local_does_not_consume_spawn_failed() {
+        let executor =
+            Executor::with_queue(Mode::Stalled, Arc::new(WaitQueue::default()));
+        executor.0.spawn_failed.set(true);
+        executor.poll_local();
+        assert!(
+            executor.0.spawn_failed.get(),
+            "poll_local must peek, not clear, spawn_failed"
+        );
+        let error = executor
+            .run_until(async { 1 })
+            .expect_err("run_until should observe the preserved flag");
+        assert_eq!(error, ExecutorError::TaskSpawnFailed);
     }
 
     #[test]

@@ -46,7 +46,8 @@ pub enum ExecutorError {
     #[error("the WASI Preview 2 executor cannot be polled recursively")]
     ReentrantPoll,
 
-    /// The root future is pending but no runnable task or live pollable can wake it.
+    /// The root future is pending and no runnable task or live pollable can
+    /// wake it. Unrelated to the Preview 2 scheduling mode of the same name.
     #[error("the WASI Preview 2 executor stalled with no live pollables")]
     Stalled,
 
