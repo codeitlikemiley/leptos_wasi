@@ -254,8 +254,8 @@ pub mod p2 {
         BodyStreamUnavailable,
         /// Header collection was unavailable while building the request.
         ///
-        /// Retained for patch SemVer against 0.4.1; current construction maps
-        /// header failures through [`Self::Http`] instead.
+        /// Retained for patch compatibility against 0.4.1; current construction
+        /// maps header failures through [`Self::Http`] instead.
         #[error("request headers are unavailable")]
         InvalidHeaders,
         /// Request policy validation failed.
