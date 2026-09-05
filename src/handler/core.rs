@@ -441,7 +441,7 @@ mod tests {
         // reintroduced on the assumption that it pays for itself.
         let _guard = ROUTE_GENERATIONS_LOCK
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         ROUTE_GENERATIONS.store(0, Ordering::Relaxed);
         for _ in 0..2 {
             let core = HandlerCore::new(
@@ -468,7 +468,7 @@ mod tests {
         // request because each one gets a fresh component instance.
         let _guard = ROUTE_GENERATIONS_LOCK
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         ROUTE_GENERATIONS.store(0, Ordering::Relaxed);
         let core = HandlerCore::new(
             Request::new(Bytes::new()),
