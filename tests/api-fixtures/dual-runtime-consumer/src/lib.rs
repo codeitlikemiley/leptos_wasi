@@ -4,7 +4,7 @@ use leptos::prelude::*;
 use server_fn::codec::GetUrl;
 
 use leptos_wasi::{
-    ExecutorError, HandlerConfig, RegistrationError,
+    ExecutorError, HandlerConfig, RegistrationError, RouteTable,
     wasip2::{
         Handler as Wasip2Handler, HandlerError as Wasip2HandlerError,
         prelude::{IncomingRequest as Wasip2Request, ResponseOutparam},
@@ -66,6 +66,7 @@ pub async fn probe() -> Result<String, ServerFnError> {
 pub fn register_everything_wasip2(
     handler: Wasip2Handler,
 ) -> Result<Wasip2Handler, RegistrationError> {
+    let table = RouteTable::discover(app, None, || {})?;
     handler
         .with_server_fn::<Probe>()
         .static_files_handler("/pkg", |_path| None)?
@@ -77,13 +78,15 @@ pub fn register_everything_wasip2(
             None,
             || {},
         )?
-        .generate_routes_with_exclusions_and_context(app, None, || {})
+        .generate_routes_with_exclusions_and_context(app, None, || {})?
+        .generate_routes_from(&table)
 }
 
 /// The Preview 3 half of [`register_everything_wasip2`].
 pub fn register_everything_wasip3(
     handler: Wasip3Handler,
 ) -> Result<Wasip3Handler, RegistrationError> {
+    let table = RouteTable::discover(app, None, || {})?;
     handler
         .with_server_fn::<Probe>()
         .static_files_handler("/pkg", |_path| None)?
@@ -95,5 +98,6 @@ pub fn register_everything_wasip3(
             None,
             || {},
         )?
-        .generate_routes_with_exclusions_and_context(app, None, || {})
+        .generate_routes_with_exclusions_and_context(app, None, || {})?
+        .generate_routes_from(&table)
 }

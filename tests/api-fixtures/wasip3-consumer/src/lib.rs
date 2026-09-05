@@ -4,7 +4,7 @@ use leptos::prelude::*;
 use server_fn::codec::GetUrl;
 
 use leptos_wasi::{
-    ExecutorError,
+    ExecutorError, RouteTable,
     wasip3::prelude::{
         Handler, HandlerConfig, HandlerError, IncomingRequest,
         RegistrationError, init_wasip3_spawner,
@@ -56,6 +56,7 @@ pub async fn probe() -> Result<String, ServerFnError> {
 pub fn register_everything(
     handler: Handler,
 ) -> Result<Handler, RegistrationError> {
+    let table = RouteTable::discover(app, None, || {})?;
     handler
         .with_server_fn::<Probe>()
         .static_files_handler("/pkg", |_path| None)?
@@ -67,5 +68,6 @@ pub fn register_everything(
             None,
             || {},
         )?
-        .generate_routes_with_exclusions_and_context(app, None, || {})
+        .generate_routes_with_exclusions_and_context(app, None, || {})?
+        .generate_routes_from(&table)
 }

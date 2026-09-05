@@ -15,7 +15,7 @@ use leptos_meta::ServerMetaContext;
 use leptos_router::{
     ExpandOptionals, PathSegment, RouteList, RouteListing, SsrMode,
 };
-use routefinder::{RouteSpec, Segment};
+use routefinder::{RouteSpec, Router, Segment};
 
 use super::http_util::provide_standard_contexts;
 use super::policy::RegistrationError;
@@ -83,6 +83,73 @@ where
     Ok(validated)
 }
 
+pub(super) fn router_from_listings(
+    routes: Vec<(RouteSpec, RouteListing)>,
+) -> Router<RouteListing> {
+    let mut table = Router::new();
+    for (route_spec, listing) in routes {
+        match table.add(route_spec, listing) {
+            Ok(()) => {}
+            Err(infallible) => match infallible {},
+        }
+    }
+    table
+}
+
+/// A discovered, validated SSR route table that can be reused across requests.
+///
+/// Discovery still runs per request when the app calls `generate_routes`.
+/// Pass a `RouteTable` into `generate_routes_from` when the host reuses a
+/// component instance. The table holds an `Arc` of the router so clones are
+/// cheap and `Handler` stays `Send`.
+///
+/// ```rust,ignore
+/// thread_local! {
+///     static ROUTES: RouteTable =
+///         RouteTable::discover(App, None, || {}).expect("route table");
+/// }
+/// // per request:
+/// handler.generate_routes_from(&ROUTES.with(Clone::clone))
+/// ```
+#[derive(Clone)]
+pub struct RouteTable {
+    router: Arc<Router<RouteListing>>,
+}
+
+impl RouteTable {
+    /// Discovers and validates the application's routes once.
+    ///
+    /// Same path as [`validate_route_table`]: duplicate patterns and
+    /// unsupported static SSR routes are rejected here.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError::DuplicateRoute`] for colliding patterns,
+    /// [`RegistrationError::UnsupportedStaticSsr`] for static-mode routes,
+    /// and [`RegistrationError::InvalidRoute`] for unparseable patterns.
+    pub fn discover<IV, AppFn, ContextFn>(
+        app: AppFn,
+        excluded_routes: Option<&[String]>,
+        discovery_context: ContextFn,
+    ) -> Result<Self, RegistrationError>
+    where
+        IV: IntoView + 'static,
+        AppFn: Fn() -> IV + 'static + Send + Clone,
+        ContextFn: Fn() + 'static + Send + Clone,
+    {
+        let routes =
+            validated_route_table(&app, excluded_routes, &discovery_context)?;
+        Ok(Self {
+            router: Arc::new(router_from_listings(routes)),
+        })
+    }
+
+    /// Cheap clone of the shared router for one request's handler.
+    pub(super) fn router(&self) -> Arc<Router<RouteListing>> {
+        Arc::clone(&self.router)
+    }
+}
+
 /// Checks an application's route table without serving a request.
 ///
 /// Route discovery renders the whole application, so the request path runs it
@@ -136,14 +203,12 @@ where
     AppFn: Fn() -> IV + 'static + Send + Clone,
     ContextFn: Fn() + 'static + Send + Clone,
 {
-    // Route discovery is deliberately uncached. Both supported hosts
-    // (`wasmtime serve` and Spin) instantiate a fresh component per request,
-    // so any in-guest cache starts empty on every lookup and is discarded with
-    // the instance. The previous thread-local cache never returned a hit in
-    // production; it only added a map allocation and a full deep clone of the
-    // route list to each request. Measured on `/api/get_test`, discovery plus
-    // registration accounts for roughly 183 us of a 1054 us request, none of
-    // which the cache was removing.
+    // Route discovery is uncached unless the app passes a [`RouteTable`].
+    // Both supported hosts can reuse a component instance (`wasmtime serve
+    // --max-instance-reuse-count`, Spin), so discovering once per instance and
+    // calling `generate_routes_from` per request avoids repeating the 183 us
+    // discovery+registration cost. Existing `generate_routes*` still discover
+    // per request so a TypeId-keyed cache cannot come back by accident.
     let generated: DiscoveredRoutes = {
         let owner = Owner::new_root(Some(Arc::new(SsrSharedContext::new())));
         let routes = owner

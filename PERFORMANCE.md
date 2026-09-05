@@ -327,6 +327,32 @@ general proof that every application is safe to reuse: an application holding
 its own request-scoped state in a static would be, and this crate cannot check
 that for it.
 
+### Reusing the route table across those 128 requests
+
+The 14.44% above is instantiation reuse: the host keeps the component. It does
+not skip route discovery. `generate_routes` still renders the application on
+every SSR request, so the 183 us registration stage is paid again even when
+the instance is reused.
+
+`RouteTable::discover` is that discovery, once per instance.
+`generate_routes_from` installs the table with an `Arc` clone. Host-native
+divan (`cargo make bench`, `benches/route_discovery.rs`) on this machine,
+medians:
+
+| Step | 3 routes | 8 routes | 32 routes |
+|---|---:|---:|---:|
+| `validate_route_table` | 7.0 us | 11.8 us | 35.6 us |
+| `RouteTable::discover` | 7.3 us | 12.5 us | 37.4 us |
+| `RouteTable` clone (`generate_routes_from`) | 41 ns | 41 ns | 41 ns |
+
+That synthetic app is not the test-app: in-guest discovery plus registration
+on `/api/get_test` remains **183 us**. `RouteTable::discover` matches
+`validate_route_table` (the extra `routefinder` insert is in the noise). The
+clone sits on the 41 ns timer floor - the per-request install cost under
+reuse. Under `--max-instance-reuse-count 128`, an SSR-only workload
+amortizes the 183 us across up to 128 requests (~1.4 us/request). Claimed
+paths already skip discovery without a table.
+
 ## Reproducing release evidence
 
 Pull-request CI runs paired ten-minute, 100-concurrency baseline and candidate

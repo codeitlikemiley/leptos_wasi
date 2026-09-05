@@ -19,7 +19,7 @@ pub mod utils;
 pub use executor::ExecutorError;
 pub use handler::{
     DEFAULT_MAX_REQUEST_BODY_SIZE, HandlerConfig, RegistrationError,
-    RequestPolicyError, validate_route_table,
+    RequestPolicyError, RouteTable, validate_route_table,
 };
 
 /// Implementation details required by generated public bounds.
@@ -72,6 +72,7 @@ pub mod __private {
 pub mod prelude {
     pub use crate::{
         ExecutorError, HandlerConfig, RegistrationError, RequestPolicyError,
+        RouteTable,
         response::{Body, ResponseOptions, ResponseParts},
         utils::redirect,
     };

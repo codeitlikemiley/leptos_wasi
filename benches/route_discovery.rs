@@ -28,7 +28,7 @@ use leptos_router::{
     components::{Route, Router, Routes},
     path,
 };
-use leptos_wasi::validate_route_table;
+use leptos_wasi::{RouteTable, validate_route_table};
 
 /// Renders `N` routes, including one parameterised and one optional-segment
 /// route so `expand_optionals` runs and one declared route becomes several.
@@ -109,6 +109,42 @@ fn discover(bencher: divan::Bencher, routes: usize) {
             _ => validate_route_table(app_32, None, || {}),
         };
         divan::black_box(result).expect("bench route table should be valid");
+    });
+}
+
+/// Same work as [`discover`], through the public [`RouteTable`] constructor.
+#[divan::bench(args = [3, 8, 32])]
+fn discover_table(bencher: divan::Bencher, routes: usize) {
+    bencher.bench(|| {
+        let result = match routes {
+            3 => RouteTable::discover(app_3, None, || {}),
+            8 => RouteTable::discover(app_8, None, || {}),
+            _ => RouteTable::discover(app_32, None, || {}),
+        };
+        divan::black_box(result).expect("bench route table should be valid");
+    });
+}
+
+/// Per-request install once the instance has already discovered.
+///
+/// `RouteTable` shares the router through `Arc`. The measured work is an `Arc` clone.
+#[divan::bench(args = [3, 8, 32])]
+fn install_from_table(bencher: divan::Bencher, routes: usize) {
+    bencher.bench(|| {
+        thread_local! {
+            static TABLE3: RouteTable =
+                RouteTable::discover(app_3, None, || {}).expect("valid");
+            static TABLE8: RouteTable =
+                RouteTable::discover(app_8, None, || {}).expect("valid");
+            static TABLE32: RouteTable =
+                RouteTable::discover(app_32, None, || {}).expect("valid");
+        }
+        let cloned = match routes {
+            3 => TABLE3.with(Clone::clone),
+            8 => TABLE8.with(Clone::clone),
+            _ => TABLE32.with(Clone::clone),
+        };
+        divan::black_box(cloned);
     });
 }
 

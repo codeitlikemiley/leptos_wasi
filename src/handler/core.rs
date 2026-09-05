@@ -7,6 +7,7 @@
 //! The fields are `pub(super)`, which is exactly the access sibling modules
 //! had when all of this lived in one file.
 
+use std::sync::Arc;
 #[cfg(feature = "tracing")]
 use std::time::Instant;
 
@@ -24,7 +25,7 @@ use server_fn::{
 };
 
 use super::policy::{HandlerConfig, RegistrationError, plain_response};
-use super::routes::validated_route_table;
+use super::routes::{RouteTable, router_from_listings, validated_route_table};
 use super::server_fns::{
     ReqBody, ResBody, ServerFnHandler, TypedServerFnService,
 };
@@ -41,7 +42,7 @@ pub(super) struct HandlerCore {
     pub(super) server_fn: Option<ServerFnHandler>,
     pub(super) preset_res: Option<Response>,
     pub(super) should_404: bool,
-    pub(super) ssr_router: Router<RouteListing>,
+    pub(super) ssr_router: Arc<Router<RouteListing>>,
     routes_registered: bool,
     config: HandlerConfig,
     #[cfg(feature = "tracing")]
@@ -59,7 +60,7 @@ impl HandlerCore {
             server_fn: None,
             preset_res: None,
             should_404: false,
-            ssr_router: Router::new(),
+            ssr_router: Arc::new(Router::new()),
             routes_registered: false,
             config,
             #[cfg(feature = "tracing")]
@@ -303,8 +304,8 @@ impl HandlerCore {
         // discovery renders the whole application to extract its `<Routes/>`,
         // so running it here only to drop every entry below is the single
         // largest avoidable cost on those paths - 183 us of a 1054 us request,
-        // measured on `/api/get_test`. Both hosts instantiate a fresh
-        // component per request, so this is paid on every one of them.
+        //         measured on `/api/get_test`. Discovery is per request unless the app
+        // passes a RouteTable into generate_routes_from.
         //
         // Skipping also skips the validation below, which is why it is gated
         // on `shortcut()` rather than applied unconditionally: an SSR request
@@ -316,14 +317,37 @@ impl HandlerCore {
             return Ok(self);
         }
 
-        for (route_spec, listing) in
-            validated_route_table(&app_fn, excluded_routes, &discovery_context)?
-        {
-            match self.ssr_router.add(route_spec, listing) {
-                Ok(()) => {}
-                Err(infallible) => match infallible {},
-            }
+        self.ssr_router =
+            Arc::new(router_from_listings(validated_route_table(
+                &app_fn,
+                excluded_routes,
+                &discovery_context,
+            )?));
+        self.routes_registered = true;
+        Ok(self)
+    }
+
+    /// Installs a previously discovered [`RouteTable`].
+    ///
+    /// Clone is the reuse: the table holds an `Arc` of the router.
+    /// Requests that never consult the SSR router still skip installing it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError::RoutesAlreadyGenerated`] if routes
+    /// were already generated on this handler.
+    pub(super) fn generate_routes_from(
+        mut self,
+        table: &RouteTable,
+    ) -> Result<Self, RegistrationError> {
+        if self.routes_registered {
+            return Err(RegistrationError::RoutesAlreadyGenerated);
         }
+        if self.shortcut() {
+            self.routes_registered = true;
+            return Ok(self);
+        }
+        self.ssr_router = table.router();
         self.routes_registered = true;
         Ok(self)
     }
@@ -331,10 +355,7 @@ impl HandlerCore {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        Mutex,
-        atomic::{AtomicUsize, Ordering},
-    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use leptos::prelude::view;
     use leptos_router::{
@@ -345,13 +366,11 @@ mod tests {
     use super::super::test_support::static_route_app;
     use super::*;
 
-    static ROUTE_GENERATIONS: AtomicUsize = AtomicUsize::new(0);
-    // Serializes the two tests that share `ROUTE_GENERATIONS` so parallel
-    // cargo test cannot observe another registration mid-assert.
-    static ROUTE_GENERATIONS_LOCK: Mutex<()> = Mutex::new(());
+    static DISCOVERY_GENERATIONS: AtomicUsize = AtomicUsize::new(0);
+    static FROM_GENERATIONS: AtomicUsize = AtomicUsize::new(0);
+    static CLAIMED_GENERATIONS: AtomicUsize = AtomicUsize::new(0);
 
-    fn counted_route_app() -> impl IntoView {
-        ROUTE_GENERATIONS.fetch_add(1, Ordering::Relaxed);
+    fn counted_routes() -> impl IntoView {
         view! {
             <Router>
                 <Routes fallback=|| view! { "not found" }>
@@ -359,6 +378,21 @@ mod tests {
                 </Routes>
             </Router>
         }
+    }
+
+    fn counted_route_app() -> impl IntoView {
+        DISCOVERY_GENERATIONS.fetch_add(1, Ordering::Relaxed);
+        counted_routes()
+    }
+
+    fn from_route_app() -> impl IntoView {
+        FROM_GENERATIONS.fetch_add(1, Ordering::Relaxed);
+        counted_routes()
+    }
+
+    fn claimed_route_app() -> impl IntoView {
+        CLAIMED_GENERATIONS.fetch_add(1, Ordering::Relaxed);
+        counted_routes()
     }
 
     fn repeated_route_app() -> impl IntoView {
@@ -431,16 +465,11 @@ mod tests {
 
     #[test]
     fn route_discovery_runs_once_per_registration() {
-        // Deliberately uncached. Both supported hosts instantiate a fresh
-        // component per request, so a cache keyed on the application type
-        // could only ever hit within a single request - and discovery runs
-        // once per request, so it never hit at all. Pinning the count at one
-        // generation per registration keeps a future cache from being
-        // reintroduced on the assumption that it pays for itself.
-        let _guard = ROUTE_GENERATIONS_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        ROUTE_GENERATIONS.store(0, Ordering::Relaxed);
+        // Discovery is per request unless the app passes a RouteTable.
+        // Pinning the count at one generation per registration keeps a
+        // TypeId-keyed cache from being reintroduced. `generate_routes_from`
+        // reuses a table without incrementing this counter.
+        DISCOVERY_GENERATIONS.store(0, Ordering::Relaxed);
         for _ in 0..2 {
             let core = HandlerCore::new(
                 Request::new(Bytes::new()),
@@ -455,7 +484,26 @@ mod tests {
             assert!(result.is_ok());
         }
 
-        assert_eq!(ROUTE_GENERATIONS.load(Ordering::Relaxed), 2);
+        assert_eq!(DISCOVERY_GENERATIONS.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn generate_routes_from_does_not_rediscover() {
+        FROM_GENERATIONS.store(0, Ordering::Relaxed);
+        let table = RouteTable::discover(from_route_app, None, || {})
+            .expect("route table should be valid");
+        assert_eq!(FROM_GENERATIONS.load(Ordering::Relaxed), 1);
+
+        for _ in 0..2 {
+            let core = HandlerCore::new(
+                Request::new(Bytes::new()),
+                HandlerConfig::default(),
+            );
+            let result = core.generate_routes_from(&table);
+            assert!(result.is_ok());
+        }
+
+        assert_eq!(FROM_GENERATIONS.load(Ordering::Relaxed), 1);
     }
 
     #[test]
@@ -463,11 +511,9 @@ mod tests {
         // The saving that motivates the shortcut: an already-selected response
         // resolves without the SSR router, and discovery renders the whole
         // application. Measured at 183 us of a 1054 us request, paid on every
-        // request because each one gets a fresh component instance.
-        let _guard = ROUTE_GENERATIONS_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        ROUTE_GENERATIONS.store(0, Ordering::Relaxed);
+        // request that uses generate_routes. Pass a RouteTable to discover
+        // once per instance instead.
+        CLAIMED_GENERATIONS.store(0, Ordering::Relaxed);
         let core = HandlerCore::new(
             Request::new(Bytes::new()),
             HandlerConfig::default(),
@@ -475,13 +521,13 @@ mod tests {
         .with_preset(plain_response(StatusCode::OK, "selected"), "test");
         let result = core
             .generate_routes_with_exclusions_and_discovery_context(
-                counted_route_app,
+                claimed_route_app,
                 None,
                 || {},
             );
 
         assert!(result.is_ok());
-        assert_eq!(ROUTE_GENERATIONS.load(Ordering::Relaxed), 0);
+        assert_eq!(CLAIMED_GENERATIONS.load(Ordering::Relaxed), 0);
     }
 
     #[test]
