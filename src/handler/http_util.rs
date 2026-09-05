@@ -28,7 +28,11 @@ pub(super) fn provide_standard_contexts(
     leptos::nonce::provide_nonce();
 }
 
-pub(super) fn accepts_html(headers: &HeaderMap) -> bool {
+/// Whether `Accept` includes HTML at a positive q-value.
+///
+/// Unlike axum's `contains("text/html")` check, this parses each media range
+/// and rejects `text/html;q=0`. A quality of zero means "not acceptable".
+pub(crate) fn accepts_html(headers: &HeaderMap) -> bool {
     headers
         .get_all(ACCEPT)
         .iter()

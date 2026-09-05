@@ -35,6 +35,20 @@ impl HandlerConfig {
     }
 
     /// Returns a copy that abandons a request body taking longer than
+    /// `timeout` to arrive in full.
+    ///
+    /// Saturates at `u64::MAX` nanoseconds. See
+    /// [`Self::with_request_body_timeout_ns`].
+    #[must_use]
+    pub fn with_request_body_timeout(
+        self,
+        timeout: std::time::Duration,
+    ) -> Self {
+        let nanoseconds = u64::try_from(timeout.as_nanos()).unwrap_or(u64::MAX);
+        self.with_request_body_timeout_ns(nanoseconds)
+    }
+
+    /// Returns a copy that abandons a request body taking longer than
     /// `nanoseconds` to arrive in full.
     ///
     /// This is off by default, because the host, not the guest, is the layer
@@ -242,6 +256,20 @@ mod tests {
             config.max_request_body_size(),
             DEFAULT_MAX_REQUEST_BODY_SIZE
         );
+    }
+
+    #[test]
+    fn a_duration_timeout_round_trips_to_nanoseconds() {
+        let config = HandlerConfig::default()
+            .with_request_body_timeout(std::time::Duration::from_millis(30));
+        assert_eq!(config.request_body_timeout_ns(), Some(30_000_000));
+    }
+
+    #[test]
+    fn a_duration_timeout_saturates_at_u64_max_nanoseconds() {
+        let config = HandlerConfig::default()
+            .with_request_body_timeout(std::time::Duration::MAX);
+        assert_eq!(config.request_body_timeout_ns(), Some(u64::MAX));
     }
 
     #[test]

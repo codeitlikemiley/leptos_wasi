@@ -15,7 +15,10 @@ use std::time::Instant;
 use bytes::Bytes;
 use http::{
     HeaderValue, Method, Request, StatusCode, Uri,
-    header::{ALLOW, CONTENT_LENGTH, CONTENT_TYPE},
+    header::{
+        ACCEPT_ENCODING, ALLOW, CONTENT_LENGTH, CONTENT_TYPE,
+        IF_MODIFIED_SINCE, IF_NONE_MATCH,
+    },
 };
 use leptos::IntoView;
 use leptos_router::RouteListing;
@@ -41,11 +44,65 @@ use crate::{
     response::{Body, Response},
 };
 
+/// How this request will be answered, once registration has claimed it.
+///
+/// Unclaimed requests fall through to the SSR router. The other variants are
+/// mutually exclusive: a server function, a ready-made response, or a known
+/// 404 never consults the route table.
+pub(super) enum Selection {
+    /// No handler has claimed the request yet.
+    Unclaimed,
+    /// Prefix matched but the asset callback returned `None`, or the path
+    /// failed normalization.
+    NotFound,
+    /// A complete response, plus the tracing route class that produced it.
+    Preset(Response, &'static str),
+    /// A matched typed server function.
+    ServerFn(ServerFnHandler),
+}
+
+/// A static-asset request after prefix matching and path normalization.
+///
+/// The crate has already rejected traversal, percent-encoded separators, and
+/// disallowed methods. Callbacks see the relative lookup key plus the
+/// conditional and encoding headers they need to implement 304 / compression.
+#[derive(Clone, Copy, Debug)]
+pub struct StaticRequest<'a> {
+    path: &'a str,
+    if_none_match: Option<&'a HeaderValue>,
+    if_modified_since: Option<&'a HeaderValue>,
+    accept_encoding: Option<&'a HeaderValue>,
+}
+
+impl<'a> StaticRequest<'a> {
+    /// Relative path remaining after the static prefix, `/`-separated.
+    #[must_use]
+    pub const fn path(&self) -> &'a str {
+        self.path
+    }
+
+    /// `If-None-Match`, if the client sent one.
+    #[must_use]
+    pub const fn if_none_match(&self) -> Option<&'a HeaderValue> {
+        self.if_none_match
+    }
+
+    /// `If-Modified-Since`, if the client sent one.
+    #[must_use]
+    pub const fn if_modified_since(&self) -> Option<&'a HeaderValue> {
+        self.if_modified_since
+    }
+
+    /// `Accept-Encoding`, if the client sent one.
+    #[must_use]
+    pub const fn accept_encoding(&self) -> Option<&'a HeaderValue> {
+        self.accept_encoding
+    }
+}
+
 pub(super) struct HandlerCore {
     pub(super) req: Request<Bytes>,
-    pub(super) server_fn: Option<ServerFnHandler>,
-    pub(super) preset_res: Option<Response>,
-    pub(super) should_404: bool,
+    pub(super) selection: Selection,
     pub(super) ssr_router: Arc<Router<RouteListing>>,
     routes_registered: bool,
     config: HandlerConfig,
@@ -53,17 +110,13 @@ pub(super) struct HandlerCore {
     pub(super) request_started: Instant,
     #[cfg(feature = "tracing")]
     pub(super) trace_path: Option<String>,
-    #[cfg(feature = "tracing")]
-    pub(super) trace_route_class: Option<&'static str>,
 }
 
 impl HandlerCore {
     pub(super) fn new(req: Request<Bytes>, config: HandlerConfig) -> Self {
         Self {
             req,
-            server_fn: None,
-            preset_res: None,
-            should_404: false,
+            selection: Selection::Unclaimed,
             ssr_router: Arc::new(Router::new()),
             routes_registered: false,
             config,
@@ -71,8 +124,6 @@ impl HandlerCore {
             request_started: Instant::now(),
             #[cfg(feature = "tracing")]
             trace_path: None,
-            #[cfg(feature = "tracing")]
-            trace_route_class: None,
         }
     }
 
@@ -87,13 +138,7 @@ impl HandlerCore {
         response: Response,
         route_class: &'static str,
     ) -> Self {
-        self.preset_res = Some(response);
-        #[cfg(feature = "tracing")]
-        {
-            self.trace_route_class = Some(route_class);
-        }
-        #[cfg(not(feature = "tracing"))]
-        let _ = route_class;
+        self.selection = Selection::Preset(response, route_class);
         self
     }
 
@@ -115,7 +160,7 @@ impl HandlerCore {
 
     #[inline]
     fn shortcut(&self) -> bool {
-        self.server_fn.is_some() || self.preset_res.is_some() || self.should_404
+        !matches!(self.selection, Selection::Unclaimed)
     }
 
     pub(super) fn with_server_fn<T>(mut self) -> Self
@@ -142,7 +187,7 @@ impl HandlerCore {
 
         if self.req.method() == method && self.req.uri().path() == T::PATH {
             let limit = self.config.max_request_body_size();
-            self.server_fn = Some(Box::new(move |request| {
+            self.selection = Selection::ServerFn(Box::new(move |request| {
                 Box::pin(async move {
                     let (parts, bytes) = request.into_parts();
                     if bytes.len() > limit {
@@ -170,9 +215,26 @@ impl HandlerCore {
     }
 
     pub(super) fn static_files_handler<T>(
-        mut self,
+        self,
         prefix: T,
         handler: impl Fn(String) -> Option<Body> + 'static + Send + Clone,
+    ) -> Result<Self, RegistrationError>
+    where
+        T: TryInto<Uri>,
+        <T as TryInto<Uri>>::Error: std::error::Error,
+    {
+        self.static_files_handler_with(prefix, move |request| {
+            handler(request.path().to_owned()).map(http::Response::new)
+        })
+    }
+
+    pub(super) fn static_files_handler_with<T>(
+        mut self,
+        prefix: T,
+        handler: impl Fn(StaticRequest<'_>) -> Option<http::Response<Body>>
+        + 'static
+        + Send
+        + Clone,
     ) -> Result<Self, RegistrationError>
     where
         T: TryInto<Uri>,
@@ -209,7 +271,6 @@ impl HandlerCore {
 
         #[cfg(feature = "tracing")]
         {
-            self.trace_route_class = Some("static");
             self.trace_path = Some(prefix_path.to_owned());
         }
 
@@ -222,7 +283,7 @@ impl HandlerCore {
                 .0
                 .headers_mut()
                 .insert(ALLOW, HeaderValue::from_static("GET, HEAD"));
-            self.preset_res = Some(response);
+            self.selection = Selection::Preset(response, "static");
             return Ok(self);
         }
 
@@ -234,7 +295,7 @@ impl HandlerCore {
         };
         let Ok(decoded) = crate::static_files::normalize_static_path(raw)
         else {
-            self.should_404 = true;
+            self.selection = Selection::NotFound;
             return Ok(self);
         };
 
@@ -250,26 +311,35 @@ impl HandlerCore {
         }
 
         let mime = content_type_for_static_path(&decoded);
-        match handler(decoded) {
-            None => self.should_404 = true,
-            Some(mut body) => {
-                let original_length = match &body {
+        let request = StaticRequest {
+            path: &decoded,
+            if_none_match: self.req.headers().get(IF_NONE_MATCH),
+            if_modified_since: self.req.headers().get(IF_MODIFIED_SINCE),
+            accept_encoding: self.req.headers().get(ACCEPT_ENCODING),
+        };
+        match handler(request) {
+            None => self.selection = Selection::NotFound,
+            Some(mut response) => {
+                let original_length = match response.body() {
                     Body::Sync(bytes) => Some(bytes.len()),
                     Body::Async(_) => None,
                 };
                 if self.req.method() == Method::HEAD {
-                    body = Body::Sync(Bytes::new());
+                    *response.body_mut() = Body::Sync(Bytes::new());
                 }
-                let mut response = http::Response::new(body);
-                response.headers_mut().insert(CONTENT_TYPE, mime);
+                if !response.headers().contains_key(CONTENT_TYPE) {
+                    response.headers_mut().insert(CONTENT_TYPE, mime);
+                }
                 // `nosniff` is applied centrally in `HandlerCore::render`,
                 // which every static response also funnels through.
-                if let Some(length) = original_length {
+                if !response.headers().contains_key(CONTENT_LENGTH)
+                    && let Some(length) = original_length
+                {
                     response
                         .headers_mut()
                         .insert(CONTENT_LENGTH, HeaderValue::from(length));
                 }
-                self.preset_res = Some(response.into());
+                self.selection = Selection::Preset(response.into(), "static");
             }
         }
         Ok(self)
@@ -467,13 +537,12 @@ mod tests {
                 Some(Body::Sync(Bytes::from_static(b"x")))
             })
             .expect("static registration should succeed");
-            let content_type = core
-                .preset_res
-                .expect("static asset should be selected")
-                .0
-                .headers()
-                .get(CONTENT_TYPE)
-                .cloned();
+            let content_type = match core.selection {
+                Selection::Preset(response, _) => {
+                    response.0.headers().get(CONTENT_TYPE).cloned()
+                }
+                _ => None,
+            };
             assert_eq!(
                 content_type.as_ref().and_then(|value| value.to_str().ok()),
                 Some(mime),
@@ -616,5 +685,51 @@ mod tests {
             result,
             Err(RegistrationError::RoutesAlreadyGenerated)
         ));
+    }
+
+    #[test]
+    fn static_files_handler_with_can_return_not_modified() {
+        let core = HandlerCore::new(
+            Request::builder()
+                .uri("/static/app.js")
+                .header(IF_NONE_MATCH, "\"abc\"")
+                .header(IF_MODIFIED_SINCE, "Wed, 21 Oct 2015 07:28:00 GMT")
+                .header(ACCEPT_ENCODING, "gzip")
+                .body(Bytes::new())
+                .expect("test request should be valid"),
+            HandlerConfig::default(),
+        )
+        .static_files_handler_with("/static", |request| {
+            assert_eq!(request.path(), "app.js");
+            assert_eq!(
+                request
+                    .if_none_match()
+                    .and_then(|value| value.to_str().ok()),
+                Some("\"abc\"")
+            );
+            assert!(request.if_modified_since().is_some());
+            assert_eq!(
+                request
+                    .accept_encoding()
+                    .and_then(|value| value.to_str().ok()),
+                Some("gzip")
+            );
+            Some(
+                http::Response::builder()
+                    .status(StatusCode::NOT_MODIFIED)
+                    .body(Body::Sync(Bytes::new()))
+                    .expect("empty 304 should be valid"),
+            )
+        })
+        .expect("static registration should succeed");
+
+        assert!(
+            matches!(
+                core.selection,
+                Selection::Preset(ref response, "static")
+                    if response.0.status() == StatusCode::NOT_MODIFIED
+            ),
+            "the 304 callback should select a preset response"
+        );
     }
 }

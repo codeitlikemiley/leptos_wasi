@@ -12,7 +12,9 @@ fn escaped_redirect_path(path: &str) -> impl std::fmt::Display + '_ {
 /// Writes a redirect through [`ResponseOptions`].
 ///
 /// Inspects the current Leptos context for `Parts` and `ResponseOptions`
-/// and either inserts `Location` or sets a 302 status. This path is merged
+/// and either inserts `Location` or sets a 302 status. HTML acceptance uses
+/// the crate's q-value parser (`text/html;q=0` is not HTML), unlike axum's
+/// `contains("text/html")` check. This path is merged
 /// into the response after the server-function `Location` sanitizer, so an
 /// absolute off-origin URL is sent as written. Applications that build a target
 /// from request data should validate it first.
@@ -57,11 +59,7 @@ pub fn redirect(path: &str) {
             }
         }
 
-        let accepts_html = req
-            .headers
-            .get(header::ACCEPT)
-            .and_then(|v| v.to_str().ok())
-            .is_some_and(|v| v.contains("text/html"));
+        let accepts_html = crate::handler::accepts_html(&req.headers);
         if accepts_html {
             // if the request accepts text/html, it's a plain form request and needs
             // to have the 302 code set
@@ -157,6 +155,22 @@ mod tests {
             parts
                 .headers()
                 .contains_key(server_fn::redirect::REDIRECT_HEADER)
+        );
+    }
+
+    #[test]
+    fn html_with_zero_quality_uses_the_client_redirect_protocol() {
+        let parts = redirect_with(Some("text/html;q=0"), "/target-page");
+
+        assert_eq!(parts.status(), None);
+        assert!(
+            parts
+                .headers()
+                .contains_key(server_fn::redirect::REDIRECT_HEADER)
+        );
+        assert_eq!(
+            parts.headers().get(header::LOCATION),
+            Some(&HeaderValue::from_static("/target-page"))
         );
     }
 

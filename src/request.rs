@@ -77,10 +77,8 @@ pub mod p2 {
         max_body_size: usize,
         timeout_ns: Option<u64>,
     ) -> Result<Bytes, RequestError> {
-        let declared = super::super::handler::validate_content_length(
-            headers,
-            max_body_size,
-        )?;
+        let declared =
+            crate::handler::validate_content_length(headers, max_body_size)?;
 
         if matches!(request.method(), Method::Get | Method::Head) {
             return Ok(Bytes::new());
@@ -161,6 +159,11 @@ pub mod p2 {
         drop(body_stream);
         IncomingBody::finish(incoming_body);
         collected?;
+        if !declared_length_matches(declared, body.len()) {
+            return Err(RequestError::Policy(
+                crate::handler::RequestPolicyError::InvalidContentLength,
+            ));
+        }
         Ok(Bytes::from(body))
     }
 
@@ -181,6 +184,16 @@ pub mod p2 {
 
     fn reset_empty_body_reads(consecutive_empty: &mut u32) {
         *consecutive_empty = 0;
+    }
+
+    const fn declared_length_matches(
+        declared: Option<usize>,
+        actual: usize,
+    ) -> bool {
+        match declared {
+            None => true,
+            Some(declared) => declared == actual,
+        }
     }
 
     pub(crate) fn request_parts(
@@ -240,11 +253,14 @@ pub mod p2 {
         #[error("incoming request body stream is unavailable")]
         BodyStreamUnavailable,
         /// Header collection was unavailable while building the request.
+        ///
+        /// Retained for patch compatibility against 0.4.1; current construction
+        /// maps header failures through [`Self::Http`] instead.
         #[error("request headers are unavailable")]
         InvalidHeaders,
         /// Request policy validation failed.
         #[error(transparent)]
-        Policy(#[from] super::super::handler::RequestPolicyError),
+        Policy(#[from] crate::handler::RequestPolicyError),
     }
 
     impl RequestError {
@@ -428,6 +444,13 @@ pub mod p2 {
                 super::RequestError::BodyStreamUnavailable.client_status(),
                 None
             );
+        }
+
+        #[test]
+        fn a_declared_content_length_must_match_the_collected_body() {
+            assert!(super::declared_length_matches(None, 0));
+            assert!(super::declared_length_matches(Some(3), 3));
+            assert!(!super::declared_length_matches(Some(5), 3));
         }
     }
 }

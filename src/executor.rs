@@ -59,9 +59,11 @@ pub enum ExecutorError {
 #[cfg(feature = "wasip2")]
 mod p2;
 #[cfg(feature = "wasip2")]
-pub use p2::*;
+pub use p2::{Executor, Mode, WaitPoll, init_wasip2_executor, sleep};
+#[cfg(feature = "wasip2")]
+pub(crate) use p2::{bench_dispatch_ready, pollable_queue_depth};
 
 #[cfg(feature = "wasip3")]
 mod p3;
 #[cfg(feature = "wasip3")]
-pub use p3::*;
+pub use p3::{Wasip3Executor, init_wasip3_spawner};

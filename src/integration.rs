@@ -41,7 +41,7 @@ pub(crate) trait ExtendResponse: Sized {
         additional_context: impl FnOnce() + Send + 'static,
         response_options: Self::ResponseOptions,
         stream_builder: StreamBuilder<IV>,
-        is_islands_router_navigation: bool,
+        supports_out_of_order: bool,
     ) -> impl Future<Output = Self> + Send
     where
         IV: IntoView + 'static,
@@ -52,7 +52,7 @@ pub(crate) trait ExtendResponse: Sized {
                 app_fn,
                 additional_context,
                 stream_builder,
-                is_islands_router_navigation,
+                supports_out_of_order,
             );
 
             owner.with(|| provide_context(prefetches.clone()));
@@ -121,6 +121,10 @@ fn register_split_prefetches(prefetches: &PrefetchLazyFn) {
         .iter()
         .flat_map(|key| modules.get(*key).into_iter().flatten())
     {
+        // Leptos' `<Link crossorigin=nonce>` serializes as
+        // `crossorigin="<nonce>"`. A wasm `fetch` preload needs `nonce="<nonce>"`
+        // (and `crossorigin="anonymous"` when `/pkg` is off-origin). Tracked
+        // separately upstream: leptos-rs/leptos `crossorigin=nonce` → `nonce=nonce`.
         _ = view! {
             <Link
                 rel="preload"
@@ -146,7 +150,7 @@ fn build_response<IV>(
     app_fn: impl FnOnce() -> IV + Send + 'static,
     additional_context: impl FnOnce() + Send + 'static,
     stream_builder: StreamBuilder<IV>,
-    is_islands_router_navigation: bool,
+    supports_out_of_order: bool,
 ) -> (Owner, PinnedFuture<PinnedStream<String>>)
 where
     IV: IntoView + 'static,
@@ -177,10 +181,35 @@ where
                         }),
                     ) as PinnedStream<String>
                     });
-                stream_builder(app, chunks, is_islands_router_navigation)
+                stream_builder(app, chunks, supports_out_of_order)
             });
             stream.await
         }
     }));
     (owner, stream)
+}
+
+#[cfg(test)]
+mod tests {
+    use leptos::prelude::{Owner, WriteValue};
+
+    use super::*;
+
+    #[test]
+    fn empty_prefetches_are_a_no_op() {
+        let owner = Owner::new();
+        owner.with(|| {
+            register_split_prefetches(&PrefetchLazyFn::default());
+        });
+    }
+
+    #[test]
+    fn missing_wasm_split_manifest_is_a_no_op() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let prefetches = PrefetchLazyFn::default();
+            prefetches.0.write_value().insert("missing-chunk");
+            register_split_prefetches(&prefetches);
+        });
+    }
 }

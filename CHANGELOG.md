@@ -12,6 +12,13 @@ All notable changes to this project will be documented in this file.
   request. Host-native, a 3–32 route table discovers in 7–37 us and clones
   in 41 ns; the in-guest test-app figure remains 183 us, amortized to
   ~1.4 us/request across `--max-instance-reuse-count 128`.
+- `StaticRequest` and `Handler::static_files_handler_with`, so a static
+  callback can implement 304 and compression from `If-None-Match`,
+  `If-Modified-Since`, and `Accept-Encoding`. The crate still validates the
+  prefix, rejects non-GET/HEAD, normalizes the path, blanks HEAD bodies, and
+  fills `Content-Type` / `Content-Length` / `nosniff`.
+- `HandlerConfig::with_request_body_timeout(Duration)` alongside the existing
+  nanosecond builder. Values larger than `u64::MAX` nanoseconds saturate.
 
 ### Changed
 
@@ -27,6 +34,13 @@ All notable changes to this project will be documented in this file.
   `redirect()` bypasses that sanitizer; RFC 9110 list-form `Content-Length`
   is accepted; `SsrMode::Async` buffers the page; the RSS gate is
   `min(32 MiB, 10%)`.
+- `Response::extend_response` inserts singleton headers (so `Location` from
+  `ResponseOptions` replaces) and appends list-valued names such as
+  `Set-Cookie`.
+- `redirect()` uses the crate's q-value `Accept` parser, so
+  `text/html;q=0` is not treated as HTML.
+- Preview 3 maps response-stream errors with
+  `HandlerError::ResponseStream` instead of a `WasiBuf` wrapper.
 - CI now lints, tests, and documents the default feature set (WASIp2 without
   `islands-router`). The MSRV job installs Clippy on 1.93.0 and runs Clippy
   plus rustdoc for every feature-matrix row. Advisory ignores live only in
@@ -67,6 +81,8 @@ All notable changes to this project will be documented in this file.
   idle. Leftover pollables after the root completes are probed once and
   abandoned. `WaitPoll` uses the current executor's queue (falling back to the
   process queue). `poll_local` no longer swallows `TaskSpawnFailed`.
+- A Preview 2 body whose collected length does not match a declared
+  `Content-Length` is rejected with 400.
 
 ## [0.4.2] — 2026-08-05
 

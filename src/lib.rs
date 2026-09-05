@@ -19,7 +19,7 @@ pub mod utils;
 pub use executor::ExecutorError;
 pub use handler::{
     DEFAULT_MAX_REQUEST_BODY_SIZE, HandlerConfig, RegistrationError,
-    RequestPolicyError, RouteTable, validate_route_table,
+    RequestPolicyError, RouteTable, StaticRequest, validate_route_table,
 };
 
 /// Implementation details required by generated public bounds.
@@ -59,9 +59,37 @@ pub mod __private {
         type ResBody = ResBody;
     }
 
+    /// Hidden entry points used by the crate's benches. Not a stable API.
+    pub fn normalize_static_path(raw_path: &str) -> Result<String, String> {
+        crate::static_files::normalize_static_path(raw_path)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Drives [`crate::executor`] dispatch with scripted ready indices.
+    #[cfg(feature = "wasip2")]
+    #[must_use]
+    pub fn bench_dispatch_ready(queue_len: usize, ready: &[u32]) -> bool {
+        crate::executor::bench_dispatch_ready(queue_len, ready)
+    }
+
+    /// Collects response header name/value pairs (the guest half of Preview 2
+    /// `Response::headers` conversion).
+    #[must_use]
+    pub fn response_header_pairs(
+        response: &crate::response::Response,
+    ) -> Vec<(String, Vec<u8>)> {
+        response
+            .0
+            .headers()
+            .iter()
+            .map(|(name, value)| {
+                (name.as_str().to_owned(), value.as_bytes().to_vec())
+            })
+            .collect()
+    }
+
     /// Returns the current Preview 2 pollable queue depth for release probes.
     #[cfg(feature = "wasip2")]
-    #[doc(hidden)]
     #[must_use]
     pub fn wasip2_pollable_queue_depth() -> usize {
         crate::executor::pollable_queue_depth()
@@ -72,7 +100,7 @@ pub mod __private {
 pub mod prelude {
     pub use crate::{
         ExecutorError, HandlerConfig, RegistrationError, RequestPolicyError,
-        RouteTable,
+        RouteTable, StaticRequest,
         response::{Body, ResponseOptions, ResponseParts},
         utils::redirect,
     };
