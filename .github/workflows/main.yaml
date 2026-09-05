@@ -154,8 +154,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
-      - name: Install cargo-semver-checks 0.48.0
-        run: cargo install cargo-semver-checks --version 0.48.0 --locked
+      - name: Install cargo-semver-checks 0.50.0
+        run: cargo install cargo-semver-checks --version 0.50.0 --locked
 
       - name: Check 0.4.1 compatibility through the package-name fallback
         run: bash scripts/check-semver.sh
