@@ -20,6 +20,27 @@ All notable changes to this project will be documented in this file.
 - Route-discovery counter tests take a mutex so parallel `cargo test` cannot
   observe another registration mid-assert.
 
+### Fixed
+
+- HTML error responses (401/403/422/500) no longer get promoted to 302 when a
+  Referer is present. That promotion is axum-parity for successful form posts
+  and real redirects, not for failures.
+- `201 Created` keeps an absolute `Location`. Only 3xx responses run through
+  the same-origin sanitizer.
+- An explicit `Location: /` is a real app target and is no longer overwritten
+  by Referer. Form posts that want a Referer bounce omit `Location`.
+- Invalid `redirect()` paths are logged with `escape_debug`, so a CR/LF in the
+  path cannot split the log line.
+- Policy-rejection HTTP bodies are fixed strings (`request body too large`,
+  `request body timed out`, `invalid Content-Length`) and no longer echo the
+  configured limit. `RequestPolicyError`'s `Display` still names the budget for
+  tracing.
+- A timed Preview 2 body read that keeps returning empty is abandoned after 64
+  consecutive empty reads instead of spinning until the deadline.
+- HEAD responses compute `Content-Length` from the original `Body::Sync`
+  before the body is blanked, so HEAD and GET agree on 404, policy rejections,
+  and 405.
+
 ## [0.4.2] — 2026-08-05
 
 ### Fixed

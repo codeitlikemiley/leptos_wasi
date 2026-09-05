@@ -64,6 +64,7 @@ pub mod p2 {
         let readable = deadline.as_ref().map(|_| body_stream.subscribe());
 
         let mut body = Vec::with_capacity(crate::CHUNK_BYTE_SIZE);
+        let mut consecutive_empty = 0_u32;
         let collected = loop {
             if let Some(deadline) = &deadline
                 && deadline.ready()
@@ -80,6 +81,11 @@ pub mod p2 {
                 (Some(deadline), Some(readable)) => {
                     match body_stream.read(crate::CHUNK_BYTE_SIZE as u64) {
                         Ok(data) if data.is_empty() => {
+                            if let Err(error) =
+                                note_empty_body_read(&mut consecutive_empty)
+                            {
+                                break Err(error);
+                            }
                             let ready = poll(&[readable, deadline]);
                             if ready.contains(&1) {
                                 break Err(RequestError::BodyReadTimeout(
@@ -100,6 +106,7 @@ pub mod p2 {
                     break Err(error.into());
                 }
                 Ok(data) => {
+                    reset_empty_body_reads(&mut consecutive_empty);
                     if body.len().saturating_add(data.len()) > max_body_size {
                         break Err(RequestError::BodyTooLarge(max_body_size));
                     }
@@ -114,6 +121,25 @@ pub mod p2 {
         IncomingBody::finish(incoming_body);
         collected?;
         Ok(http::Request::from_parts(parts, Bytes::from(body)))
+    }
+
+    /// Consecutive empty non-blocking reads before the stream is treated as
+    /// unavailable rather than polled until the deadline.
+    const EMPTY_BODY_READ_CAP: u32 = 64;
+
+    fn note_empty_body_read(
+        consecutive_empty: &mut u32,
+    ) -> Result<(), RequestError> {
+        *consecutive_empty = consecutive_empty.saturating_add(1);
+        if *consecutive_empty >= EMPTY_BODY_READ_CAP {
+            Err(RequestError::BodyStreamUnavailable)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn reset_empty_body_reads(consecutive_empty: &mut u32) {
+        *consecutive_empty = 0;
     }
 
     pub(crate) fn request_parts(
@@ -293,6 +319,32 @@ pub mod p2 {
                 scheme_wasi_to_http(Scheme::Other("not a scheme".to_owned()))
                     .is_err()
             );
+        }
+
+        #[test]
+        fn empty_body_reads_are_capped_before_the_stream_spins() {
+            let mut consecutive_empty = 0;
+            for _ in 1..super::EMPTY_BODY_READ_CAP {
+                super::note_empty_body_read(&mut consecutive_empty)
+                    .expect("empty reads below the cap should retry");
+            }
+            assert!(
+                matches!(
+                    super::note_empty_body_read(&mut consecutive_empty),
+                    Err(super::RequestError::BodyStreamUnavailable)
+                ),
+                "the {cap}th empty read must fail",
+                cap = super::EMPTY_BODY_READ_CAP
+            );
+        }
+
+        #[test]
+        fn a_byte_resets_the_empty_body_read_cap() {
+            let mut consecutive_empty = super::EMPTY_BODY_READ_CAP - 1;
+            super::reset_empty_body_reads(&mut consecutive_empty);
+            super::note_empty_body_read(&mut consecutive_empty)
+                .expect("a reset counter must accept another empty read");
+            assert_eq!(consecutive_empty, 1);
         }
     }
 }
