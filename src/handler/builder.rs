@@ -222,7 +222,7 @@ macro_rules! common_handler_methods {
 
         /// Installs a previously discovered [`crate::RouteTable`].
         ///
-        /// Clone is the reuse: the table holds an `Rc` of the router.
+        /// Clone is the reuse: the table holds an `Arc` of the router.
         /// Requests that never consult the SSR router (server function,
         /// static, preset) still skip installing it.
         ///

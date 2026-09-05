@@ -127,8 +127,7 @@ fn discover_table(bencher: divan::Bencher, routes: usize) {
 
 /// Per-request install once the instance has already discovered.
 ///
-/// `RouteTable` is `!Send` (`Rc`), so the table lives in `thread_local!` — the
-/// same pattern the public API documents. The measured work is an `Rc` clone.
+/// `RouteTable` shares the router through `Arc`. The measured work is an `Arc` clone.
 #[divan::bench(args = [3, 8, 32])]
 fn install_from_table(bencher: divan::Bencher, routes: usize) {
     bencher.bench(|| {
