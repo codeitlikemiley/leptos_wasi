@@ -5,6 +5,10 @@ use http::{HeaderName, HeaderValue, StatusCode, header, request::Parts};
 use leptos::prelude::use_context;
 use server_fn::redirect::REDIRECT_HEADER;
 
+fn escaped_redirect_path(path: &str) -> impl std::fmt::Display + '_ {
+    path.escape_debug()
+}
+
 /// Allows returning an HTTP redirection from components.
 ///
 /// Inspects the current Leptos context for `Parts` and `ResponseOptions` to insert the
@@ -34,7 +38,17 @@ pub fn redirect(path: &str) {
                 res.insert_header(header::LOCATION, value);
             }
             Err(e) => {
-                eprintln!("Invalid redirect path: {path}, error: {e:?}");
+                #[cfg(feature = "tracing")]
+                tracing::warn!(
+                    path = %escaped_redirect_path(path),
+                    error = ?e,
+                    "Invalid redirect path"
+                );
+                #[cfg(not(feature = "tracing"))]
+                eprintln!(
+                    "Invalid redirect path: {}, error: {e:?}",
+                    escaped_redirect_path(path)
+                );
                 res.set_status(StatusCode::BAD_REQUEST);
                 return;
             }
@@ -59,16 +73,23 @@ pub fn redirect(path: &str) {
             );
         }
     } else {
+        #[cfg(feature = "tracing")]
+        tracing::warn!(
+            path = %escaped_redirect_path(path),
+            "Couldn't retrieve either Parts or ResponseOptions while trying to redirect()"
+        );
+        #[cfg(not(feature = "tracing"))]
         eprintln!(
             "Couldn't retrieve either Parts or ResponseOptions while trying \
-             to redirect()."
+             to redirect({}).",
+            escaped_redirect_path(path)
         );
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::redirect;
+    use super::{escaped_redirect_path, redirect};
     use crate::response::{ResponseOptions, ResponseParts};
     use http::{HeaderValue, Request, StatusCode, header};
     use leptos::prelude::{Owner, provide_context};
@@ -151,5 +172,15 @@ mod tests {
     fn redirecting_without_context_does_not_panic() {
         let owner = Owner::new();
         owner.with(|| redirect("/target-page"));
+    }
+
+    #[test]
+    fn injected_redirect_paths_log_as_a_single_escaped_line() {
+        let path = "/x\r\nLocation: evil";
+        let logged = escaped_redirect_path(path).to_string();
+        assert_eq!(logged.lines().count(), 1);
+        assert!(!logged.contains('\r'), "{logged:?} must not contain CR");
+        assert!(!logged.contains('\n'), "{logged:?} must not contain LF");
+        assert!(logged.contains("\\r\\n"), "{logged:?}");
     }
 }

@@ -65,20 +65,19 @@ pub(super) fn apply_server_fn_redirect(
     referrer: Option<HeaderValue>,
 ) {
     let mut redirect_target = None;
-    if accepts_html && let Some(referrer) = referrer {
-        let is_default = response
-            .headers()
-            .get(LOCATION)
-            .and_then(|value| value.to_str().ok())
-            == Some("/");
-        let has_location = response.headers().contains_key(LOCATION);
-        if !has_location || is_default {
-            *response.status_mut() = StatusCode::FOUND;
-            redirect_target = sanitize_referrer(&referrer)
-                .or_else(|| Some(HeaderValue::from_static("/")));
-        }
+    let status = response.status();
+    let promotable = status.is_success() || status.is_redirection();
+    if accepts_html
+        && promotable
+        && !response.headers().contains_key(LOCATION)
+        && let Some(referrer) = referrer
+    {
+        *response.status_mut() = StatusCode::FOUND;
+        redirect_target = sanitize_referrer(&referrer)
+            .or_else(|| Some(HeaderValue::from_static("/")));
     }
     if redirect_target.is_none()
+        && status.is_redirection()
         && let Some(location) = response.headers().get(LOCATION).cloned()
     {
         redirect_target = sanitize_referrer(&location)
@@ -171,6 +170,56 @@ mod tests {
         assert_eq!(
             redirected(StatusCode::OK, None, false, None),
             (StatusCode::OK, None)
+        );
+    }
+
+    #[test]
+    fn html_error_responses_keep_their_status_despite_a_referrer() {
+        for status in [
+            StatusCode::UNAUTHORIZED,
+            StatusCode::FORBIDDEN,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ] {
+            assert_eq!(
+                redirected(
+                    status,
+                    None,
+                    true,
+                    Some("http://127.0.0.1/previous-page")
+                ),
+                (status, None),
+                "{status} must not be promoted to a redirect"
+            );
+        }
+    }
+
+    #[test]
+    fn created_responses_keep_an_absolute_location() {
+        assert_eq!(
+            redirected(
+                StatusCode::CREATED,
+                Some("https://cdn.example.com/new"),
+                true,
+                Some("http://127.0.0.1/form")
+            ),
+            (
+                StatusCode::CREATED,
+                Some("https://cdn.example.com/new".to_owned())
+            )
+        );
+    }
+
+    #[test]
+    fn explicit_root_location_is_not_overwritten_by_referer() {
+        assert_eq!(
+            redirected(
+                StatusCode::OK,
+                Some("/"),
+                true,
+                Some("http://127.0.0.1/previous-page")
+            ),
+            (StatusCode::OK, Some("/".to_owned()))
         );
     }
 }

@@ -143,9 +143,7 @@ impl HandlerCore {
                     if bytes.len() > limit {
                         return plain_response(
                             StatusCode::PAYLOAD_TOO_LARGE,
-                            format!(
-                                "request body exceeds limit of {limit} bytes"
-                            ),
+                            "request body too large",
                         )
                         .0;
                     }
