@@ -69,11 +69,28 @@ pub(super) fn sanitize_referrer(referrer: &HeaderValue) -> Option<HeaderValue> {
     }
 }
 
+/// Copies the non-standard `Referrer` spelling into `Referer` when absent.
+///
+/// `server_fn`'s `form-redirects` feature only reads `Referer`. Without this
+/// mirror, a client that sends only `Referrer` gets `Location: /` from the
+/// framework before [`super::server_fns::apply_server_fn_redirect`] runs, and
+/// an explicit root location is intentionally left alone.
+pub(super) fn mirror_referrer_spelling(headers: &mut HeaderMap) {
+    if headers.get(http::header::REFERER).is_none()
+        && let Some(alternate) = headers.get("referrer").cloned()
+    {
+        headers.insert(http::header::REFERER, alternate);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use http::{HeaderMap, HeaderValue, header::ACCEPT};
+    use http::{
+        HeaderMap, HeaderValue,
+        header::{ACCEPT, REFERER},
+    };
 
-    use super::{accepts_html, sanitize_referrer};
+    use super::{accepts_html, mirror_referrer_spelling, sanitize_referrer};
 
     #[test]
     fn html_with_zero_quality_is_not_accepted() {
@@ -142,5 +159,34 @@ mod tests {
         assert_eq!(sanitized("http://127.0.0.1/%5Cevil.example.com"), None);
         assert_eq!(sanitized("http://127.0.0.1/%5cevil.example.com"), None);
         assert_eq!(sanitized("mailto:someone@example.com"), None);
+    }
+
+    #[test]
+    fn referrer_spelling_is_mirrored_into_referer_when_absent() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "referrer",
+            HeaderValue::from_static("http://127.0.0.1/other-page"),
+        );
+        mirror_referrer_spelling(&mut headers);
+        assert_eq!(
+            headers.get(REFERER).and_then(|value| value.to_str().ok()),
+            Some("http://127.0.0.1/other-page")
+        );
+    }
+
+    #[test]
+    fn existing_referer_is_not_replaced_by_referrer_spelling() {
+        let mut headers = HeaderMap::new();
+        headers.insert(REFERER, HeaderValue::from_static("/previous-page"));
+        headers.insert(
+            "referrer",
+            HeaderValue::from_static("http://127.0.0.1/other-page"),
+        );
+        mirror_referrer_spelling(&mut headers);
+        assert_eq!(
+            headers.get(REFERER).and_then(|value| value.to_str().ok()),
+            Some("/previous-page")
+        );
     }
 }
