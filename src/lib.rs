@@ -72,7 +72,8 @@ pub mod __private {
         crate::executor::bench_dispatch_ready(queue_len, ready)
     }
 
-    /// Guest-side work of [`crate::response::Response::headers`]: name/value pairs.
+    /// Collects response header name/value pairs (the guest half of Preview 2
+    /// `Response::headers` conversion).
     #[must_use]
     pub fn response_header_pairs(
         response: &crate::response::Response,
