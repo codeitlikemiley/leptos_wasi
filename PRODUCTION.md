@@ -28,6 +28,9 @@ tagged runtime cannot link the final application ABI.
 | `SsrMode::Static` generation | No | No | No | No | No |
 | Byte ranges/precompressed negotiation | No | No | No | No | No |
 
+`SsrMode::Async` buffers the whole page before the first byte; prefer
+`InOrder` or `OutOfOrder` when TTFB matters.
+
 Both runtime features may be enabled in one dependency graph. The application
 still exports a host entrypoint for the component model it intends to run.
 Axum-compatible generated server-function body types remain an internal
@@ -38,7 +41,8 @@ this support matrix.
 
 - Incoming bodies are buffered with a configurable maximum. The default is
   16 MiB. Content-Length is checked before body collection when present, and
-  the collected size is checked independently.
+  the collected size is checked independently. RFC 9110 list-form
+  `Content-Length: 5, 5` is accepted when every value agrees.
 - Invalid or conflicting Content-Length values receive 400. Bodies over the
   configured limit receive 413.
 - Body size is bounded on both previews; body read time is bounded on neither.
@@ -63,9 +67,9 @@ this support matrix.
   refresh it.
 - Route discovery does not run on requests that cannot use the SSR router. A
   server function, a static asset, and an already-selected response all resolve
-  without it, and discovery renders the whole application, so skipping it is
-  worth about 183 us on those requests. The consequence is that a malformed
-  route table is no longer rejected while serving such a request: an
+  without it, and discovery plus registration renders the whole application, so
+  skipping it is worth about 183 us on those requests. The consequence is that a
+  malformed route table is no longer rejected while serving such a request: an
   application reached only through server functions and static assets never
   validates its routes in production. Call `leptos_wasi::validate_route_table`
   once from a test to close that gap. It applies exactly the rules the request
@@ -77,10 +81,10 @@ this support matrix.
 - A redirect carried by a server-function response is reduced to a same-origin
   path before the response leaves the handler. The request `Referer`
   (or `Referrer`) header and any `Location` already on the server-function
-  response go through the same check: the value must parse as a URI, must not
-  contain a backslash or an encoded backslash (`%5c`/`%5C`), and its
-  path-and-query must begin with a single `/`. Anything else — an absolute
-  `https://` URL, a protocol-relative `//host/path` — is replaced with `/`.
+  response go through the same check: the value must parse as a URI and must
+  not contain a backslash or an encoded backslash (`%5c`/`%5C`). An absolute
+  URL is reduced to its path-and-query. A protocol-relative or unparsable
+  value is replaced with `/`.
 - That reduction covers the server-function path only. A `Location` written
   from reactive context through `ResponseOptions`, which is what
   `leptos_wasi::prelude::redirect` does, is merged into the response after that
@@ -97,10 +101,11 @@ this support matrix.
   not part of the stable support claim. Middleware must strip untrusted
   identity headers before adding validated identity metadata, and only the
   outer composed handler may be externally routable.
-- Generated route discovery is cached by the concrete application/discovery
-  context closure types. Keep route structure, discovery context, and exclusion
-  lists deterministic deployment configuration. Request-dependent context must
-  be installed through `handle_with_context`, never a route-generation method.
+- Generated route discovery runs per request unless the app passes a
+  `RouteTable` into `generate_routes_from`. Keep route structure, discovery
+  context, and exclusion lists deterministic deployment configuration.
+  Request-dependent context must be installed through `handle_with_context`,
+  never a route-generation method.
 - Identity observed while rendering SSR is presentation state only. Hiding a
   control or route link is never authorization. Protected server functions must
   re-read trusted per-request context and enforce typed policy after
@@ -314,7 +319,9 @@ deployment promotion is tracked separately:
   buffering or rewriting the committed status.
 - A ten-minute steady-load soak reaches a memory plateau, leaves no orphaned
   WASIp2 pollables, and produces no unexpected 5xx.
-- Release-mode p99 latency regresses no more than 5% from the recorded baseline.
+- Release-mode soak budgets are the values CI actually enforces
+  (`.github/workflows/main.yaml`): Wasmtime and Spin Preview 2 allow 12%
+  latency and 10% throughput regression; Wasmtime Preview 3 allows 8% and 8%.
 - `cargo package --locked`, `cargo publish --dry-run --locked`, and
   `cargo deny check` pass.
 - Every breaking API change appears in [MIGRATION.md](./MIGRATION.md).
