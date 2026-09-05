@@ -21,7 +21,8 @@ use leptos_router::SsrMode;
 
 use super::core::HandlerCore;
 use super::http_util::{
-    accepts_html, is_islands_router_navigation, provide_standard_contexts,
+    accepts_html, is_islands_router_navigation, mirror_referrer_spelling,
+    provide_standard_contexts,
 };
 use super::policy::{plain_response, set_default_nosniff};
 use super::server_fns::apply_server_fn_redirect;
@@ -58,16 +59,16 @@ impl HandlerCore {
                     Some(response)
                 } else if let Some(server_fn) = self.server_fn {
                     let context_parts = parts.clone();
-                    let req = Request::from_parts(parts, body);
+                    let mut req = Request::from_parts(parts, body);
                     provide_standard_contexts(context_parts, res_opts.clone());
                     additional_context();
 
+                    // `server_fn` form-redirects only reads `Referer`. Mirror
+                    // the alternate spelling first so it does not fall back to
+                    // `Location: /` before our sanitizer runs.
+                    mirror_referrer_spelling(req.headers_mut());
                     let accepts_html = accepts_html(req.headers());
-                    let referrer = req
-                        .headers()
-                        .get(REFERER)
-                        .or_else(|| req.headers().get("referrer"))
-                        .cloned();
+                    let referrer = req.headers().get(REFERER).cloned();
                     let mut response = server_fn(req).await;
                     apply_server_fn_redirect(
                         &mut response,
