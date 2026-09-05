@@ -33,6 +33,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - runtime: default features
+            task: ci-default
           - runtime: WASIp2
             task: ci-wasip2
           - runtime: WASIp3 + islands router
@@ -76,12 +78,26 @@ jobs:
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
           toolchain: 1.93.0
+          components: clippy
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
       - name: Test the declared MSRV
         run: >-
           cargo test --locked --no-default-features
+          --features "${{ matrix.features }}"
+
+      - name: Lint the declared MSRV
+        run: >-
+          cargo clippy --locked --all-targets --no-default-features
+          --features "${{ matrix.features }}"
+          -- -D warnings
+
+      - name: Document the declared MSRV
+        env:
+          RUSTDOCFLAGS: "-Dmissing-docs -Drustdoc::broken-intra-doc-links"
+        run: >-
+          cargo doc --locked --no-deps --no-default-features
           --features "${{ matrix.features }}"
 
   api-fixtures:
@@ -122,16 +138,6 @@ jobs:
           toolchain: stable
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-
-      - name: Install cargo-audit 0.22.2
-        run: cargo install cargo-audit --version 0.22.2 --locked
-
-      - name: Reject known vulnerabilities
-        run: >-
-          cargo audit --deny warnings
-          --ignore RUSTSEC-2024-0436
-          --ignore RUSTSEC-2026-0173
-          --ignore RUSTSEC-2026-0249
 
       - name: Install cargo-deny 0.20.2
         run: cargo install cargo-deny --version 0.20.2 --locked
