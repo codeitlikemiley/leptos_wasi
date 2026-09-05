@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `RouteTable::discover` and `Handler::generate_routes_from` so a reused
+  component instance can discover routes once and install the table with an
+  `Rc` clone per request. Existing `generate_routes*` still discover per
+  request. Host-native, a 3–32 route table discovers in 7–37 us and clones
+  in 41 ns; the in-guest test-app figure remains 183 us, amortized to
+  ~1.4 us/request across `--max-instance-reuse-count 128`.
+
 ### Changed
 
 - CI now lints, tests, and documents the default feature set (WASIp2 without

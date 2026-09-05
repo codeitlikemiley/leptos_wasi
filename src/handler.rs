@@ -34,4 +34,4 @@ pub use policy::{
     DEFAULT_MAX_REQUEST_BODY_SIZE, HandlerConfig, RegistrationError,
     RequestPolicyError,
 };
-pub use routes::validate_route_table;
+pub use routes::{RouteTable, validate_route_table};

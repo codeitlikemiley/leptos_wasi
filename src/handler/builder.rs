@@ -70,10 +70,10 @@ macro_rules! common_handler_methods {
         /// Generates routes with deterministic route-discovery context.
         ///
         /// The context closure runs only while discovering the application's
-        /// route list. It receives synthetic standard contexts and may be
-        /// skipped when an identical application/context closure type is
-        /// already cached. It must not inspect authentication, headers, or any
-        /// other request-dependent state.
+        /// route list. It receives synthetic standard contexts. Discovery runs
+        /// per request unless the app passes a [`crate::RouteTable`] into
+        /// [`Self::generate_routes_from`]. It must not inspect authentication,
+        /// headers, or any other request-dependent state.
         ///
         /// Use [`Self::handle_with_context`] for per-request context.
         ///
@@ -124,11 +124,10 @@ macro_rules! common_handler_methods {
 
         /// Generates routes with exclusions and deterministic discovery context.
         ///
-        /// Route discovery is cached per concrete application/context closure
-        /// type, and only when both are zero-sized (function items or
-        /// non-capturing closures) so that one type cannot describe two
-        /// different applications. Function pointers and capturing closures
-        /// re-run discovery on every request.
+        /// Route discovery runs per request unless the app passes a
+        /// [`crate::RouteTable`] into [`Self::generate_routes_from`]. Function
+        /// pointers and capturing closures are fine: there is no type-keyed
+        /// cache. The previous `TypeId` cache was unsound and has been removed.
         /// The context closure runs against synthetic standard contexts
         /// only when route discovery executes. Route structure, exclusions,
         /// and discovery context must be deterministic deployment
@@ -188,6 +187,24 @@ macro_rules! common_handler_methods {
             self.generate_routes_with_exclusions_and_discovery_context(
                 app, excluded, context,
             )
+        }
+
+        /// Installs a previously discovered [`crate::RouteTable`].
+        ///
+        /// Clone is the reuse: the table holds an `Rc` of the router.
+        /// Requests that never consult the SSR router (server function,
+        /// static, preset) still skip installing it.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`RegistrationError::RoutesAlreadyGenerated`] if routes
+        /// were already generated on this handler.
+        pub fn generate_routes_from(
+            mut self,
+            table: &crate::RouteTable,
+        ) -> Result<Self, RegistrationError> {
+            self.core = self.core.generate_routes_from(table)?;
+            Ok(self)
         }
     };
 }
