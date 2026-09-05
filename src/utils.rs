@@ -9,10 +9,13 @@ fn escaped_redirect_path(path: &str) -> impl std::fmt::Display + '_ {
     path.escape_debug()
 }
 
-/// Allows returning an HTTP redirection from components.
+/// Writes a redirect through [`ResponseOptions`].
 ///
-/// Inspects the current Leptos context for `Parts` and `ResponseOptions` to insert the
-/// `Location` header or set a 302 status code.
+/// Inspects the current Leptos context for `Parts` and `ResponseOptions`
+/// and either inserts `Location` or sets a 302 status. This path is merged
+/// into the response after the server-function `Location` sanitizer, so an
+/// absolute off-origin URL is sent as written. Applications that build a target
+/// from request data should validate it first.
 ///
 /// # Example
 ///

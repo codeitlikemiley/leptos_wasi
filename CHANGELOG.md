@@ -22,6 +22,11 @@ All notable changes to this project will be documented in this file.
   the body from `Content-Length`, skip residual percent-decoding when `%` is
   absent, and emit `Content-Length` with `HeaderValue::from(len)`. GET and
   HEAD skip opening the Preview 2 incoming body stream.
+- Docs now match behaviour: soak budgets are p2 12%/10% and p3 8%/8%; an
+  absolute server-function `Location` is reduced to path-and-query;
+  `redirect()` bypasses that sanitizer; RFC 9110 list-form `Content-Length`
+  is accepted; `SsrMode::Async` buffers the page; the RSS gate is
+  `min(32 MiB, 10%)`.
 - CI now lints, tests, and documents the default feature set (WASIp2 without
   `islands-router`). The MSRV job installs Clippy on 1.93.0 and runs Clippy
   plus rustdoc for every feature-matrix row. Advisory ignores live only in

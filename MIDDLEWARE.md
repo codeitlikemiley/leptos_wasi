@@ -346,7 +346,7 @@ machine-readable `summary.json` under `AUTHZ_FULL_CHAIN_SOAK_DIR` (default
 `target/authz-full-chain-soak`). The summary gate rejects a truncated run,
 unexpected status or transport outcome, cancellation or hang, any p99 above
 25 ms, a process missing at the final sample, or per-process final-quarter RSS
-growth above `max(32 MiB, 10%)`.
+growth above `min(32 MiB, 10%)`.
 
 Ingress admission is bounded by route class and holds permits until the body
 finishes or is dropped. Healthy terminal replicas are chosen by least active
@@ -356,7 +356,7 @@ is deployment data in `tests/trusted-ingress/routes.toml`. Wasmtime lifecycle
 values must be selected from measured repeated runs with
 `scripts/tune-trusted-ingress.sh`, not copied between hosts as universal
 defaults. The soak applies a final-quarter RSS growth limit of
-`max(32 MiB, 10%)`. Local alpha signatures use ephemeral development keys only.
+`min(32 MiB, 10%)`. Local alpha signatures use ephemeral development keys only.
 Published OCI artifacts require approved CI keyless signing or a durable
 release identity.
 

@@ -127,7 +127,7 @@ local pipeline run, because that run's signing key is ephemeral.
 
 ### Scope
 
-Version 0.5 does not claim a generic-response or fully Axum-free server-function
+Version 0.4.2 does not claim a generic-response or fully Axum-free server-function
 backend. Upstream `server_fn`'s generic `Request<Bytes>` fixes its WebSocket
 response to `Response<Bytes>`, which does not form the request/response pairing
 needed by the generic response body. A native `WasiServerFnBackend` therefore
@@ -289,10 +289,12 @@ it produces `408 Request Timeout`. The budget covers the whole body rather than
 the gap between chunks, so a client feeding one byte at a time cannot refresh
 it.
 
-Incoming bodies are currently buffered. Request-body streaming, WebSockets,
-HTTP trailers, static SSR generation, byte ranges, and automatic precompressed
-asset negotiation are not supported. Configure request deadlines, concurrency,
-memory limits, and filesystem capabilities in Wasmtime or Spin. See
+Incoming bodies are currently buffered. `SsrMode::Async` buffers the whole
+page before the first byte; prefer `InOrder` or `OutOfOrder` when TTFB
+matters. Request-body streaming, WebSockets, HTTP trailers, static SSR
+generation, byte ranges, and automatic precompressed asset negotiation are not
+supported. Configure request deadlines, concurrency, memory limits, and
+filesystem capabilities in Wasmtime or Spin. See
 [Production Support](./PRODUCTION.md) for the complete contract and
 [Performance Baseline](./PERFORMANCE.md) for the recorded 0.3.2 comparison.
 
@@ -364,6 +366,9 @@ fn provide_csp() {
          base-uri 'self'; \
          frame-ancestors 'none'"
     );
+    // When `/pkg` is served from a CDN, add that origin to `script-src` and
+    // `connect-src` as well, or the split WASM fetch and hydration scripts
+    // are blocked.
     if let Ok(value) = HeaderValue::from_str(&policy) {
         res.insert_header(CONTENT_SECURITY_POLICY, value);
     }
@@ -477,7 +482,7 @@ falls back to an isolated session counter for protocol and authorization tests.
 
 ## Upgrade and operations
 
-- Read [Migration to 0.5](./MIGRATION.md) before upgrading.
+- Read [Migration guide](./MIGRATION.md) before upgrading.
 - Read [Production Support](./PRODUCTION.md) before exposing a component to
   public traffic.
 - Review [Performance Baseline](./PERFORMANCE.md) and retain the CI soak
