@@ -264,7 +264,7 @@ otherwise generate or assign correlation at the ingress. Alerts should cover:
 Every release runs `cargo deny check`. The checked
 [`deny.toml`](./deny.toml) restricts registry sources, rejects yanked crates and
 wildcard requirements, makes duplicate versions visible, and permits only the
-reviewed license set. The 0.4.2 alpha dependency graph currently contains two
+reviewed license set. The 0.4.2 alpha dependency graph currently contains three
 transitive crates with unmaintained advisories, not known vulnerability
 advisories:
 
@@ -272,6 +272,7 @@ advisories:
 |---|---|---|---|---|---|
 | `RUSTSEC-2024-0436` | `paste` | Leptos/Tachys | `leptos_wasi` maintainers | This is an unmaintained warning, not a known vulnerability; the lockfile is reviewed and CI denies every warning outside this exact allowlist. | Remove the ignore when Leptos/Tachys no longer resolves `paste`. |
 | `RUSTSEC-2026-0173` | `proc-macro-error2` | Leptos macro stack | `leptos_wasi` maintainers | This is an unmaintained warning, not a known vulnerability; the lockfile is reviewed and CI denies every warning outside this exact allowlist. | Remove the ignore when the Leptos macro stack no longer resolves `proc-macro-error2`. |
+| `RUSTSEC-2026-0249` | `smartstring` | `routefinder` | `leptos_wasi` maintainers | This is an unmaintained warning, not a known vulnerability; the lockfile is reviewed and CI denies every warning outside this exact allowlist. | Remove the ignore when `routefinder` no longer resolves `smartstring`. |
 
 These exceptions must be reviewed whenever the Leptos dependency set changes
 and before every release. Do not add a vulnerability ignore without documenting

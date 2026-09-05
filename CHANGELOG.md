@@ -45,9 +45,15 @@ All notable changes to this project will be documented in this file.
   `islands-router`). The MSRV job installs Clippy on 1.93.0 and runs Clippy
   plus rustdoc for every feature-matrix row. Advisory ignores live only in
   `deny.toml`; the duplicate `cargo audit --ignore` step is gone.
+- `cargo-semver-checks` is pinned to 0.50.0 so the SemVer job can read rustdoc
+  JSON v60 from current stable Rust.
+- `deny.toml` ignores `RUSTSEC-2026-0249` (`smartstring` via `routefinder`), an
+  unmaintained advisory with no safe upgrade, documented in `PRODUCTION.md`.
 
 ### Fixed
 
+- Route-discovery counter tests take a mutex so parallel `cargo test` cannot
+  observe another registration mid-assert.
 - HTML error responses (401/403/422/500) no longer get promoted to 302 when a
   Referer is present. That promotion is axum-parity for successful form posts
   and real redirects, not for failures.
@@ -55,6 +61,9 @@ All notable changes to this project will be documented in this file.
   the same-origin sanitizer.
 - An explicit `Location: /` is a real app target and is no longer overwritten
   by Referer. Form posts that want a Referer bounce omit `Location`.
+- Requests that only send the `Referrer` spelling have that value copied into
+  `Referer` before the server function runs, so `form-redirects` does not fall
+  back to `Location: /` and skip the alternate spelling.
 - Invalid `redirect()` paths are logged with `escape_debug`, so a CR/LF in the
   path cannot split the log line.
 - Policy-rejection HTTP bodies are fixed strings (`request body too large`,
