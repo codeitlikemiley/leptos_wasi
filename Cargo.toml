@@ -54,6 +54,10 @@ tracing = { version = "0.1.44", optional = true }
 name = "route_discovery"
 harness = false
 
+[[bench]]
+name = "hot_path"
+harness = false
+
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 divan = "0.1.21"
 tokio = { version = "1.52", features = ["full"] }

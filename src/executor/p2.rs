@@ -476,6 +476,28 @@ fn dispatch_ready<P>(queue: &WaitQueue<P>, poller: &dyn Poller<P>) -> bool {
     true
 }
 
+/// Scripted `dispatch_ready` for the hot-path bench. Uses unit pollables so
+/// native CI never constructs a WASI `Pollable`.
+pub(crate) fn bench_dispatch_ready(queue_len: usize, ready: &[u32]) -> bool {
+    struct IndexPoller(Vec<u32>);
+    impl<P> Poller<P> for IndexPoller {
+        fn poll(&self, _: &[&P]) -> Vec<u32> {
+            self.0.clone()
+        }
+
+        fn ready(&self, _: &P) -> bool {
+            false
+        }
+    }
+
+    let queue = WaitQueue::<()>::default();
+    let waker = Waker::noop();
+    for _ in 0..queue_len {
+        let _ = queue.register((), waker);
+    }
+    dispatch_ready(&queue, &IndexPoller(ready.to_vec()))
+}
+
 /// Non-blocking `ready()` probe of every leftover registration.
 ///
 /// Used after a Preemptive guest step that still had runnable work, so the

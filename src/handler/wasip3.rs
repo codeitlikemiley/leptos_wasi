@@ -189,10 +189,9 @@ impl Handler {
         #[cfg(not(feature = "tracing"))]
         let response = render.await;
         let status = response.0.status();
-        let response = response.0.map(|body| {
-            body.map_frame(|frame| frame.map_data(WasiBuf::new))
-                .map_err(|_| std::io::Error::other("response stream failure"))
-        });
+        let response = response
+            .0
+            .map(|body| body.map_err(HandlerError::ResponseStream));
         #[cfg(feature = "tracing")]
         let response =
             response.map(|body| TraceBody::new(body, trace.clone(), status));
@@ -200,43 +199,6 @@ impl Handler {
         let _ = (trace, status);
         ::wasip3::http_compat::http_into_wasi_response(response)
             .map_err(HandlerError::Wasi)
-    }
-}
-
-#[derive(Clone, Debug)]
-struct WasiBuf {
-    bytes: Bytes,
-    offset: usize,
-}
-
-impl WasiBuf {
-    fn new(bytes: Bytes) -> Self {
-        Self { bytes, offset: 0 }
-    }
-}
-
-impl bytes::Buf for WasiBuf {
-    fn remaining(&self) -> usize {
-        self.bytes.len().saturating_sub(self.offset)
-    }
-
-    fn chunk(&self) -> &[u8] {
-        &self.bytes[self.offset..]
-    }
-
-    fn advance(&mut self, count: usize) {
-        self.offset = (self.offset + count).min(self.bytes.len());
-    }
-}
-
-impl From<WasiBuf> for Vec<u8> {
-    fn from(buffer: WasiBuf) -> Self {
-        let remaining = if buffer.offset == 0 {
-            buffer.bytes
-        } else {
-            buffer.bytes.slice(buffer.offset..)
-        };
-        remaining.into()
     }
 }
 
@@ -331,5 +293,22 @@ impl<B> Drop for TraceBody<B> {
             true,
             "body_dropped",
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn select_prefers_the_collect_side_when_both_are_ready() {
+        // `build_with_config` races `Limited::collect` against
+        // `wait_for`. When both are ready, `futures::future::select`
+        // takes the left (collect) future, so a completed body is not
+        // reported as a timeout.
+        let collect = std::pin::pin!(std::future::ready("collect"));
+        let expiry = std::pin::pin!(std::future::ready("timeout"));
+        let chosen = futures::executor::block_on(futures::future::select(
+            collect, expiry,
+        ));
+        assert!(matches!(chosen, futures::future::Either::Left(_)));
     }
 }

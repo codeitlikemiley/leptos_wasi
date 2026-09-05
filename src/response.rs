@@ -2,7 +2,13 @@
 
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
-use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
+use http::{
+    HeaderMap, HeaderName, HeaderValue, StatusCode,
+    header::{
+        ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, CACHE_CONTROL, COOKIE, LINK,
+        SET_COOKIE, WARNING, WWW_AUTHENTICATE,
+    },
+};
 use parking_lot::RwLock;
 use server_fn::response::generic::Body as ServerFnBody;
 use std::{pin::Pin, sync::Arc};
@@ -124,60 +130,17 @@ impl
             Box<dyn std::error::Error + Send + Sync>,
         >,
     ) -> Self {
-        use http_body_util::BodyExt;
-
-        // Convert BoxBody to async stream of bytes
-        let stream = async_stream::stream! {
-            let mut body = value;
-            while let Some(frame_result) = body.frame().await {
-                match frame_result {
-                    Ok(frame) => {
-                        if let Some(data) = frame.data_ref() {
-                            yield Ok(data.clone());
-                        }
-                    }
-                    Err(e) => {
-                        // Convert Box<dyn Error + Send + Sync> to throw_error::Error
-                        // We use std::io::Error as an intermediate since boxed trait objects
-                        // don't implement std::error::Error themselves
-                        yield Err(throw_error::Error::from(std::io::Error::other(
-                            format!("Body frame error: {e}")
-                        )));
-                    }
-                }
-            }
-        };
-
-        Self::Async(Box::pin(stream))
+        body_stream(value, |error| {
+            throw_error::Error::from(std::io::Error::other(format!(
+                "Body frame error: {error}"
+            )))
+        })
     }
 }
 
-// Handle the axum_core body type which is used by server functions with axum backend
-// This corresponds to leptos::server_fn::axum::body::Body in the error messages
 impl From<axum_core::body::Body> for Body {
     fn from(value: axum_core::body::Body) -> Self {
-        use http_body_util::BodyExt;
-
-        // Convert axum_core::Body to async stream of bytes
-        let stream = async_stream::stream! {
-            let mut body = value;
-            while let Some(frame_result) = body.frame().await {
-                match frame_result {
-                    Ok(frame) => {
-                        if let Some(data) = frame.data_ref() {
-                            yield Ok(data.clone());
-                        }
-                    }
-                    Err(e) => {
-                        // Convert axum_core::Error to throw_error::Error
-                        // axum_core::Error implements std::error::Error so this works directly
-                        yield Err(throw_error::Error::from(e));
-                    }
-                }
-            }
-        };
-
-        Self::Async(Box::pin(stream))
+        body_stream(value, throw_error::Error::from)
     }
 }
 
@@ -265,6 +228,45 @@ impl ResponseOptions {
     }
 }
 
+fn is_list_valued(name: &HeaderName) -> bool {
+    matches!(
+        name,
+        &SET_COOKIE
+            | &COOKIE
+            | &WWW_AUTHENTICATE
+            | &LINK
+            | &ACCEPT
+            | &ACCEPT_ENCODING
+            | &ACCEPT_LANGUAGE
+            | &CACHE_CONTROL
+            | &WARNING
+    )
+}
+
+fn body_stream<B, F>(mut body: B, map_err: F) -> Body
+where
+    B: http_body::Body + Send + Unpin + 'static,
+    B::Data: Into<Bytes> + Send,
+    B::Error: Send,
+    F: Fn(B::Error) -> throw_error::Error + Send + 'static,
+{
+    use http_body_util::BodyExt;
+
+    let stream = async_stream::stream! {
+        while let Some(frame_result) = body.frame().await {
+            match frame_result {
+                Ok(frame) => {
+                    if let Ok(data) = frame.into_data() {
+                        yield Ok(data.into());
+                    }
+                }
+                Err(error) => yield Err(map_err(error)),
+            }
+        }
+    };
+    Body::Async(Box::pin(stream))
+}
+
 impl ExtendResponse for Response {
     type ResponseOptions = ResponseOptions;
 
@@ -283,9 +285,21 @@ impl ExtendResponse for Response {
         if let Some(status_code) = opt.status {
             *self.0.status_mut() = status_code;
         }
-        self.0
-            .headers_mut()
-            .extend(std::mem::take(&mut opt.headers));
+        let dest = self.0.headers_mut();
+        let mut current_name = None;
+        for (name, value) in std::mem::take(&mut opt.headers) {
+            if let Some(name) = name {
+                current_name = Some(name);
+            }
+            let Some(name) = current_name.clone() else {
+                continue;
+            };
+            if is_list_valued(&name) {
+                dest.append(name, value);
+            } else {
+                dest.insert(name, value);
+            }
+        }
     }
 
     fn set_default_content_type(&mut self, content_type: &str) {
@@ -455,20 +469,56 @@ mod tests {
 
         assert_eq!(response.0.status(), StatusCode::IM_A_TEAPOT);
         assert_eq!(
-            response
-                .0
-                .headers()
-                .get_all("x-first")
-                .iter()
-                .collect::<Vec<_>>(),
-            ["1", "2"]
+            response.0.headers().get("x-first"),
+            Some(&HeaderValue::from_static("2")),
+            "singleton headers insert, so a later value replaces"
         );
 
-        // Applying the same options again must not duplicate the headers.
         let mut second =
             Response(http::Response::new(Body::Sync(Bytes::new())));
         second.extend_response(&options);
         assert!(second.0.headers().is_empty());
+    }
+
+    #[test]
+    fn set_cookie_values_are_appended_and_location_is_replaced() {
+        let options = ResponseOptions::default();
+        options.append_header(
+            http::header::SET_COOKIE,
+            HeaderValue::from_static("a=1"),
+        );
+        options.append_header(
+            http::header::SET_COOKIE,
+            HeaderValue::from_static("b=2"),
+        );
+        options.insert_header(
+            http::header::LOCATION,
+            HeaderValue::from_static("https://accounts.example.com/oauth"),
+        );
+
+        let mut response =
+            Response(http::Response::new(Body::Sync(Bytes::new())));
+        response.0.headers_mut().insert(
+            http::header::LOCATION,
+            HeaderValue::from_static("/previous-page"),
+        );
+        response.extend_response(&options);
+
+        assert_eq!(
+            response
+                .0
+                .headers()
+                .get_all(http::header::SET_COOKIE)
+                .iter()
+                .collect::<Vec<_>>(),
+            ["a=1", "b=2"]
+        );
+        assert_eq!(
+            response.0.headers().get(http::header::LOCATION),
+            Some(&HeaderValue::from_static(
+                "https://accounts.example.com/oauth"
+            ))
+        );
     }
 
     #[test]

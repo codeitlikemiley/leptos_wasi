@@ -354,6 +354,12 @@ async fn send_response(
     }
 }
 
+/// Status written when [`ResponseOutGuard`] drops without a committed
+/// response. `ResponseOutparam` cannot be constructed on the native test
+/// target, so the drop path is pinned through these constants instead.
+const DROPPED_RESPONSE_STATUS: u16 = 500;
+const DROPPED_RESPONSE_BODY: &[u8] = b"internal server error";
+
 fn send_internal_error(response_out: ResponseOutparam) {
     let headers = wasi::http::types::Headers::new();
     // This response is built outside `HandlerCore::render`, so the
@@ -363,10 +369,7 @@ fn send_internal_error(response_out: ResponseOutparam) {
     let _ = headers
         .append(http::header::X_CONTENT_TYPE_OPTIONS.as_str(), b"nosniff");
     let response = OutgoingResponse::new(headers);
-    if response
-        .set_status_code(StatusCode::INTERNAL_SERVER_ERROR.as_u16())
-        .is_err()
-    {
+    if response.set_status_code(DROPPED_RESPONSE_STATUS).is_err() {
         return;
     }
     let Ok(body) = response.body() else {
@@ -376,7 +379,7 @@ fn send_internal_error(response_out: ResponseOutparam) {
         return;
     };
     ResponseOutparam::set(response_out, Ok(response));
-    let _ = output.blocking_write_and_flush(b"internal server error");
+    let _ = output.blocking_write_and_flush(DROPPED_RESPONSE_BODY);
     drop(output);
     let _ = OutgoingBody::finish(body, None);
 }
@@ -404,4 +407,18 @@ async fn write_all(
         bytes = &bytes[count..];
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DROPPED_RESPONSE_BODY, DROPPED_RESPONSE_STATUS};
+
+    #[test]
+    fn a_dropped_response_out_guard_answers_internal_error() {
+        assert_eq!(
+            DROPPED_RESPONSE_STATUS,
+            http::StatusCode::INTERNAL_SERVER_ERROR.as_u16()
+        );
+        assert_eq!(DROPPED_RESPONSE_BODY, b"internal server error");
+    }
 }

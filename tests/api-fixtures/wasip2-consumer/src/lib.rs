@@ -29,6 +29,11 @@ pub fn initialize_executor(mode: Mode) -> Result<WasiExecutor, ExecutorError> {
     init_wasip2_executor(mode)
 }
 
+pub fn timeout_config() -> HandlerConfig {
+    HandlerConfig::default()
+        .with_request_body_timeout(std::time::Duration::from_secs(30))
+}
+
 fn app() -> impl IntoView {
     view! { <p>"consumer"</p> }
 }
@@ -52,6 +57,7 @@ pub fn register_everything(
     handler
         .with_server_fn::<Probe>()
         .static_files_handler("/pkg", |_path| None)?
+        .static_files_handler_with("/assets", |_| None)?
         .generate_routes(app)?
         .generate_routes_with_discovery_context(app, || {})?
         .generate_routes_with_context(app, || {})?

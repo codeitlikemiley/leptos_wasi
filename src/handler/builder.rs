@@ -43,6 +43,37 @@ macro_rules! common_handler_methods {
             Ok(self)
         }
 
+        /// Registers a static-file callback that sees the normalized path and
+        /// conditional request headers.
+        ///
+        /// The crate still validates the prefix, rejects non-GET/HEAD with
+        /// 405, normalizes the remaining path, converts HEAD bodies, and
+        /// fills in `Content-Type` / `Content-Length` when the callback omits
+        /// them. `nosniff` is applied later in render. Return `None` for a
+        /// 404; return a 304 with an empty body to honor `If-None-Match`.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`RegistrationError::InvalidStaticPrefix`] if `prefix`
+        /// is not a usable URI path.
+        pub fn static_files_handler_with<T>(
+            mut self,
+            prefix: T,
+            handler: impl Fn(
+                crate::StaticRequest<'_>,
+            ) -> Option<http::Response<Body>>
+            + 'static
+            + Send
+            + Clone,
+        ) -> Result<Self, RegistrationError>
+        where
+            T: TryInto<Uri>,
+            <T as TryInto<Uri>>::Error: std::error::Error,
+        {
+            self.core = self.core.static_files_handler_with(prefix, handler)?;
+            Ok(self)
+        }
+
         /// Generates Leptos routes for the application.
         ///
         /// # Errors

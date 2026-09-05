@@ -28,6 +28,8 @@ pub mod wasip3;
 
 // Reached from `crate::request::p2`, which is the only consumer outside
 // this module tree; Preview 3 calls it directly from `handler::wasip3`.
+pub use core::StaticRequest;
+pub(crate) use http_util::accepts_html;
 #[cfg(feature = "wasip2")]
 pub(crate) use policy::validate_content_length;
 pub use policy::{

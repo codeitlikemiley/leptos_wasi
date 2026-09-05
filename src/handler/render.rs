@@ -19,7 +19,7 @@ use leptos::{
 use leptos_meta::ServerMetaContext;
 use leptos_router::SsrMode;
 
-use super::core::HandlerCore;
+use super::core::{HandlerCore, Selection};
 use super::http_util::{
     accepts_html, is_islands_router_navigation, provide_standard_contexts,
 };
@@ -45,6 +45,7 @@ impl HandlerCore {
             .best_match(&path)
             .map(|matched| matched.handler().mode().clone());
         let islands_navigation = is_islands_router_navigation(&self.req);
+        let supports_out_of_order = !islands_navigation;
         let is_head = self.req.method() == Method::HEAD;
         let (parts, body) = self.req.into_parts();
 
@@ -52,58 +53,70 @@ impl HandlerCore {
         let render = owner.with(|| {
             ScopedFuture::new(async move {
                 let res_opts = ResponseOptions::default();
-                let response: Option<Response> = if self.should_404 {
-                    None
-                } else if let Some(response) = self.preset_res {
-                    Some(response)
-                } else if let Some(server_fn) = self.server_fn {
-                    let context_parts = parts.clone();
-                    let req = Request::from_parts(parts, body);
-                    provide_standard_contexts(context_parts, res_opts.clone());
-                    additional_context();
-
-                    let accepts_html = accepts_html(req.headers());
-                    let referrer = req
-                        .headers()
-                        .get(REFERER)
-                        .or_else(|| req.headers().get("referrer"))
-                        .cloned();
-                    let mut response = server_fn(req).await;
-                    apply_server_fn_redirect(
-                        &mut response,
-                        accepts_html,
-                        referrer,
-                    );
-                    Some(response.into())
-                } else if let Some(ssr_mode) = ssr_mode {
-                    let (meta_context, meta_output) = ServerMetaContext::new();
-                    let add_ctx = additional_context.clone();
-                    let route_context = {
-                        let res_opts = res_opts.clone();
-                        let meta_context = meta_context.clone();
-                        move || {
-                            provide_context(meta_context);
-                            provide_standard_contexts(parts, res_opts);
-                            if islands_navigation {
-                                provide_context(IslandsRouterNavigation);
-                            }
-                            add_ctx();
-                        }
-                    };
-
-                    Some(
-                        Response::from_app(
-                            app,
-                            meta_output,
-                            route_context,
+                let response: Option<Response> = match self.selection {
+                    Selection::NotFound => None,
+                    Selection::Preset(response, class) => {
+                        let _ = class;
+                        Some(response)
+                    }
+                    Selection::ServerFn(server_fn) => {
+                        let context_parts = parts.clone();
+                        let req = Request::from_parts(parts, body);
+                        provide_standard_contexts(
+                            context_parts,
                             res_opts.clone(),
-                            render_mode::<IV>(&ssr_mode),
-                            !islands_navigation,
-                        )
-                        .await,
-                    )
-                } else {
-                    None
+                        );
+                        additional_context();
+
+                        let accepts_html = accepts_html(req.headers());
+                        let referrer = req
+                            .headers()
+                            .get(REFERER)
+                            .or_else(|| req.headers().get("referrer"))
+                            .cloned();
+                        let mut response = server_fn(req).await;
+                        apply_server_fn_redirect(
+                            &mut response,
+                            accepts_html,
+                            referrer,
+                        );
+                        Some(response.into())
+                    }
+                    Selection::Unclaimed => {
+                        if let Some(ssr_mode) = ssr_mode {
+                            let (meta_context, meta_output) =
+                                ServerMetaContext::new();
+                            let add_ctx = additional_context.clone();
+                            let route_context = {
+                                let res_opts = res_opts.clone();
+                                let meta_context = meta_context.clone();
+                                move || {
+                                    provide_context(meta_context);
+                                    provide_standard_contexts(parts, res_opts);
+                                    if islands_navigation {
+                                        provide_context(
+                                            IslandsRouterNavigation,
+                                        );
+                                    }
+                                    add_ctx();
+                                }
+                            };
+
+                            Some(
+                                Response::from_app(
+                                    app,
+                                    meta_output,
+                                    route_context,
+                                    res_opts.clone(),
+                                    render_mode::<IV>(&ssr_mode),
+                                    supports_out_of_order,
+                                )
+                                .await,
+                            )
+                        } else {
+                            None
+                        }
+                    }
                 };
 
                 response.map(|mut response| {
@@ -184,7 +197,7 @@ where
                     } else {
                         // Unreachable as the flag is derived today: without
                         // the `islands-router` feature
-                        // `is_islands_router_navigation` is always false, so
+                        // the islands-router header is never set, so
                         // `supports_out_of_order` is always true here. Kept so
                         // the arm still behaves correctly if that derivation
                         // ever changes; it is deliberately not covered by a
@@ -252,7 +265,7 @@ mod tests {
                 .body(Bytes::new())
                 .expect("test request should be valid");
             let mut core = HandlerCore::new(request, HandlerConfig::default());
-            core.server_fn = Some(Box::new(|_| {
+            core.selection = Selection::ServerFn(Box::new(|_| {
                 Box::pin(async {
                     http::Response::new(Body::Sync(Bytes::from_static(b"ok")))
                 })
@@ -309,7 +322,7 @@ mod tests {
             .body(Bytes::new())
             .expect("test request should be valid");
         let mut core = HandlerCore::new(request, HandlerConfig::default());
-        core.server_fn = Some(Box::new(|_| {
+        core.selection = Selection::ServerFn(Box::new(|_| {
             Box::pin(async {
                 http::Response::new(Body::Sync(Bytes::from_static(b"ok")))
             })
@@ -354,7 +367,7 @@ mod tests {
             .body(Bytes::new())
             .expect("test request should be valid");
         let mut core = HandlerCore::new(request, HandlerConfig::default());
-        core.server_fn = Some(Box::new(|_| {
+        core.selection = Selection::ServerFn(Box::new(|_| {
             Box::pin(async {
                 let mut response =
                     http::Response::new(Body::Sync(Bytes::from_static(b"ok")));
@@ -735,7 +748,7 @@ mod tests {
                 .expect("test request should be valid"),
             HandlerConfig::default(),
         );
-        core.server_fn = Some(Box::new(|_| {
+        core.selection = Selection::ServerFn(Box::new(|_| {
             Box::pin(async {
                 let mut response =
                     http::Response::new(Body::Sync(Bytes::from_static(b"{}")));
@@ -865,7 +878,7 @@ mod tests {
                 .expect("test request should be valid"),
             HandlerConfig::default().with_max_request_body_size(limit),
         );
-        core.server_fn = Some(Box::new(move |request| {
+        core.selection = Selection::ServerFn(Box::new(move |request| {
             Box::pin(async move {
                 let (_, bytes) = request.into_parts();
                 assert!(bytes.len() > limit, "fixture must exceed the limit");
@@ -965,6 +978,49 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn sync_bodies_receive_content_length() {
+        let core = HandlerCore::new(
+            Request::new(Bytes::new()),
+            HandlerConfig::default(),
+        )
+        .with_preset(
+            Response(http::Response::new(Body::Sync(Bytes::from_static(
+                b"hello",
+            )))),
+            "test",
+        );
+
+        let response = render_plain(core).await;
+
+        assert_eq!(header_of(&response, "content-length"), Some("5"));
+        assert!(
+            matches!(response.0.body(), Body::Sync(bytes) if bytes.as_ref() == b"hello")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn async_bodies_do_not_receive_content_length() {
+        let stream = futures::stream::once(async {
+            Result::<Bytes, throw_error::Error>::Ok(Bytes::from_static(
+                b"hello",
+            ))
+        });
+        let core = HandlerCore::new(
+            Request::new(Bytes::new()),
+            HandlerConfig::default(),
+        )
+        .with_preset(
+            Response(http::Response::new(Body::Async(Box::pin(stream)))),
+            "test",
+        );
+
+        let response = render_plain(core).await;
+
+        assert!(header_of(&response, "content-length").is_none());
+        assert!(matches!(response.0.body(), Body::Async(_)));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn application_nosniff_override_wins() {
         let mut core = HandlerCore::new(
             Request::builder()
@@ -973,7 +1029,7 @@ mod tests {
                 .expect("test request should be valid"),
             HandlerConfig::default(),
         );
-        core.server_fn = Some(Box::new(|_| {
+        core.selection = Selection::ServerFn(Box::new(|_| {
             Box::pin(async {
                 http::Response::new(Body::Sync(Bytes::from_static(b"ok")))
             })

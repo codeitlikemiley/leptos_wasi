@@ -58,6 +58,23 @@ jobs:
       - name: Run ${{ matrix.runtime }} checks
         run: cargo make ${{ matrix.task }}
 
+  hot-path-bench:
+    name: Hot-path microbench
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Run host-native hot-path benches
+        run: cargo bench --locked --bench hot_path --no-default-features --features wasip2
+
   msrv:
     name: Rust 1.93.0 / ${{ matrix.runtime }}
     runs-on: ubuntu-latest

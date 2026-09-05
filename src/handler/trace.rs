@@ -20,7 +20,7 @@ use http::StatusCode;
 use leptos_router::SsrMode;
 
 #[cfg(feature = "tracing")]
-use super::core::HandlerCore;
+use super::core::{HandlerCore, Selection};
 #[cfg(feature = "tracing")]
 use super::policy::RequestPolicyError;
 
@@ -46,17 +46,18 @@ impl RequestTrace {
             .as_deref()
             .unwrap_or_else(|| core.req.uri().path());
         let best_match = core.ssr_router.best_match(path);
-        let route_class = core.trace_route_class.unwrap_or_else(|| {
-            if core.server_fn.is_some() {
-                "server_fn"
-            } else if core.preset_res.is_some() {
-                "preset"
-            } else if core.should_404 || best_match.is_none() {
-                "not_found"
-            } else {
-                "ssr"
+        let route_class = match &core.selection {
+            Selection::ServerFn(_) => "server_fn",
+            Selection::Preset(_, class) => *class,
+            Selection::NotFound => "not_found",
+            Selection::Unclaimed => {
+                if best_match.is_none() {
+                    "not_found"
+                } else {
+                    "ssr"
+                }
             }
-        });
+        };
         let ssr_mode = if route_class == "ssr" {
             best_match.map_or("none", |matched| {
                 ssr_mode_name(matched.handler().mode())
@@ -229,7 +230,7 @@ mod tests {
     use bytes::Bytes;
     use http::{Method, Request};
 
-    use super::super::core::HandlerCore;
+    use super::super::core::{HandlerCore, Selection};
     use super::super::policy::HandlerConfig;
     use crate::response::Body;
 
@@ -249,7 +250,7 @@ mod tests {
         })
         .expect("static registration should succeed");
 
-        assert_eq!(core.trace_route_class, Some("static"));
+        assert!(matches!(core.selection, Selection::Preset(_, "static")));
         assert_eq!(core.trace_path.as_deref(), Some("/static/nested asset.js"));
     }
 }
