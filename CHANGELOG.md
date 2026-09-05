@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
   `islands-router`). The MSRV job installs Clippy on 1.93.0 and runs Clippy
   plus rustdoc for every feature-matrix row. Advisory ignores live only in
   `deny.toml`; the duplicate `cargo audit --ignore` step is gone.
+- `cargo-semver-checks` is pinned to 0.50.0 so the SemVer job can read rustdoc
+  JSON v60 from current stable Rust.
+- `deny.toml` ignores `RUSTSEC-2026-0249` (`smartstring` via `routefinder`), an
+  unmaintained advisory with no safe upgrade, documented in `PRODUCTION.md`.
 
 ### Fixed
 
