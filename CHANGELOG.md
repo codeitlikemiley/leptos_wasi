@@ -29,6 +29,9 @@ All notable changes to this project will be documented in this file.
   the same-origin sanitizer.
 - An explicit `Location: /` is a real app target and is no longer overwritten
   by Referer. Form posts that want a Referer bounce omit `Location`.
+- Requests that only send the `Referrer` spelling have that value copied into
+  `Referer` before the server function runs, so `form-redirects` does not fall
+  back to `Location: /` and skip the alternate spelling.
 - Invalid `redirect()` paths are logged with `escape_debug`, so a CR/LF in the
   path cannot split the log line.
 - Policy-rejection HTTP bodies are fixed strings (`request body too large`,
