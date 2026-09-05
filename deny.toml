@@ -4,11 +4,13 @@ targets = ["wasm32-wasip2"]
 
 [advisories]
 yanked = "deny"
-# Temporary, non-vulnerability exceptions inherited only through Leptos 0.8.
-# Review and remove when Leptos replaces the archived macro dependencies.
+# Temporary, non-vulnerability exceptions inherited transitively. Each is an
+# unmaintained-crate warning with no fixed release, not a vulnerability.
+# Review and remove when the upstream dependency drops them.
 ignore = [
-    "RUSTSEC-2024-0436", # paste, unmaintained
-    "RUSTSEC-2026-0173", # proc-macro-error2, unmaintained
+    "RUSTSEC-2024-0436", # paste, unmaintained (via Leptos 0.8)
+    "RUSTSEC-2026-0173", # proc-macro-error2, unmaintained (via Leptos 0.8)
+    "RUSTSEC-2026-0249", # smartstring, unmaintained (via routefinder)
 ]
 
 [licenses]

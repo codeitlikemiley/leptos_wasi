@@ -1,0 +1,5 @@
+{
+  "name": "leptos_wasi",
+  "user": "ubuntu",
+  "install": "./.cursor/install.sh"
+}
