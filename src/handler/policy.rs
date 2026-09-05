@@ -4,7 +4,7 @@
 use bytes::Bytes;
 use http::{
     HeaderMap, HeaderValue, StatusCode,
-    header::{CONTENT_LENGTH, CONTENT_TYPE},
+    header::{CONTENT_LENGTH, CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS},
 };
 use thiserror::Error;
 
@@ -12,8 +12,6 @@ use crate::response::{Body, Response};
 
 /// Default maximum request body size: 16 MiB.
 pub const DEFAULT_MAX_REQUEST_BODY_SIZE: usize = 16 * 1024 * 1024;
-
-pub(super) const X_CONTENT_TYPE_OPTIONS: &str = "x-content-type-options";
 
 /// Request policy applied while converting incoming WASI HTTP requests.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -143,7 +141,7 @@ impl RequestPolicyError {
 pub(crate) fn validate_content_length(
     headers: &HeaderMap,
     limit: usize,
-) -> Result<(), RequestPolicyError> {
+) -> Result<Option<usize>, RequestPolicyError> {
     let mut parsed = None;
     for value in headers.get_all(CONTENT_LENGTH) {
         let value = value
@@ -168,7 +166,7 @@ pub(crate) fn validate_content_length(
     if parsed.is_some_and(|length| length > limit as u64) {
         return Err(RequestPolicyError::BodyTooLarge { limit });
     }
-    Ok(())
+    Ok(parsed.map(|length| usize::try_from(length).unwrap_or(limit)))
 }
 
 pub(super) fn policy_response(error: &RequestPolicyError) -> Response {
@@ -210,10 +208,12 @@ pub(super) fn plain_response(
 /// [`ResponseOptions`](crate::response::ResponseOptions) keeps it, because `extend_response` has already merged
 /// those headers in by the time this runs.
 pub(super) fn set_default_nosniff(response: &mut Response) {
-    let name = http::header::HeaderName::from_static(X_CONTENT_TYPE_OPTIONS);
     let headers = response.0.headers_mut();
-    if !headers.contains_key(&name) {
-        headers.insert(name, HeaderValue::from_static("nosniff"));
+    if !headers.contains_key(X_CONTENT_TYPE_OPTIONS) {
+        headers.insert(
+            X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        );
     }
 }
 
@@ -304,7 +304,10 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_LENGTH, HeaderValue::from_static("1024"));
 
-        assert!(validate_content_length(&headers, 1024).is_ok());
+        assert_eq!(
+            validate_content_length(&headers, 1024).expect("valid length"),
+            Some(1024)
+        );
     }
 
     #[test]

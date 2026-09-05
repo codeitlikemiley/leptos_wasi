@@ -41,11 +41,15 @@ impl Response {
     /// Returns [`ResponseError`] if a header name or value is rejected by
     /// the host.
     pub fn headers(&self) -> Result<Headers, ResponseError> {
-        let headers = Headers::new();
-        for (name, value) in self.0.headers() {
-            headers.append(name.as_ref(), &Vec::from(value.as_bytes()))?;
-        }
-        Ok(headers)
+        let entries: Vec<(String, Vec<u8>)> = self
+            .0
+            .headers()
+            .iter()
+            .map(|(name, value)| {
+                (name.as_str().to_owned(), Vec::from(value.as_bytes()))
+            })
+            .collect();
+        Headers::from_list(&entries).map_err(Into::into)
     }
 }
 

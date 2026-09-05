@@ -4,7 +4,7 @@
 #[cfg(feature = "wasip2")]
 pub mod p2 {
     use bytes::Bytes;
-    use http::{Uri, uri::Parts};
+    use http::{StatusCode, Uri, uri::Parts};
     use thiserror::Error;
     use wasi::{
         clocks::monotonic_clock::subscribe_duration,
@@ -35,18 +35,46 @@ pub mod p2 {
     /// client that stalls or trickles cannot hold the instance indefinitely.
     /// The budget spans the whole body rather than the gap between chunks, so
     /// a client feeding one byte per interval is bounded too.
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "owns the host resource handle; dropping it releases it"
-    )]
     pub fn from_wasi_request_with_deadline(
         request: IncomingRequest,
         max_body_size: usize,
         timeout_ns: Option<u64>,
     ) -> Result<http::Request<Bytes>, RequestError> {
         let parts = request_parts(&request)?;
-        super::super::handler::validate_content_length(
+        let body = collect_wasi_body(
+            request,
             &parts.headers,
+            max_body_size,
+            timeout_ns,
+        )?;
+        Ok(http::Request::from_parts(parts, body))
+    }
+
+    /// Collects the incoming body after [`request_parts`] has already run.
+    ///
+    /// The handler calls this so conversion of method, URI, and headers
+    /// happens once. [`from_wasi_request_with_deadline`] still composes both
+    /// steps for callers that want a complete `http::Request`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RequestError::Policy`] if the declared length is unusable
+    /// or over the limit, [`RequestError::BodyTooLarge`] if the collected
+    /// body exceeds the limit, [`RequestError::BodyReadTimeout`] if the
+    /// budget expires, and the body-resource variants if the stream cannot
+    /// be opened or read.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "owns the host resource handle; dropping it releases it"
+    )]
+    pub fn collect_wasi_body(
+        request: IncomingRequest,
+        headers: &http::HeaderMap,
+        max_body_size: usize,
+        timeout_ns: Option<u64>,
+    ) -> Result<Bytes, RequestError> {
+        let declared = super::super::handler::validate_content_length(
+            headers,
             max_body_size,
         )?;
 
@@ -63,7 +91,7 @@ pub mod p2 {
         let deadline = timeout_ns.map(subscribe_duration);
         let readable = deadline.as_ref().map(|_| body_stream.subscribe());
 
-        let mut body = Vec::with_capacity(crate::CHUNK_BYTE_SIZE);
+        let mut body = Vec::new();
         let mut consecutive_empty = 0_u32;
         let collected = loop {
             if let Some(deadline) = &deadline
@@ -107,6 +135,11 @@ pub mod p2 {
                 }
                 Ok(data) => {
                     reset_empty_body_reads(&mut consecutive_empty);
+                    if body.capacity() == 0
+                        && let Some(declared) = declared
+                    {
+                        body.reserve(declared.min(max_body_size));
+                    }
                     if body.len().saturating_add(data.len()) > max_body_size {
                         break Err(RequestError::BodyTooLarge(max_body_size));
                     }
@@ -120,7 +153,7 @@ pub mod p2 {
         drop(body_stream);
         IncomingBody::finish(incoming_body);
         collected?;
-        Ok(http::Request::from_parts(parts, Bytes::from(body)))
+        Ok(Bytes::from(body))
     }
 
     /// Consecutive empty non-blocking reads before the stream is treated as
@@ -204,6 +237,28 @@ pub mod p2 {
         /// Request policy validation failed.
         #[error(transparent)]
         Policy(#[from] super::super::handler::RequestPolicyError),
+    }
+
+    impl RequestError {
+        /// Status to send the client instead of failing the handler.
+        ///
+        /// Malformed method, URI, headers, or a body I/O failure from a
+        /// broken client become 400. A consumed or unavailable body stream is
+        /// a host/guest bug and stays an error.
+        #[must_use]
+        pub const fn client_status(&self) -> Option<StatusCode> {
+            match self {
+                Self::Http(_) | Self::WasiIo(_) => {
+                    Some(StatusCode::BAD_REQUEST)
+                }
+                Self::BodyAlreadyConsumed
+                | Self::BodyStreamUnavailable
+                | Self::BodyTooLarge(_)
+                | Self::BodyReadTimeout(_)
+                | Self::InvalidHeaders
+                | Self::Policy(_) => None,
+            }
+        }
     }
 
     /// Converts a WASI Preview 2 method into an `http` method.
@@ -345,6 +400,26 @@ pub mod p2 {
             super::note_empty_body_read(&mut consecutive_empty)
                 .expect("a reset counter must accept another empty read");
             assert_eq!(consecutive_empty, 1);
+        }
+
+        #[test]
+        fn http_and_wasi_io_errors_are_client_failures() {
+            let http = http::Request::builder()
+                .header("\0", "x")
+                .body(())
+                .expect_err("nul is not a header name");
+            assert_eq!(
+                super::RequestError::from(http).client_status(),
+                Some(http::StatusCode::BAD_REQUEST)
+            );
+            assert_eq!(
+                super::RequestError::BodyAlreadyConsumed.client_status(),
+                None
+            );
+            assert_eq!(
+                super::RequestError::BodyStreamUnavailable.client_status(),
+                None
+            );
         }
     }
 }

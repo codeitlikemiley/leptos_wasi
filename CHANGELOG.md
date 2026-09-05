@@ -15,6 +15,12 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Preview 2 converts request parts once, then collects the body. Malformed
+  method, URI, or headers (`Host: example.com/x`) now answer 400 instead of
+  failing the handler. `Body::Sync` writes without wrapping a one-item stream.
+  Static assets use a `from_static` mime table for the common web set, reserve
+  the body from `Content-Length`, skip residual percent-decoding when `%` is
+  absent, and emit `Content-Length` with `HeaderValue::from(len)`.
 - CI now lints, tests, and documents the default feature set (WASIp2 without
   `islands-router`). The MSRV job installs Clippy on 1.93.0 and runs Clippy
   plus rustdoc for every feature-matrix row. Advisory ignores live only in
