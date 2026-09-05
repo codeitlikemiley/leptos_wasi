@@ -7,7 +7,7 @@
 //! The fields are `pub(super)`, which is exactly the access sibling modules
 //! had when all of this lived in one file.
 
-use std::rc::Rc;
+use std::sync::Arc;
 #[cfg(feature = "tracing")]
 use std::time::Instant;
 
@@ -42,7 +42,7 @@ pub(super) struct HandlerCore {
     pub(super) server_fn: Option<ServerFnHandler>,
     pub(super) preset_res: Option<Response>,
     pub(super) should_404: bool,
-    pub(super) ssr_router: Rc<Router<RouteListing>>,
+    pub(super) ssr_router: Arc<Router<RouteListing>>,
     routes_registered: bool,
     config: HandlerConfig,
     #[cfg(feature = "tracing")]
@@ -60,7 +60,7 @@ impl HandlerCore {
             server_fn: None,
             preset_res: None,
             should_404: false,
-            ssr_router: Rc::new(Router::new()),
+            ssr_router: Arc::new(Router::new()),
             routes_registered: false,
             config,
             #[cfg(feature = "tracing")]
@@ -317,7 +317,7 @@ impl HandlerCore {
             return Ok(self);
         }
 
-        self.ssr_router = Rc::new(router_from_listings(validated_route_table(
+        self.ssr_router = Arc::new(router_from_listings(validated_route_table(
             &app_fn,
             excluded_routes,
             &discovery_context,
@@ -328,7 +328,7 @@ impl HandlerCore {
 
     /// Installs a previously discovered [`RouteTable`].
     ///
-    /// Clone is the reuse: the table holds an `Rc` of the router.
+    /// Clone is the reuse: the table holds an `Arc` of the router.
     /// Requests that never consult the SSR router still skip installing it.
     ///
     /// # Errors

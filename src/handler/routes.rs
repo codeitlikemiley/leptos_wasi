@@ -3,7 +3,7 @@
 //! Shared by the request path and by [`validate_route_table`] so the rules a
 //! deployment enforces and the rules a test suite checks cannot drift apart.
 
-use std::{collections::BTreeSet, rc::Rc, sync::Arc};
+use std::{collections::BTreeSet, sync::Arc};
 
 use http::Request;
 use hydration_context::SsrSharedContext;
@@ -100,8 +100,8 @@ pub(super) fn router_from_listings(
 ///
 /// Discovery still runs per request when the app calls `generate_routes`.
 /// Pass a `RouteTable` into `generate_routes_from` when the host reuses a
-/// component instance. The table holds an `Rc` and is therefore not `Send`;
-/// store it in `thread_local!` so each instance thread owns its copy:
+/// component instance. The table holds an `Arc` of the router so clones are
+/// cheap and `Handler` stays `Send`.
 ///
 /// ```rust,ignore
 /// thread_local! {
@@ -113,7 +113,7 @@ pub(super) fn router_from_listings(
 /// ```
 #[derive(Clone)]
 pub struct RouteTable {
-    router: Rc<Router<RouteListing>>,
+    router: Arc<Router<RouteListing>>,
 }
 
 impl RouteTable {
@@ -140,13 +140,13 @@ impl RouteTable {
         let routes =
             validated_route_table(&app, excluded_routes, &discovery_context)?;
         Ok(Self {
-            router: Rc::new(router_from_listings(routes)),
+            router: Arc::new(router_from_listings(routes)),
         })
     }
 
     /// Cheap clone of the shared router for one request's handler.
-    pub(super) fn router(&self) -> Rc<Router<RouteListing>> {
-        Rc::clone(&self.router)
+    pub(super) fn router(&self) -> Arc<Router<RouteListing>> {
+        Arc::clone(&self.router)
     }
 }
 
