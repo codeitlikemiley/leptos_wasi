@@ -15,6 +15,11 @@ All notable changes to this project will be documented in this file.
 - `deny.toml` ignores `RUSTSEC-2026-0249` (`smartstring` via `routefinder`), an
   unmaintained advisory with no safe upgrade, documented in `PRODUCTION.md`.
 
+### Fixed
+
+- Route-discovery counter tests take a mutex so parallel `cargo test` cannot
+  observe another registration mid-assert.
+
 ## [0.4.2] — 2026-08-05
 
 ### Fixed

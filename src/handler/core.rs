@@ -333,7 +333,10 @@ impl HandlerCore {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    };
 
     use leptos::prelude::view;
     use leptos_router::{
@@ -345,6 +348,9 @@ mod tests {
     use super::*;
 
     static ROUTE_GENERATIONS: AtomicUsize = AtomicUsize::new(0);
+    // Serializes the two tests that share `ROUTE_GENERATIONS` so parallel
+    // cargo test cannot observe another registration mid-assert.
+    static ROUTE_GENERATIONS_LOCK: Mutex<()> = Mutex::new(());
 
     fn counted_route_app() -> impl IntoView {
         ROUTE_GENERATIONS.fetch_add(1, Ordering::Relaxed);
@@ -433,6 +439,9 @@ mod tests {
         // once per request, so it never hit at all. Pinning the count at one
         // generation per registration keeps a future cache from being
         // reintroduced on the assumption that it pays for itself.
+        let _guard = ROUTE_GENERATIONS_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         ROUTE_GENERATIONS.store(0, Ordering::Relaxed);
         for _ in 0..2 {
             let core = HandlerCore::new(
@@ -457,6 +466,9 @@ mod tests {
         // resolves without the SSR router, and discovery renders the whole
         // application. Measured at 183 us of a 1054 us request, paid on every
         // request because each one gets a fresh component instance.
+        let _guard = ROUTE_GENERATIONS_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         ROUTE_GENERATIONS.store(0, Ordering::Relaxed);
         let core = HandlerCore::new(
             Request::new(Bytes::new()),
