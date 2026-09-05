@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- CI now lints, tests, and documents the default feature set (WASIp2 without
+  `islands-router`). The MSRV job installs Clippy on 1.93.0 and runs Clippy
+  plus rustdoc for every feature-matrix row. Advisory ignores live only in
+  `deny.toml`; the duplicate `cargo audit --ignore` step is gone.
+
 ## [0.4.2] — 2026-08-05
 
 ### Fixed

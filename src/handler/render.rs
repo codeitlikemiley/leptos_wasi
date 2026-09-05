@@ -195,10 +195,6 @@ where
     }
 }
 
-#[expect(
-    clippy::panic,
-    reason = "a failed invariant in a test should abort the test"
-)]
 #[cfg(test)]
 mod tests {
     use http::{
@@ -207,7 +203,6 @@ mod tests {
         request::Parts,
     };
 
-    use super::super::http_util::ISLANDS_ROUTER_HEADER;
     use super::super::policy::{
         HandlerConfig, RequestPolicyError, X_CONTENT_TYPE_OPTIONS,
         policy_response,
@@ -460,7 +455,12 @@ mod tests {
     }
 
     #[cfg(feature = "islands-router")]
+    #[expect(
+        clippy::panic,
+        reason = "a failed invariant in a test should abort the test"
+    )]
     mod islands_router_streaming {
+        use super::super::super::http_util::ISLANDS_ROUTER_HEADER;
         use super::*;
         use leptos::prelude::{ElementChild, Suspend, Suspense};
         use std::{

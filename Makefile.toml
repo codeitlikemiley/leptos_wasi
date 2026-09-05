@@ -5,6 +5,17 @@ default_to_workspace = false
 command = "cargo"
 args = ["fmt", "--all", "--", "--check"]
 
+[tasks.clippy-default]
+command = "cargo"
+args = [
+    "clippy",
+    "--locked",
+    "--all-targets",
+    "--",
+    "-D",
+    "warnings",
+]
+
 [tasks.clippy-wasip2]
 command = "cargo"
 args = [
@@ -47,6 +58,10 @@ args = [
     "warnings",
 ]
 
+[tasks.test-default]
+command = "cargo"
+args = ["test", "--locked"]
+
 [tasks.test-wasip2]
 command = "cargo"
 args = [
@@ -76,6 +91,11 @@ args = [
     "--features",
     "wasip2,wasip3,islands-router",
 ]
+
+[tasks.doc-default]
+env = { RUSTDOCFLAGS = "-Dmissing-docs -Drustdoc::broken-intra-doc-links" }
+command = "cargo"
+args = ["doc", "--locked", "--no-deps"]
 
 [tasks.doc-wasip2]
 env = { RUSTDOCFLAGS = "-Dmissing-docs -Drustdoc::broken-intra-doc-links" }
@@ -126,6 +146,9 @@ env = { RUSTDOCFLAGS = "-Dmissing-docs -Drustdoc::broken-intra-doc-links" }
 command = "cargo"
 args = ["doc", "--locked", "--no-deps", "--all-features"]
 
+[tasks.ci-default]
+dependencies = ["fmt", "clippy-default", "test-default", "doc-default"]
+
 [tasks.ci-wasip2]
 dependencies = ["fmt", "clippy-wasip2", "test-wasip2", "doc-wasip2"]
 
@@ -162,7 +185,13 @@ args = ["--composition-tools"]
 command = "./scripts/run-middleware-tests.sh"
 
 [tasks.ci]
-dependencies = ["ci-wasip2", "ci-wasip3", "ci-dual", "api-fixtures"]
+dependencies = [
+    "ci-default",
+    "ci-wasip2",
+    "ci-wasip3",
+    "ci-dual",
+    "api-fixtures",
+]
 
 # Deliberately not a dependency of [tasks.ci]. The soak job's own notes record
 # a +/-0.7pp measurement problem on shared runners over a 600-second load

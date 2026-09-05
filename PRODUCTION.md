@@ -256,7 +256,7 @@ otherwise generate or assign correlation at the ingress. Alerts should cover:
 
 ## Dependency policy
 
-Every release runs `cargo audit` and `cargo deny check`. The checked
+Every release runs `cargo deny check`. The checked
 [`deny.toml`](./deny.toml) restricts registry sources, rejects yanked crates and
 wildcard requirements, makes duplicate versions visible, and permits only the
 reviewed license set. The 0.4.2 alpha dependency graph currently contains two
@@ -291,8 +291,8 @@ promotion evidence.
 A stable library release requires the following runtime-independent gates;
 deployment promotion is tracked separately:
 
-- Formatting, Clippy, tests, and rustdoc pass for WASIp2, WASIp3, and both
-  features together.
+- Formatting, Clippy, tests, and rustdoc pass for default features, WASIp2,
+  WASIp3, and both features together.
 - Rust 1.93.0 and current stable pass the feature matrix.
 - Wasmtime E2E passes for both previews; Spin E2E passes for Preview 2; the
   tagged Preview 3 expected-failure canary matches its pinned linker failure;
@@ -315,7 +315,7 @@ deployment promotion is tracked separately:
   WASIp2 pollables, and produces no unexpected 5xx.
 - Release-mode p99 latency regresses no more than 5% from the recorded baseline.
 - `cargo package --locked`, `cargo publish --dry-run --locked`, and
-  `cargo audit` pass.
+  `cargo deny check` pass.
 - Every breaking API change appears in [MIGRATION.md](./MIGRATION.md).
 
 Wasmtime remains a blocking correctness/reference gate, not a 25 ms production
