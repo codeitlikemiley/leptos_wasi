@@ -43,6 +43,12 @@ All notable changes to this project will be documented in this file.
 - HEAD responses compute `Content-Length` from the original `Body::Sync`
   before the body is blanked, so HEAD and GET agree on 404, policy rejections,
   and 405.
+- Preview 2 `run_until` now interleaves `try_recv → run_guest → try_recv →
+  poll_host → try_recv`. `Mode::Preemptive` does a non-blocking `ready()`
+  sweep after a runnable guest task and only blocking-polls when the pool is
+  idle. Leftover pollables after the root completes are probed once and
+  abandoned. `WaitPoll` uses the current executor's queue (falling back to the
+  process queue). `poll_local` no longer swallows `TaskSpawnFailed`.
 
 ## [0.4.2] — 2026-08-05
 
