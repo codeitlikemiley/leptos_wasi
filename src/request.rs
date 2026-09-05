@@ -252,6 +252,12 @@ pub mod p2 {
         /// A body stream could not be opened.
         #[error("incoming request body stream is unavailable")]
         BodyStreamUnavailable,
+        /// Header collection was unavailable while building the request.
+        ///
+        /// Retained for patch SemVer against 0.4.1; current construction maps
+        /// header failures through [`Self::Http`] instead.
+        #[error("request headers are unavailable")]
+        InvalidHeaders,
         /// Request policy validation failed.
         #[error(transparent)]
         Policy(#[from] crate::handler::RequestPolicyError),
@@ -273,6 +279,7 @@ pub mod p2 {
                 | Self::BodyStreamUnavailable
                 | Self::BodyTooLarge(_)
                 | Self::BodyReadTimeout(_)
+                | Self::InvalidHeaders
                 | Self::Policy(_) => None,
             }
         }
