@@ -13,8 +13,8 @@ fn escaped_redirect_path(path: &str) -> impl std::fmt::Display + '_ {
 ///
 /// Inspects the current Leptos context for `Parts` and `ResponseOptions`
 /// and either inserts `Location` or sets a 302 status. HTML acceptance uses
-/// HTML acceptance uses the crate's q-value parser (`text/html;q=0` is not
-/// HTML), unlike axum's `contains("text/html")` check. This path is merged
+/// the crate's q-value parser (`text/html;q=0` is not HTML), unlike axum's
+/// `contains("text/html")` check. This path is merged
 /// into the response after the server-function `Location` sanitizer, so an
 /// absolute off-origin URL is sent as written. Applications that build a target
 /// from request data should validate it first.
