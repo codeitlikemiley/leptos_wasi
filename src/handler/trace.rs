@@ -98,6 +98,9 @@ impl RequestTrace {
     }
 
     fn mark_first_byte(&self) {
+        if self.state.first_byte_micros.load(Ordering::Relaxed) != 0 {
+            return;
+        }
         let elapsed = self.state.started.elapsed().as_micros();
         let encoded = u64::try_from(elapsed)
             .unwrap_or(u64::MAX - 1)

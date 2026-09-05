@@ -158,6 +158,9 @@ fn validate_decoded_bytes(decoded: &[u8]) -> Result<(), StaticPathError> {
 }
 
 fn validate_residual_encoding(decoded: &str) -> Result<(), StaticPathError> {
+    if !decoded.contains('%') {
+        return Ok(());
+    }
     let mut probe = decoded.to_owned();
     for _ in 0..MAX_RESIDUAL_DECODE_PASSES {
         let Some(next) = decode_residual_once(&probe)? else {

@@ -41,12 +41,13 @@ impl HandlerCore {
         IV: IntoView + 'static,
     {
         let path = self.req.uri().path().to_string();
-        let best_match = self.ssr_router.best_match(&path);
+        let ssr_mode = self
+            .ssr_router
+            .best_match(&path)
+            .map(|matched| matched.handler().mode().clone());
         let islands_navigation = is_islands_router_navigation(&self.req);
         let is_head = self.req.method() == Method::HEAD;
         let (parts, body) = self.req.into_parts();
-        let context_parts = parts.clone();
-        let mut req = Request::from_parts(parts, body);
 
         let owner = Owner::new();
         let render = owner.with(|| {
@@ -57,6 +58,8 @@ impl HandlerCore {
                 } else if let Some(response) = self.preset_res {
                     Some(response)
                 } else if let Some(server_fn) = self.server_fn {
+                    let context_parts = parts.clone();
+                    let mut req = Request::from_parts(parts, body);
                     provide_standard_contexts(context_parts, res_opts.clone());
                     additional_context();
 
@@ -73,8 +76,7 @@ impl HandlerCore {
                         referrer,
                     );
                     Some(response.into())
-                } else if let Some(best_match) = best_match {
-                    let listing = best_match.handler();
+                } else if let Some(ssr_mode) = ssr_mode {
                     let (meta_context, meta_output) = ServerMetaContext::new();
                     let add_ctx = additional_context.clone();
                     let route_context = {
@@ -82,7 +84,7 @@ impl HandlerCore {
                         let meta_context = meta_context.clone();
                         move || {
                             provide_context(meta_context);
-                            provide_standard_contexts(context_parts, res_opts);
+                            provide_standard_contexts(parts, res_opts);
                             if islands_navigation {
                                 provide_context(IslandsRouterNavigation);
                             }
@@ -96,7 +98,7 @@ impl HandlerCore {
                             meta_output,
                             route_context,
                             res_opts.clone(),
-                            render_mode::<IV>(listing.mode()),
+                            render_mode::<IV>(&ssr_mode),
                             !islands_navigation,
                         )
                         .await,
@@ -123,9 +125,9 @@ impl HandlerCore {
         set_default_nosniff(&mut response);
         if !response.0.headers().contains_key(CONTENT_LENGTH)
             && let Body::Sync(bytes) = response.0.body()
-            && let Ok(value) = HeaderValue::from_str(&bytes.len().to_string())
         {
-            response.0.headers_mut().insert(CONTENT_LENGTH, value);
+            let length = HeaderValue::from(bytes.len());
+            response.0.headers_mut().insert(CONTENT_LENGTH, length);
         }
         if is_head {
             *response.0.body_mut() = Body::Sync(Bytes::new());
@@ -201,13 +203,12 @@ where
 mod tests {
     use http::{
         Request, StatusCode,
-        header::{ACCEPT, CONTENT_TYPE, LOCATION},
+        header::{ACCEPT, CONTENT_TYPE, LOCATION, X_CONTENT_TYPE_OPTIONS},
         request::Parts,
     };
 
     use super::super::policy::{
-        HandlerConfig, RequestPolicyError, X_CONTENT_TYPE_OPTIONS,
-        policy_response,
+        HandlerConfig, RequestPolicyError, policy_response,
     };
     use super::*;
     use leptos::prelude::{use_context, view};
@@ -427,9 +428,7 @@ mod tests {
                 let options = use_context::<ResponseOptions>()
                     .expect("response options should be installed");
                 options.insert_header(
-                    http::header::HeaderName::from_static(
-                        X_CONTENT_TYPE_OPTIONS,
-                    ),
+                    X_CONTENT_TYPE_OPTIONS,
                     HeaderValue::from_static("off"),
                 );
             })
@@ -638,7 +637,7 @@ mod tests {
     }
 
     fn nosniff_of(response: &Response) -> Option<&str> {
-        header_of(response, X_CONTENT_TYPE_OPTIONS)
+        header_of(response, X_CONTENT_TYPE_OPTIONS.as_str())
     }
 
     fn static_asset_core(method: Method) -> HandlerCore {
@@ -988,9 +987,7 @@ mod tests {
                     use_context::<ResponseOptions>()
                         .expect("response options should be installed")
                         .insert_header(
-                            http::header::HeaderName::from_static(
-                                X_CONTENT_TYPE_OPTIONS,
-                            ),
+                            X_CONTENT_TYPE_OPTIONS,
                             HeaderValue::from_static("off"),
                         );
                 },

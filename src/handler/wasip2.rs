@@ -20,8 +20,8 @@ use thiserror::Error;
 use super::builder::common_handler_methods;
 use super::core::HandlerCore;
 use super::policy::{
-    HandlerConfig, RegistrationError, RequestPolicyError,
-    X_CONTENT_TYPE_OPTIONS, policy_response,
+    HandlerConfig, RegistrationError, RequestPolicyError, plain_response,
+    policy_response,
 };
 use super::server_fns::{ReqBody, ResBody};
 #[cfg(feature = "tracing")]
@@ -114,59 +114,40 @@ impl Handler {
         let response_out = ResponseOutGuard::new(response_out);
         #[cfg(feature = "tracing")]
         let request_started = Instant::now();
-        let rejected_request = Request::from_parts(
-            crate::request::p2::request_parts(&request)?,
-            Bytes::new(),
-        );
-        match crate::request::p2::from_wasi_request_with_deadline(
+        let parts = match crate::request::p2::request_parts(&request) {
+            Ok(parts) => parts,
+            Err(error) => {
+                return handler_from_request_error(
+                    error,
+                    Request::new(Bytes::new()),
+                    response_out,
+                    config,
+                    #[cfg(feature = "tracing")]
+                    request_started,
+                );
+            }
+        };
+        match crate::request::p2::collect_wasi_body(
             request,
+            &parts.headers,
             config.max_request_body_size(),
             config.request_body_timeout_ns(),
         ) {
-            Ok(request) => {
-                let core = HandlerCore::new(request, config);
+            Ok(body) => {
+                let core =
+                    HandlerCore::new(Request::from_parts(parts, body), config);
                 #[cfg(feature = "tracing")]
                 let core = core.with_request_started(request_started);
                 Ok(Self { core, response_out })
             }
-            Err(crate::request::p2::RequestError::BodyTooLarge(_)) => {
-                let policy = RequestPolicyError::BodyTooLarge {
-                    limit: config.max_request_body_size(),
-                };
+            Err(error) => handler_from_request_error(
+                error,
+                Request::from_parts(parts, Bytes::new()),
+                response_out,
+                config,
                 #[cfg(feature = "tracing")]
-                trace_policy_rejection("p2", &policy);
-                let response = policy_response(&policy);
-                let core = HandlerCore::new(rejected_request, config)
-                    .with_preset(response, "request_policy");
-                #[cfg(feature = "tracing")]
-                let core = core.with_request_started(request_started);
-                Ok(Self { core, response_out })
-            }
-            Err(crate::request::p2::RequestError::BodyReadTimeout(
-                nanoseconds,
-            )) => {
-                let policy =
-                    RequestPolicyError::BodyReadTimeout { nanoseconds };
-                #[cfg(feature = "tracing")]
-                trace_policy_rejection("p2", &policy);
-                let response = policy_response(&policy);
-                let core = HandlerCore::new(rejected_request, config)
-                    .with_preset(response, "request_policy");
-                #[cfg(feature = "tracing")]
-                let core = core.with_request_started(request_started);
-                Ok(Self { core, response_out })
-            }
-            Err(crate::request::p2::RequestError::Policy(error)) => {
-                #[cfg(feature = "tracing")]
-                trace_policy_rejection("p2", &error);
-                let response = policy_response(&error);
-                let core = HandlerCore::new(rejected_request, config)
-                    .with_preset(response, "request_policy");
-                #[cfg(feature = "tracing")]
-                let core = core.with_request_started(request_started);
-                Ok(Self { core, response_out })
-            }
-            Err(error) => Err(error.into()),
+                request_started,
+            ),
         }
     }
 
@@ -218,6 +199,53 @@ impl Handler {
     }
 }
 
+fn handler_from_request_error(
+    error: crate::request::p2::RequestError,
+    request: Request<Bytes>,
+    response_out: ResponseOutGuard,
+    config: HandlerConfig,
+    #[cfg(feature = "tracing")] request_started: Instant,
+) -> Result<Handler, HandlerError> {
+    let policy = match error {
+        crate::request::p2::RequestError::BodyTooLarge(_) => {
+            RequestPolicyError::BodyTooLarge {
+                limit: config.max_request_body_size(),
+            }
+        }
+        crate::request::p2::RequestError::BodyReadTimeout(nanoseconds) => {
+            RequestPolicyError::BodyReadTimeout { nanoseconds }
+        }
+        crate::request::p2::RequestError::Policy(error) => error,
+        error => {
+            if let Some(status) = error.client_status() {
+                #[cfg(feature = "tracing")]
+                tracing::debug!(
+                    runtime = "wasi",
+                    preview = "p2",
+                    status = status.as_u16(),
+                    error_class = "invalid_request",
+                    "request conversion rejected as a client error"
+                );
+                let core = HandlerCore::new(request, config).with_preset(
+                    plain_response(status, "invalid request"),
+                    "request_policy",
+                );
+                #[cfg(feature = "tracing")]
+                let core = core.with_request_started(request_started);
+                return Ok(Handler { core, response_out });
+            }
+            return Err(error.into());
+        }
+    };
+    #[cfg(feature = "tracing")]
+    trace_policy_rejection("p2", &policy);
+    let core = HandlerCore::new(request, config)
+        .with_preset(policy_response(&policy), "request_policy");
+    #[cfg(feature = "tracing")]
+    let core = core.with_request_started(request_started);
+    Ok(Handler { core, response_out })
+}
+
 async fn send_response(
     response: Response,
     response_out: ResponseOutparam,
@@ -255,16 +283,18 @@ async fn send_response(
     ResponseOutparam::set(response_out, Ok(outgoing));
 
     let mut response_bytes = 0_u64;
-    let mut input = match response.0.into_body() {
-        Body::Sync(bytes) => {
-            Box::pin(futures::stream::once(async { Ok(bytes) }))
-        }
-        Body::Async(stream) => stream,
-    };
     let transfer = async {
-        while let Some(bytes) = input.next().await {
-            let bytes = bytes.map_err(HandlerError::ResponseStream)?;
-            write_all(&output, &bytes, &trace, &mut response_bytes).await?;
+        match response.0.into_body() {
+            Body::Sync(bytes) => {
+                write_all(&output, &bytes, &trace, &mut response_bytes).await?;
+            }
+            Body::Async(mut stream) => {
+                while let Some(bytes) = stream.next().await {
+                    let bytes = bytes.map_err(HandlerError::ResponseStream)?;
+                    write_all(&output, &bytes, &trace, &mut response_bytes)
+                        .await?;
+                }
+            }
         }
         output.flush()?;
         crate::executor::WaitPoll::new(output.subscribe()).await?;
@@ -329,12 +359,9 @@ fn send_internal_error(response_out: ResponseOutparam) {
     // This response is built outside `HandlerCore::render`, so the
     // centralized default cannot reach it. Its body is a typeless ASCII
     // sentence, which is exactly the case content sniffing exploits.
-    let _ = headers.append(
-        CONTENT_TYPE.as_str(),
-        b"text/plain; charset=utf-8".to_vec().as_ref(),
-    );
-    let _ =
-        headers.append(X_CONTENT_TYPE_OPTIONS, b"nosniff".to_vec().as_ref());
+    let _ = headers.append(CONTENT_TYPE.as_str(), b"text/plain; charset=utf-8");
+    let _ = headers
+        .append(http::header::X_CONTENT_TYPE_OPTIONS.as_str(), b"nosniff");
     let response = OutgoingResponse::new(headers);
     if response
         .set_status_code(StatusCode::INTERNAL_SERVER_ERROR.as_u16())

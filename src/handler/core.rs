@@ -7,6 +7,7 @@
 //! The fields are `pub(super)`, which is exactly the access sibling modules
 //! had when all of this lived in one file.
 
+use std::path::Path;
 use std::sync::Arc;
 #[cfg(feature = "tracing")]
 use std::time::Instant;
@@ -24,7 +25,10 @@ use server_fn::{
     Protocol, ServerFn, error::FromServerFnError, middleware::BoxedService,
 };
 
-use super::policy::{HandlerConfig, RegistrationError, plain_response};
+use super::policy::{
+    HandlerConfig, RegistrationError, RequestPolicyError, plain_response,
+    policy_response,
+};
 use super::routes::{RouteTable, router_from_listings, validated_route_table};
 use super::server_fns::{
     ReqBody, ResBody, ServerFnHandler, TypedServerFnService,
@@ -142,9 +146,8 @@ impl HandlerCore {
                 Box::pin(async move {
                     let (parts, bytes) = request.into_parts();
                     if bytes.len() > limit {
-                        return plain_response(
-                            StatusCode::PAYLOAD_TOO_LARGE,
-                            "request body too large",
+                        return policy_response(
+                            &RequestPolicyError::BodyTooLarge { limit },
                         )
                         .0;
                     }
@@ -246,7 +249,8 @@ impl HandlerCore {
             });
         }
 
-        match handler(decoded.clone()) {
+        let mime = content_type_for_static_path(&decoded);
+        match handler(decoded) {
             None => self.should_404 = true,
             Some(mut body) => {
                 let original_length = match &body {
@@ -257,22 +261,13 @@ impl HandlerCore {
                     body = Body::Sync(Bytes::new());
                 }
                 let mut response = http::Response::new(body);
-                let mime = MimeGuess::from_path(&decoded)
-                    .first_or_octet_stream()
-                    .to_string();
-                response.headers_mut().insert(
-                    CONTENT_TYPE,
-                    HeaderValue::from_str(&mime).unwrap_or_else(|_| {
-                        HeaderValue::from_static("application/octet-stream")
-                    }),
-                );
+                response.headers_mut().insert(CONTENT_TYPE, mime);
                 // `nosniff` is applied centrally in `HandlerCore::render`,
                 // which every static response also funnels through.
-                if let Some(length) = original_length
-                    && let Ok(length) =
-                        HeaderValue::from_str(&length.to_string())
-                {
-                    response.headers_mut().insert(CONTENT_LENGTH, length);
+                if let Some(length) = original_length {
+                    response
+                        .headers_mut()
+                        .insert(CONTENT_LENGTH, HeaderValue::from(length));
                 }
                 self.preset_res = Some(response.into());
             }
@@ -304,7 +299,7 @@ impl HandlerCore {
         // discovery renders the whole application to extract its `<Routes/>`,
         // so running it here only to drop every entry below is the single
         // largest avoidable cost on those paths - 183 us of a 1054 us request,
-        //         measured on `/api/get_test`. Discovery is per request unless the app
+        // measured on `/api/get_test`. Discovery is per request unless the app
         // passes a RouteTable into generate_routes_from.
         //
         // Skipping also skips the validation below, which is why it is gated
@@ -350,6 +345,37 @@ impl HandlerCore {
         self.ssr_router = table.router();
         self.routes_registered = true;
         Ok(self)
+    }
+}
+
+fn content_type_for_static_path(path: &str) -> HeaderValue {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase);
+    match extension.as_deref() {
+        Some("css") => HeaderValue::from_static("text/css"),
+        Some("gif") => HeaderValue::from_static("image/gif"),
+        Some("htm" | "html") => HeaderValue::from_static("text/html"),
+        Some("ico") => HeaderValue::from_static("image/x-icon"),
+        Some("jpeg" | "jpg") => HeaderValue::from_static("image/jpeg"),
+        Some("js") => HeaderValue::from_static("text/javascript"),
+        Some("json") => HeaderValue::from_static("application/json"),
+        Some("map" | "txt") => HeaderValue::from_static("text/plain"),
+        Some("mjs") => HeaderValue::from_static("application/javascript"),
+        Some("png") => HeaderValue::from_static("image/png"),
+        Some("svg") => HeaderValue::from_static("image/svg+xml"),
+        Some("ttf") => HeaderValue::from_static("font/ttf"),
+        Some("wasm") => HeaderValue::from_static("application/wasm"),
+        Some("webp") => HeaderValue::from_static("image/webp"),
+        Some("woff") => HeaderValue::from_static("application/font-woff"),
+        Some("woff2") => HeaderValue::from_static("font/woff2"),
+        _ => {
+            let mime = MimeGuess::from_path(path).first_or_octet_stream();
+            HeaderValue::from_str(mime.as_ref()).unwrap_or_else(|_| {
+                HeaderValue::from_static("application/octet-stream")
+            })
+        }
     }
 }
 
@@ -419,6 +445,41 @@ mod tests {
             result,
             Err(RegistrationError::InvalidStaticPrefix(_))
         ));
+    }
+
+    #[test]
+    fn static_mime_matches_mime_guess_for_the_common_web_set() {
+        let cases = [
+            ("app.js", "text/javascript"),
+            ("app.mjs", "application/javascript"),
+            ("font.woff", "application/font-woff"),
+            ("bundle.js.map", "text/plain"),
+        ];
+        for (file, mime) in cases {
+            let core = HandlerCore::new(
+                Request::builder()
+                    .uri(format!("/static/{file}"))
+                    .body(Bytes::new())
+                    .expect("test request should be valid"),
+                HandlerConfig::default(),
+            )
+            .static_files_handler("/static", |_| {
+                Some(Body::Sync(Bytes::from_static(b"x")))
+            })
+            .expect("static registration should succeed");
+            let content_type = core
+                .preset_res
+                .expect("static asset should be selected")
+                .0
+                .headers()
+                .get(CONTENT_TYPE)
+                .cloned();
+            assert_eq!(
+                content_type.as_ref().and_then(|value| value.to_str().ok()),
+                Some(mime),
+                "{file}"
+            );
+        }
     }
 
     #[test]
