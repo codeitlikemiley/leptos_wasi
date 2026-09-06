@@ -46,6 +46,44 @@ case "$PREVIEW" in
     ;;
 esac
 
+# Preview 3 already defaults to 128; Preview 2 defaults to 1. Prefer the
+# existing Wasmtime/e2e knobs, then PRODUCTION.md's recommended 128 for
+# Preview 2 candidate soaks (the tree that owns this script) so a reused
+# instance can amortize `RouteTable` discovery. Preview 3 omits the flag
+# (host default). CI baseline worktrees (PROJECT_ROOT) stay on the host
+# default: the 0.3.2 soak baseline panics on a second `Executor::new`
+# under reuse.
+EXPLICIT_REUSE="${WASMTIME_MAX_INSTANCE_REUSE_COUNT:-${LEPTOS_WASI_MAX_INSTANCE_REUSE:-}}"
+REUSE_COUNT=""
+if [[ "$HOST" == "wasmtime" ]]; then
+  if [[ -n "$EXPLICIT_REUSE" ]]; then
+    REUSE_COUNT="$EXPLICIT_REUSE"
+  elif [[ "$PREVIEW" == "p2" && "$ROOT" == "$TOOL_ROOT" ]]; then
+    REUSE_COUNT=128
+  fi
+  if [[ -n "$REUSE_COUNT" ]]; then
+    echo "instance reuse count: $REUSE_COUNT"
+  else
+    echo "instance reuse count: host default"
+  fi
+fi
+
+if [[ "${DRY_RUN:-}" == "1" ]]; then
+  if [[ "$HOST" == "wasmtime" ]]; then
+    DRY_ARGS=(serve -S cli=y)
+    if [[ "$PREVIEW" == "p3" ]]; then
+      DRY_ARGS+=(-S p3=y -W component-model-async=y)
+    fi
+    if [[ -n "$REUSE_COUNT" ]]; then
+      DRY_ARGS+=(--max-instance-reuse-count "$REUSE_COUNT")
+    fi
+    echo "dry-run wasmtime: ${DRY_ARGS[*]}"
+  else
+    echo "dry-run $HOST: no Wasmtime instance-reuse flag"
+  fi
+  exit 0
+fi
+
 cd "$ROOT"
 LEPTOS_OUTPUT_NAME=test-app cargo build \
   --locked \
@@ -78,19 +116,6 @@ case "$HOST" in
         -S p3=y
         -W component-model-async=y
       )
-    fi
-    # Preview 3 already defaults to 128; Preview 2 defaults to 1. Prefer the
-    # existing Wasmtime/e2e knobs, then PRODUCTION.md's recommended 128 for the
-    # tree that owns this script so a reused instance can amortize `RouteTable`
-    # discovery. CI baseline worktrees (PROJECT_ROOT) stay on the host default:
-    # the 0.3.2 soak baseline panics on a second `Executor::new` under reuse.
-    EXPLICIT_REUSE="${WASMTIME_MAX_INSTANCE_REUSE_COUNT:-${LEPTOS_WASI_MAX_INSTANCE_REUSE:-}}"
-    if [[ -n "$EXPLICIT_REUSE" ]]; then
-      REUSE_COUNT="$EXPLICIT_REUSE"
-    elif [[ "$ROOT" == "$TOOL_ROOT" ]]; then
-      REUSE_COUNT=128
-    else
-      REUSE_COUNT=""
     fi
     if [[ -n "$REUSE_COUNT" ]]; then
       WASMTIME_ARGS+=(--max-instance-reuse-count "$REUSE_COUNT")

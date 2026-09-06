@@ -27,9 +27,14 @@ case "$HOST" in
       -S cli=y
       -S http=y
     )
-    REUSE_COUNT="${WASMTIME_MAX_INSTANCE_REUSE_COUNT:-${LEPTOS_WASI_MAX_INSTANCE_REUSE:-128}}"
+    # This lane is Preview 3 (`-S p3=y`); Wasmtime already defaults reuse to
+    # 128. Only pass the flag when an operator sets an explicit knob.
+    REUSE_COUNT="${WASMTIME_MAX_INSTANCE_REUSE_COUNT:-${LEPTOS_WASI_MAX_INSTANCE_REUSE:-}}"
     if [[ -n "$REUSE_COUNT" ]]; then
+      echo "instance reuse count: $REUSE_COUNT"
       WASMTIME_ARGS+=(--max-instance-reuse-count "$REUSE_COUNT")
+    else
+      echo "instance reuse count: host default"
     fi
     wasmtime "${WASMTIME_ARGS[@]}" \
       --dir="$PWD/target/site::/site" \
