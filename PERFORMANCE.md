@@ -18,6 +18,14 @@ CI (`.github/workflows/main.yaml`) is the gate that ships:
 The 0.3.2-versus-0.4.0 table that follows is historical. It used a five-percent
 p99 budget that CI no longer enforces.
 
+## Soak results over time
+
+GitHub retains soak artifacts for 14 days. The running record of ten-minute
+soaks is [SOAK_HISTORY.md](./SOAK_HISTORY.md). After a merge to `main`, or when
+cutting a release, paste the rows from that commit's soak jobs — download the
+three `soak-*` artifacts and run `python3 scripts/format-soak-history.py` as
+described there. Do not invent numbers.
+
 ## Historical 0.3.2 versus 0.4.0 candidate
 
 Measured on 2026-07-10 on Apple Silicon with Wasmtime 45.0.0, Spin 4.0.0,
@@ -383,6 +391,11 @@ The JSON includes status counts, failures, throughput, first-byte and total
 latency percentiles, and a timestamped host RSS timeline. A release requires zero unexpected
 responses, p99 no more than five percent above its retained comparison
 baseline, and a stable final-quarter memory plateau.
+
+`python3 scripts/format-soak-history.py` reads those comparison (and sibling
+absolute) JSON files and prints a markdown row for
+[SOAK_HISTORY.md](./SOAK_HISTORY.md). Instance reuse is not in the JSON; pass
+`--reuse` from the job log (`instance reuse count: 128` or `host default`).
 
 ## Final-WASI middleware promotion gate
 
