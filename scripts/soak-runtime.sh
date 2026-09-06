@@ -20,11 +20,18 @@ make verify-split
 
 case "$HOST" in
   wasmtime)
-    wasmtime serve \
-      -W component-model-async=y \
-      -S p3=y \
-      -S cli=y \
-      -S http=y \
+    WASMTIME_ARGS=(
+      serve
+      -W component-model-async=y
+      -S p3=y
+      -S cli=y
+      -S http=y
+    )
+    REUSE_COUNT="${WASMTIME_MAX_INSTANCE_REUSE_COUNT:-${LEPTOS_WASI_MAX_INSTANCE_REUSE:-128}}"
+    if [[ -n "$REUSE_COUNT" ]]; then
+      WASMTIME_ARGS+=(--max-instance-reuse-count "$REUSE_COUNT")
+    fi
+    wasmtime "${WASMTIME_ARGS[@]}" \
       --dir="$PWD/target/site::/site" \
       --env=LEPTOS_OUTPUT_NAME=counter \
       --env=LEPTOS_SITE_ROOT=/site \

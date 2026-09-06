@@ -9,7 +9,9 @@ use app::{App, GetCount, IncrementCount, shell};
 use bytes::Bytes;
 use http_body_util::Full;
 use leptos::{config::get_configuration, prelude::use_context};
-use leptos_wasi::wasip3::prelude::{Handler, init_wasip3_spawner};
+use leptos_wasi::wasip3::prelude::{
+    Handler, RegistrationError, RouteTable, init_wasip3_spawner,
+};
 use leptos_wasi_authz::{
     RequireAuthLayer, ResponseStatusSink, authorize_current,
     authorize_current_hybrid_with_consistency, authorize_current_relationship,
@@ -44,6 +46,11 @@ const CEDAR_ENTITIES: &str =
 type AxumRequest = http::Request<axum_core::body::Body>;
 type AxumResponse = http::Response<axum_core::body::Body>;
 type AuthorizationLayer = RequireAuthLayer;
+
+thread_local! {
+    static ROUTES: Result<RouteTable, RegistrationError> =
+        RouteTable::discover(App, None, || {});
+}
 
 static AUTHORIZATION_LAYER: OnceLock<AuthorizationLayer> = OnceLock::new();
 static AUTHORIZATION_PROVIDER: OnceLock<
@@ -296,6 +303,8 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
             return trusted_boundary_failure();
         }
 
+        let routes = ROUTES.with(Clone::clone).map_err(internal_error)?;
+
         Handler::build(request)
             .await
             .map_err(internal_error)?
@@ -307,7 +316,7 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
             .with_server_fn::<CedarIncrementCount>()
             .with_server_fn::<RelationshipIncrementCount>()
             .with_server_fn::<DeniedHybridIncrementCount>()
-            .generate_routes(App)
+            .generate_routes_from(&routes)
             .map_err(internal_error)?
             .handle_with_context(
                 move || shell(leptos_options.clone()),

@@ -1,8 +1,15 @@
 use leptos::config::get_configuration;
-use leptos_wasi::wasip3::prelude::{Handler, init_wasip3_spawner};
+use leptos_wasi::wasip3::prelude::{
+    Handler, RegistrationError, RouteTable, init_wasip3_spawner,
+};
 use wasip3::http::types::{ErrorCode, Request, Response};
 
 use crate::app::{App, GetCount, IncrementCount, shell};
+
+thread_local! {
+    static ROUTES: Result<RouteTable, RegistrationError> =
+        RouteTable::discover(App, None, || {});
+}
 
 struct LeptosServer;
 
@@ -17,6 +24,8 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
         // Convert the WASI request to http::Request
         let req = wasip3::http_compat::http_from_wasi_request(request)?;
 
+        let routes = ROUTES.with(Clone::clone).map_err(internal_error)?;
+
         // 2. Build and handle request natively
         let handler = Handler::build(req).await.map_err(internal_error)?;
         let handler = handler
@@ -24,7 +33,7 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
             .map_err(internal_error)?
             .with_server_fn::<GetCount>()
             .with_server_fn::<IncrementCount>()
-            .generate_routes(App)
+            .generate_routes_from(&routes)
             .map_err(internal_error)?;
         let wasi_res = handler
             .handle_with_context(move || shell(leptos_options.clone()), || {})

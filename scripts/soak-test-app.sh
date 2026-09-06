@@ -79,6 +79,13 @@ case "$HOST" in
         -W component-model-async=y
       )
     fi
+    # Preview 3 already defaults to 128; Preview 2 defaults to 1. Use the
+    # existing Wasmtime/e2e knobs, then PRODUCTION.md's recommended 128, so a
+    # reused instance can amortize `RouteTable` discovery.
+    REUSE_COUNT="${WASMTIME_MAX_INSTANCE_REUSE_COUNT:-${LEPTOS_WASI_MAX_INSTANCE_REUSE:-128}}"
+    if [[ -n "$REUSE_COUNT" ]]; then
+      WASMTIME_ARGS+=(--max-instance-reuse-count "$REUSE_COUNT")
+    fi
     WASMTIME_ARGS+=(
       --dir tests/test-app/static::/static
       "tests/$WASM_NAME"

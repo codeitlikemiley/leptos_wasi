@@ -364,7 +364,8 @@ on `/api/get_test` remains **183 us**. `RouteTable::discover` matches
 clone sits on the 41 ns timer floor - the per-request install cost under
 reuse. Under `--max-instance-reuse-count 128`, an SSR-only workload
 amortizes the 183 us across up to 128 requests (~1.4 us/request). Claimed
-paths already skip discovery without a table.
+paths already skip discovery without a table. The soak guest
+(`tests/test-app`) now installs that `RouteTable` with `generate_routes_from`.
 
 ## Reproducing release evidence
 

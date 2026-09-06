@@ -105,7 +105,23 @@ this support matrix.
   `RouteTable` into `generate_routes_from`. Keep route structure, discovery
   context, and exclusion lists deterministic deployment configuration.
   Request-dependent context must be installed through `handle_with_context`,
-  never a route-generation method.
+  never a route-generation method. Discover once per instance with
+  `thread_local!` (or `std::sync::OnceLock` if you prefer a static):
+
+  ```rust
+  thread_local! {
+      static ROUTES: Result<RouteTable, RegistrationError> =
+          RouteTable::discover(App, None, || {});
+  }
+  // per request:
+  let routes = ROUTES.with(Clone::clone)?;
+  handler.generate_routes_from(&routes)?;
+  ```
+
+  An application reached only through server functions and static assets
+  still never installs the table on those requests, so call
+  `validate_route_table` from a test as well. The in-repo counter, soak
+  guest, and authorization fixture follow this pattern.
 - Identity observed while rendering SSR is presentation state only. Hiding a
   control or route link is never authorization. Protected server functions must
   re-read trusted per-request context and enforce typed policy after

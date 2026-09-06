@@ -12,3 +12,14 @@ pub fn hydrate() {
     console_error_panic_hook::set_once();
     leptos::mount::hydrate_islands();
 }
+
+#[cfg(all(test, feature = "ssr"))]
+mod tests {
+    use super::app::App;
+
+    #[test]
+    fn route_table_is_valid() {
+        leptos_wasi::validate_route_table(App, None, || {})
+            .expect("route table should be valid");
+    }
+}
