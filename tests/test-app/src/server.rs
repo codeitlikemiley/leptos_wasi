@@ -6,6 +6,7 @@ use crate::app::{
 };
 use leptos::{config::get_configuration, prelude::*};
 use leptos_router::location::RequestUrl;
+use leptos_wasi::{RegistrationError, RouteTable};
 
 const TEST_MAX_REQUEST_BODY_SIZE: usize = 64 * 1024;
 
@@ -119,6 +120,15 @@ fn provide_test_context() {
     provide_context(StandardContextsVisible(standard_contexts_visible));
 }
 
+thread_local! {
+    static ROUTES: Result<RouteTable, RegistrationError> =
+        RouteTable::discover(App, None, || {});
+}
+
+fn route_table() -> Result<RouteTable, RegistrationError> {
+    ROUTES.with(Clone::clone)
+}
+
 #[cfg(feature = "wasip3")]
 mod preview3 {
     use leptos_wasi::wasip3::prelude::{Handler, init_wasip3_spawner};
@@ -138,6 +148,7 @@ mod preview3 {
             let leptos_options = conf.leptos_options;
             let request = wasip3::http_compat::http_from_wasi_request(request)?;
 
+            let routes = route_table().map_err(internal_error)?;
             let handler = Handler::build_with_config(request, handler_config())
                 .await
                 .map_err(internal_error)?
@@ -155,7 +166,7 @@ mod preview3 {
                 .with_server_fn::<PanicTest>()
                 .with_server_fn::<FormSubmitTest>()
                 .with_server_fn::<MalformedRedirectTest>()
-                .generate_routes(App)
+                .generate_routes_from(&routes)
                 .map_err(internal_error)?;
 
             handler
@@ -221,6 +232,7 @@ mod preview2 {
 
             let result = executor.run_until(async move {
                 let result: Result<(), Box<dyn std::error::Error>> = async {
+                    let routes = route_table()?;
                     let handler = Handler::build_with_config(
                         request,
                         response_out,
@@ -239,7 +251,7 @@ mod preview2 {
                     .with_server_fn::<PanicTest>()
                     .with_server_fn::<FormSubmitTest>()
                     .with_server_fn::<MalformedRedirectTest>()
-                    .generate_routes(App)?;
+                    .generate_routes_from(&routes)?;
 
                     handler
                         .handle_with_context(

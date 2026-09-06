@@ -20,11 +20,23 @@ make verify-split
 
 case "$HOST" in
   wasmtime)
-    wasmtime serve \
-      -W component-model-async=y \
-      -S p3=y \
-      -S cli=y \
-      -S http=y \
+    WASMTIME_ARGS=(
+      serve
+      -W component-model-async=y
+      -S p3=y
+      -S cli=y
+      -S http=y
+    )
+    # This lane is Preview 3 (`-S p3=y`); Wasmtime already defaults reuse to
+    # 128. Only pass the flag when an operator sets an explicit knob.
+    REUSE_COUNT="${WASMTIME_MAX_INSTANCE_REUSE_COUNT:-${LEPTOS_WASI_MAX_INSTANCE_REUSE:-}}"
+    if [[ -n "$REUSE_COUNT" ]]; then
+      echo "instance reuse count: $REUSE_COUNT"
+      WASMTIME_ARGS+=(--max-instance-reuse-count "$REUSE_COUNT")
+    else
+      echo "instance reuse count: host default"
+    fi
+    wasmtime "${WASMTIME_ARGS[@]}" \
       --dir="$PWD/target/site::/site" \
       --env=LEPTOS_OUTPUT_NAME=counter \
       --env=LEPTOS_SITE_ROOT=/site \

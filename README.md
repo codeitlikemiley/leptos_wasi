@@ -146,8 +146,15 @@ installation commands, and the `wasm-bindgen` WASI regression history.
 
 ```rust
 use leptos::config::get_configuration;
-use leptos_wasi::wasip3::prelude::{Handler, init_wasip3_spawner};
+use leptos_wasi::wasip3::prelude::{
+    Handler, RegistrationError, RouteTable, init_wasip3_spawner,
+};
 use wasip3::http::types::{ErrorCode, Request, Response};
+
+thread_local! {
+    static ROUTES: Result<RouteTable, RegistrationError> =
+        RouteTable::discover(App, None, || {});
+}
 
 struct LeptosServer;
 
@@ -160,13 +167,15 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
             .leptos_options;
 
         let request = wasip3::http_compat::http_from_wasi_request(request)?;
+        let routes = ROUTES.with(Clone::clone)
+            .map_err(|_| ErrorCode::InternalError(None))?;
         let response = Handler::build(request)
             .await
             .map_err(|_| ErrorCode::InternalError(None))?
             .static_files_handler("/pkg", serve_static_files)
             .map_err(|_| ErrorCode::InternalError(None))?
             .with_server_fn::<IncrementCount>()
-            .generate_routes(App)
+            .generate_routes_from(&routes)
             .map_err(|_| ErrorCode::InternalError(None))?
             .handle_with_context(
                 move || shell(leptos_options.clone()),
@@ -190,12 +199,18 @@ Repeated successful initialization is idempotent.
 ```rust
 use leptos::config::get_configuration;
 use leptos_wasi::wasip2::prelude::{
-    Handler, IncomingRequest, Mode, ResponseOutparam, init_wasip2_executor,
+    Handler, IncomingRequest, Mode, RegistrationError, ResponseOutparam,
+    RouteTable, init_wasip2_executor,
 };
 use wasi::{
     exports::wasi::http::incoming_handler::Guest,
     http::types::ErrorCode,
 };
+
+thread_local! {
+    static ROUTES: Result<RouteTable, RegistrationError> =
+        RouteTable::discover(App, None, || {});
+}
 
 struct LeptosServer;
 
@@ -226,9 +241,10 @@ impl Guest for LeptosServer {
 
         let result = executor.run_until(async move {
             let result: Result<(), Box<dyn std::error::Error>> = async {
+                let routes = ROUTES.with(Clone::clone)?;
                 Handler::build(request, response_out)?
                     .with_server_fn::<IncrementCount>()
-                    .generate_routes(App)?
+                    .generate_routes_from(&routes)?
                     .handle_with_context(
                         move || shell(leptos_options.clone()),
                         || {},
@@ -298,6 +314,27 @@ filesystem capabilities in Wasmtime or Spin. See
 [Production Support](./PRODUCTION.md) for the complete contract and
 [Performance Baseline](./PERFORMANCE.md) for the recorded 0.3.2 comparison.
 
+## Reusing the route table
+
+`generate_routes` still discovers on every SSR request. When the host reuses a
+component instance (`wasmtime serve --max-instance-reuse-count`, Spin), discover
+once per instance and install the table with `generate_routes_from`.
+`thread_local!` is the usual choice in a WASI component; `std::sync::OnceLock`
+is equivalent if you prefer a static.
+
+```rust
+thread_local! {
+    static ROUTES: Result<RouteTable, RegistrationError> =
+        RouteTable::discover(App, None, || {});
+}
+// per request:
+let routes = ROUTES.with(Clone::clone)?;
+handler.generate_routes_from(&routes)?;
+```
+
+Discovery context must stay request-independent. Per-request context belongs in
+`handle_with_context`.
+
 ## Validating the route table
 
 Route discovery renders the whole application, so the handler skips it on
@@ -326,7 +363,9 @@ The largest throughput lever for a WASIp2 deployment is not in this crate.
 request unless it opts out — measured at about 14% of throughput.
 
 Reuse also makes guest statics outlive a request, so test your application under
-it before enabling it. See [Production
+it before enabling it. Pair it with a `RouteTable` (see [Reusing the route
+table](#reusing-the-route-table)) so discovery is not paid again on every SSR
+request. See [Production
 Support](./PRODUCTION.md#component-instance-reuse) for the measurements and the
 obligation, and [Performance Baseline](./PERFORMANCE.md) for the method.
 

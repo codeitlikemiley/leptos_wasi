@@ -22,6 +22,15 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- In-repo guests adopt the reuse path: `examples/counter`, the soak/canary
+  `tests/test-app`, and `tests/authz-fixture` discover once per instance and
+  call `generate_routes_from`. Wasmtime Preview 2 candidate soaks pass
+  `--max-instance-reuse-count 128` (or an explicit
+  `WASMTIME_MAX_INSTANCE_REUSE_COUNT` / `LEPTOS_WASI_MAX_INSTANCE_REUSE`
+  override) and print `instance reuse count: 128`. Preview 3 omits the flag
+  so it stays on the host default. Immutable baseline worktrees keep the
+  host default so the 0.3.2 Preview 2 baseline, which cannot call
+  `Executor::new` twice, still runs.
 - Preview 2 converts request parts once, then collects the body. Malformed
   method, URI, or headers (`Host: example.com/x`) now answer 400 instead of
   failing the handler. `Body::Sync` writes without wrapping a one-item stream.
