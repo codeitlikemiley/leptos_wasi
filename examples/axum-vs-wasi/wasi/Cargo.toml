@@ -1,0 +1,16 @@
+[package]
+name = "compare-wasi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+compare-app.workspace = true
+leptos = { workspace = true, features = ["ssr"] }
+leptos_wasi = { workspace = true, features = ["wasip2"] }
+wasi.workspace = true
