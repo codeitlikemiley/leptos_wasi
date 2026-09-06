@@ -371,6 +371,7 @@ jobs:
           python3 scripts/test_verify_artifact_set.py
           python3 scripts/test_soak_gates.py
           python3 scripts/test_check_trusted_load_soak.py
+          python3 scripts/test_format_soak_history.py
 
       - name: Build and inspect final-WASI terminal component
         env:
