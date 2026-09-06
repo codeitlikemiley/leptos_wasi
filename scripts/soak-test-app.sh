@@ -79,10 +79,19 @@ case "$HOST" in
         -W component-model-async=y
       )
     fi
-    # Preview 3 already defaults to 128; Preview 2 defaults to 1. Use the
-    # existing Wasmtime/e2e knobs, then PRODUCTION.md's recommended 128, so a
-    # reused instance can amortize `RouteTable` discovery.
-    REUSE_COUNT="${WASMTIME_MAX_INSTANCE_REUSE_COUNT:-${LEPTOS_WASI_MAX_INSTANCE_REUSE:-128}}"
+    # Preview 3 already defaults to 128; Preview 2 defaults to 1. Prefer the
+    # existing Wasmtime/e2e knobs, then PRODUCTION.md's recommended 128 for the
+    # tree that owns this script so a reused instance can amortize `RouteTable`
+    # discovery. CI baseline worktrees (PROJECT_ROOT) stay on the host default:
+    # the 0.3.2 soak baseline panics on a second `Executor::new` under reuse.
+    EXPLICIT_REUSE="${WASMTIME_MAX_INSTANCE_REUSE_COUNT:-${LEPTOS_WASI_MAX_INSTANCE_REUSE:-}}"
+    if [[ -n "$EXPLICIT_REUSE" ]]; then
+      REUSE_COUNT="$EXPLICIT_REUSE"
+    elif [[ "$ROOT" == "$TOOL_ROOT" ]]; then
+      REUSE_COUNT=128
+    else
+      REUSE_COUNT=""
+    fi
     if [[ -n "$REUSE_COUNT" ]]; then
       WASMTIME_ARGS+=(--max-instance-reuse-count "$REUSE_COUNT")
     fi
