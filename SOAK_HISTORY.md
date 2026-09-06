@@ -47,6 +47,9 @@ The same checklist applies when cutting a release, using that tag's CI run.
 
 | Date | Commit | Lane | Reuse | Baseline | rps (base to cand) | p99 ms (base to cand) | Δ rps | Δ p99 | Gate | Notes |
 |---|---|---|---|---|---:|---:|---:|---:|---|---|
+| 2026-09-06 | 4713542 (#37) | Wasmtime P2 | 128 | 9689c68 | 2424.19 to 2729.14 | 96.29 to 83.74 | +12.58% | -13.04% | pass | CI run 34026698619; merge to main |
+| 2026-09-06 | 4713542 (#37) | Wasmtime P3 | host default | 663e1a9 | 2533.74 to 2600.82 | 92.71 to 88.74 | +2.65% | -4.28% | pass | CI run 34026698619; merge to main |
+| 2026-09-06 | 4713542 (#37) | Spin P2 | n/a | 9689c68 | 2413.45 to 2303.58 | 97.01 to 102.78 | -4.55% | +5.95% | pass | CI run 34026698619; merge to main |
 | 2026-09-06 | 131f7b6 (#37) | Wasmtime P2 | 128 | 9689c68 | 2447.11 to 2757.24 | 95.29 to 83.18 | +12.67% | -12.70% | pass | CI run 34015218768; PR soak on head; merged as 4713542 |
 | 2026-09-06 | 131f7b6 (#37) | Wasmtime P3 | host default | 663e1a9 | 2776.37 to 2779.09 | 81.38 to 81.43 | +0.10% | +0.06% | pass | CI run 34015218768; PR soak on head; merged as 4713542 |
 | 2026-09-06 | 131f7b6 (#37) | Spin P2 | n/a | 9689c68 | 2496.80 to 2395.66 | 92.54 to 97.17 | -4.05% | +5.01% | pass | CI run 34015218768; PR soak on head; merged as 4713542 |
@@ -59,6 +62,13 @@ The same checklist applies when cutting a release, using that tag's CI run.
 Numbers are from the uploaded comparison JSON, not from memory or rounded
 summaries.
 
+- **2026-09-06 / #37 merge to main.** Push to `main` after
+  [#37](https://github.com/codeitlikemiley/leptos_wasi/pull/37),
+  [run 34026698619](https://github.com/codeitlikemiley/leptos_wasi/actions/runs/34026698619)
+  on
+  [`4713542`](https://github.com/codeitlikemiley/leptos_wasi/commit/4713542bfdc4cb93637be7a762ace4f6bc2eb863).
+  Wasmtime P2 candidate reuse 128 and Preview 3 host default are from that
+  run's job logs.
 - **2026-09-06 / #37.** Pull-request soak on head
   [`131f7b6`](https://github.com/codeitlikemiley/leptos_wasi/commit/131f7b681cada5353fb8f13c4a91509e84ea8378),
   [run 34015218768](https://github.com/codeitlikemiley/leptos_wasi/actions/runs/34015218768),
