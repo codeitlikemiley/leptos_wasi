@@ -224,11 +224,16 @@ mod tests {
         HandlerConfig, RequestPolicyError, policy_response,
     };
     use super::*;
-    use leptos::prelude::{use_context, view};
+    use futures::StreamExt;
+    use leptos::prelude::{
+        ArcStoredValue, ElementChild, provide_context, use_context, view,
+    };
+    use leptos::{WasmSplitManifest, prefetch_lazy_fn_on_server};
     use leptos_router::{
         components::{Route, Router, Routes},
         path,
     };
+    use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
     #[tokio::test(flavor = "current_thread")]
@@ -465,6 +470,85 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("off"),
             "an application value set through ResponseOptions must survive"
+        );
+    }
+
+    fn prefetch_shell() -> impl IntoView {
+        view! {
+            <html>
+                <head></head>
+                <body>
+                    <Router>
+                        <Routes fallback=|| view! { "not found" }>
+                            <Route
+                                path=path!("/rendered")
+                                view=|| {
+                                    prefetch_lazy_fn_on_server("lazy-chunk");
+                                    view! { "rendered" }
+                                }
+                            />
+                        </Routes>
+                    </Router>
+                </body>
+            </html>
+        }
+    }
+
+    async fn rendered_html(response: Response) -> String {
+        match response.0.into_body() {
+            Body::Sync(bytes) => String::from_utf8(bytes.to_vec())
+                .expect("rendered body should be UTF-8"),
+            Body::Async(stream) => {
+                stream
+                    .map(|chunk| {
+                        let chunk =
+                            chunk.expect("stream chunk should not fail");
+                        String::from_utf8(chunk.to_vec())
+                            .expect("rendered chunk should be UTF-8")
+                    })
+                    .collect::<String>()
+                    .await
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn split_prefetch_links_are_injected_into_head() {
+        let _ = any_spawner::Executor::init_futures_executor();
+
+        let request = Request::builder()
+            .uri("/rendered")
+            .body(Bytes::new())
+            .expect("test request should be valid");
+        let core = HandlerCore::new(request, HandlerConfig::default())
+            .generate_routes_with_exclusions_and_discovery_context(
+                prefetch_shell,
+                None,
+                || {},
+            )
+            .expect("route registration should succeed");
+
+        let response = core
+            .render(prefetch_shell, || {
+                provide_context(WasmSplitManifest(ArcStoredValue::new((
+                    "/pkg".to_owned(),
+                    HashMap::from([(
+                        "lazy-chunk".to_owned(),
+                        vec!["split_1".to_owned()],
+                    )]),
+                    "__wasm_split.js".to_owned(),
+                ))));
+            })
+            .await;
+        let html = rendered_html(response).await;
+
+        assert!(
+            html.contains("/pkg/split_1.wasm"),
+            "lazy chunk preload must appear in the HTML, got: {html}"
+        );
+        assert!(
+            html.contains("__wasm_split.js"),
+            "split loader modulepreload must appear in the HTML, got: {html}"
         );
     }
 
