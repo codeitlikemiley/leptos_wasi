@@ -469,10 +469,13 @@ The handler accepts GET and HEAD, rejects encoded separators and traversal,
 and passes only a normalized relative path to the callback. The callback must
 still prevent symlinks inside its asset root from resolving outside that root.
 Guest-served responses set `Content-Type`, `X-Content-Type-Options: nosniff`,
-and `Content-Length`; they set no `Cache-Control`, `ETag`, or `Last-Modified`,
-and conditional requests are not answered with `304`. For high-volume
-production assets, or anywhere caching and revalidation headers matter, prefer
-a host fileserver or CDN.
+and `Content-Length` when the callback omits them. They set no `Cache-Control`,
+`ETag`, or `Last-Modified` unless the callback writes those headers.
+`static_files_handler` ignores conditional request headers.
+`static_files_handler_with` passes `If-None-Match`, `If-Modified-Since`, and
+`Accept-Encoding` to the callback so it can return `304 Not Modified` or a
+compressed body. For high-volume production assets, or anywhere caching and
+revalidation headers matter, prefer a host fileserver or CDN.
 
 ## Islands and split browser WASM
 

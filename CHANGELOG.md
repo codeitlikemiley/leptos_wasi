@@ -61,6 +61,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `README.md` and `PRODUCTION.md` no longer say guest static responses never
+  produce `304`. That was true of `static_files_handler` and is false of
+  `static_files_handler_with`.
 - Route-discovery counter tests take a mutex so parallel `cargo test` cannot
   observe another registration mid-assert.
 - HTML error responses (401/403/422/500) no longer get promoted to 302 when a

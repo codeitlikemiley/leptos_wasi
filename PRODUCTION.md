@@ -158,14 +158,19 @@ one of these deployment patterns:
    the candidate remains below the root before reading it.
 
 Guest-served static responses set `Content-Type`, `X-Content-Type-Options:
-nosniff`, and, for a synchronous body, `Content-Length`. They set no
-`Cache-Control`, `ETag`, or `Last-Modified`, and the handler does not evaluate
-conditional requests, so `If-None-Match` and `If-Modified-Since` are ignored
-and no `304 Not Modified` is produced. Every request re-reads and re-sends the
-full body, and with no explicit freshness information a browser or intermediary
-may apply heuristic caching — which is the opposite of what the unhashed `/pkg`
+nosniff`, and, for a synchronous body, `Content-Length` when the callback omits
+them. They set no `Cache-Control`, `ETag`, or `Last-Modified` unless the
+callback writes those headers.
+
+`static_files_handler` ignores `If-None-Match` and `If-Modified-Since`.
+`static_files_handler_with` passes those headers and `Accept-Encoding` to the
+callback so it can return `304 Not Modified` or a compressed body.
+
+Without a 304 from that callback, every request re-reads and re-sends the full
+body. With no explicit freshness information a browser or intermediary may
+apply heuristic caching, which is the opposite of what the unhashed `/pkg`
 assets this flow deploys need. The two supported deployments already differ
-here: the Spin manifests route `/pkg/...` to `spin-fileserver` with
+here. The Spin manifests route `/pkg/...` to `spin-fileserver` with
 `CACHE_CONTROL = "no-cache"`, while the Wasmtime guest callback path sends
 nothing. Serving assets from a host fileserver or CDN, as in pattern 1 above,
 also supplies the caching and revalidation headers the guest callback does not.
