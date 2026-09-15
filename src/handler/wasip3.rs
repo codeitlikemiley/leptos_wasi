@@ -40,6 +40,41 @@ pub enum HandlerError {
     ResponseStream(throw_error::Error),
 }
 
+impl HandlerError {
+    /// Converts this failure into a Preview 3 WASI `ErrorCode`.
+    ///
+    /// [`HandlerError::Wasi`] is the code the adapter already recovered.
+    /// [`HandlerError::ResponseStream`] has no WASI code and becomes
+    /// `ErrorCode::InternalError(None)`.
+    ///
+    /// Registration and configuration errors are not [`HandlerError`]
+    /// and must not use this method.
+    #[must_use]
+    pub fn into_error_code(self) -> ::wasip3::http::types::ErrorCode {
+        match self {
+            Self::Wasi(code) => code,
+            Self::ResponseStream(_) => {
+                ::wasip3::http::types::ErrorCode::InternalError(None)
+            }
+        }
+    }
+}
+
+/// Result of Preview 3 body ingest after headers are known.
+///
+/// Policy stays [`Ok`]. Host body failure stays [`Err`].
+#[derive(Debug)]
+enum Ingested {
+    Collected {
+        parts: http::request::Parts,
+        body: Bytes,
+    },
+    Rejected {
+        parts: http::request::Parts,
+        policy: RequestPolicyError,
+    },
+}
+
 /// Leptos request handler for WASI Preview 3.
 pub struct Handler {
     core: HandlerCore,
@@ -70,92 +105,40 @@ impl Handler {
     ) -> Result<Self, HandlerError> {
         #[cfg(feature = "tracing")]
         let request_started = Instant::now();
-        let (parts, body) = request.into_parts();
-        if let Err(error) = validate_content_length(
-            &parts.headers,
-            config.max_request_body_size(),
-        ) {
+        let expiry = config
+            .request_body_timeout_ns()
+            .map(::wasip3::clocks::monotonic_clock::wait_for);
+        let ingested = ingest(request, config, expiry).await?;
+        Ok(Self::from_ingested(
+            ingested,
+            config,
             #[cfg(feature = "tracing")]
-            trace_policy_rejection("p3", &error);
-            let core = HandlerCore::new(
-                Request::from_parts(parts, Bytes::new()),
-                config,
-            )
-            .with_preset(policy_response(&error), "request_policy");
-            #[cfg(feature = "tracing")]
-            let core = core.with_request_started(request_started);
-            return Ok(Self { core });
-        }
+            request_started,
+        ))
+    }
 
-        let body = Limited::new(body, config.max_request_body_size());
-        // Same total-budget meaning as Preview 2: one timer for the whole
-        // body, raced against the collect. `Limited::collect` is a single
-        // opaque future with no per-frame hook, so a total budget is also
-        // the only shape both previews can agree on.
-        let collected = match config.request_body_timeout_ns() {
-            None => body.collect().await,
-            Some(nanoseconds) => {
-                let collect = std::pin::pin!(body.collect());
-                let expiry = std::pin::pin!(
-                    ::wasip3::clocks::monotonic_clock::wait_for(nanoseconds)
-                );
-                match futures::future::select(collect, expiry).await {
-                    futures::future::Either::Left((collected, _)) => collected,
-                    futures::future::Either::Right(((), _)) => {
-                        let policy =
-                            RequestPolicyError::BodyReadTimeout { nanoseconds };
-                        #[cfg(feature = "tracing")]
-                        trace_policy_rejection("p3", &policy);
-                        let core = HandlerCore::new(
-                            Request::from_parts(parts, Bytes::new()),
-                            config,
-                        )
-                        .with_preset(
-                            policy_response(&policy),
-                            "request_policy",
-                        );
-                        #[cfg(feature = "tracing")]
-                        let core = core.with_request_started(request_started);
-                        return Ok(Self { core });
-                    }
-                }
+    fn from_ingested(
+        ingested: Ingested,
+        config: HandlerConfig,
+        #[cfg(feature = "tracing")] request_started: Instant,
+    ) -> Self {
+        let core = match ingested {
+            Ingested::Collected { parts, body } => {
+                HandlerCore::new(Request::from_parts(parts, body), config)
             }
-        };
-        match collected {
-            Ok(body) => {
-                let core = HandlerCore::new(
-                    Request::from_parts(parts, body.to_bytes()),
-                    config,
-                );
-                #[cfg(feature = "tracing")]
-                let core = core.with_request_started(request_started);
-                Ok(Self { core })
-            }
-            Err(error) if error.is::<http_body_util::LengthLimitError>() => {
-                let policy = RequestPolicyError::BodyTooLarge {
-                    limit: config.max_request_body_size(),
-                };
+            Ingested::Rejected { parts, policy } => {
                 #[cfg(feature = "tracing")]
                 trace_policy_rejection("p3", &policy);
-                let core = HandlerCore::new(
+                HandlerCore::new(
                     Request::from_parts(parts, Bytes::new()),
                     config,
                 )
-                .with_preset(policy_response(&policy), "request_policy");
-                #[cfg(feature = "tracing")]
-                let core = core.with_request_started(request_started);
-                Ok(Self { core })
+                .with_preset(policy_response(&policy), "request_policy")
             }
-            Err(error) => {
-                let code = error
-                    .downcast::<::wasip3::http::types::ErrorCode>()
-                    .map_or(
-                        ::wasip3::http::types::ErrorCode::InternalError(None),
-                        |code| *code,
-                    );
-                Err(HandlerError::Wasi(code))
-            }
-        }
+        };
+        #[cfg(feature = "tracing")]
+        let core = core.with_request_started(request_started);
+        Self { core }
     }
 
     common_handler_methods!();
@@ -199,6 +182,75 @@ impl Handler {
         let _ = (trace, status);
         ::wasip3::http_compat::http_into_wasi_response(response)
             .map_err(HandlerError::Wasi)
+    }
+}
+
+/// Validates Content-Length, collects through [`Limited`], and optionally
+/// races an injected expiry future.
+///
+/// `wait_for` is a WASI import, so the expiry is a future the caller owns.
+/// `select` prefers the collect side when both are ready.
+async fn ingest<B, Exp>(
+    request: Request<B>,
+    config: HandlerConfig,
+    expiry: Option<Exp>,
+) -> Result<Ingested, HandlerError>
+where
+    B: http_body::Body,
+    B::Data: bytes::Buf,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>> + 'static,
+    Exp: std::future::Future<Output = ()>,
+{
+    let (parts, body) = request.into_parts();
+    if let Err(policy) =
+        validate_content_length(&parts.headers, config.max_request_body_size())
+    {
+        return Ok(Ingested::Rejected { parts, policy });
+    }
+
+    let body = Limited::new(body, config.max_request_body_size());
+    let collected = match expiry {
+        None => body.collect().await,
+        Some(expiry) => {
+            let collect = std::pin::pin!(body.collect());
+            let expiry = std::pin::pin!(expiry);
+            match futures::future::select(collect, expiry).await {
+                futures::future::Either::Left((collected, _)) => collected,
+                futures::future::Either::Right(((), _)) => {
+                    let nanoseconds =
+                        config.request_body_timeout_ns().unwrap_or(0);
+                    return Ok(Ingested::Rejected {
+                        parts,
+                        policy: RequestPolicyError::BodyReadTimeout {
+                            nanoseconds,
+                        },
+                    });
+                }
+            }
+        }
+    };
+
+    match collected {
+        Ok(body) => Ok(Ingested::Collected {
+            parts,
+            body: body.to_bytes(),
+        }),
+        Err(error) if error.is::<http_body_util::LengthLimitError>() => {
+            Ok(Ingested::Rejected {
+                parts,
+                policy: RequestPolicyError::BodyTooLarge {
+                    limit: config.max_request_body_size(),
+                },
+            })
+        }
+        Err(error) => {
+            let code =
+                error.downcast::<::wasip3::http::types::ErrorCode>().map_or(
+                    ::wasip3::http::types::ErrorCode::InternalError(None),
+                    |code| *code,
+                );
+            Err(HandlerError::Wasi(code))
+        }
     }
 }
 
@@ -298,17 +350,222 @@ impl<B> Drop for TraceBody<B> {
 
 #[cfg(test)]
 mod tests {
+    use std::convert::Infallible;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use bytes::Bytes;
+    use futures::executor::block_on;
+    use http::{Request, StatusCode, header::CONTENT_LENGTH};
+    use http_body::{Body, Frame};
+    use http_body_util::Full;
+
+    use super::{Handler, HandlerError, Ingested, ingest};
+    use crate::handler::core::Selection;
+    use crate::handler::policy::{HandlerConfig, RequestPolicyError};
+
+    struct PendingBody;
+
+    impl Body for PendingBody {
+        type Data = Bytes;
+        type Error = Infallible;
+
+        fn poll_frame(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+        ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+            Poll::Pending
+        }
+    }
+
+    struct FailBody(Option<::wasip3::http::types::ErrorCode>);
+
+    impl Body for FailBody {
+        type Data = Bytes;
+        type Error = ::wasip3::http::types::ErrorCode;
+
+        fn poll_frame(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+        ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+            let this = self.get_mut();
+            Poll::Ready(Some(Err(this.0.take().unwrap_or(
+                ::wasip3::http::types::ErrorCode::InternalError(None),
+            ))))
+        }
+    }
+
     #[test]
-    fn select_prefers_the_collect_side_when_both_are_ready() {
-        // `build_with_config` races `Limited::collect` against
-        // `wait_for`. When both are ready, `futures::future::select`
-        // takes the left (collect) future, so a completed body is not
-        // reported as a timeout.
-        let collect = std::pin::pin!(std::future::ready("collect"));
-        let expiry = std::pin::pin!(std::future::ready("timeout"));
-        let chosen = futures::executor::block_on(futures::future::select(
-            collect, expiry,
+    fn content_length_over_the_limit_is_rejected_before_collect() {
+        let request = Request::builder()
+            .header(CONTENT_LENGTH, "9")
+            .body(Full::new(Bytes::new()))
+            .expect("request");
+        let config = HandlerConfig::default().with_max_request_body_size(8);
+
+        let ingested =
+            block_on(ingest(request, config, None::<std::future::Ready<()>>))
+                .expect("policy is Ok");
+
+        assert!(matches!(
+            ingested,
+            Ingested::Rejected {
+                policy: RequestPolicyError::BodyTooLarge { limit: 8 },
+                ..
+            }
         ));
-        assert!(matches!(chosen, futures::future::Either::Left(_)));
+    }
+
+    #[test]
+    fn conflicting_content_length_is_rejected() {
+        let request = Request::builder()
+            .header(CONTENT_LENGTH, "1")
+            .header(CONTENT_LENGTH, "2")
+            .body(Full::new(Bytes::new()))
+            .expect("request");
+
+        let ingested = block_on(ingest(
+            request,
+            HandlerConfig::default(),
+            None::<std::future::Ready<()>>,
+        ))
+        .expect("policy is Ok");
+
+        assert!(matches!(
+            ingested,
+            Ingested::Rejected {
+                policy: RequestPolicyError::ConflictingContentLength,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn limited_overflow_without_content_length_is_rejected() {
+        let request = Request::new(Full::new(Bytes::from_static(b"123456789")));
+        let config = HandlerConfig::default().with_max_request_body_size(8);
+
+        let ingested =
+            block_on(ingest(request, config, None::<std::future::Ready<()>>))
+                .expect("policy is Ok");
+
+        assert!(matches!(
+            ingested,
+            Ingested::Rejected {
+                policy: RequestPolicyError::BodyTooLarge { limit: 8 },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn timeout_wins_when_the_body_is_still_pending() {
+        let request = Request::new(PendingBody);
+        let config = HandlerConfig::default().with_request_body_timeout_ns(1);
+
+        let ingested =
+            block_on(ingest(request, config, Some(std::future::ready(()))))
+                .expect("policy is Ok");
+
+        assert!(matches!(
+            ingested,
+            Ingested::Rejected {
+                policy: RequestPolicyError::BodyReadTimeout { nanoseconds: 1 },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn collect_wins_when_the_body_and_expiry_are_both_ready() {
+        let request = Request::new(Full::new(Bytes::from_static(b"ok")));
+        let config = HandlerConfig::default().with_request_body_timeout_ns(1);
+
+        let ingested =
+            block_on(ingest(request, config, Some(std::future::ready(()))))
+                .expect("body ready");
+
+        assert!(matches!(
+            ingested,
+            Ingested::Collected { ref body, .. } if body.as_ref() == b"ok"
+        ));
+    }
+
+    #[test]
+    fn collect_wins_when_the_expiry_is_still_pending() {
+        let request = Request::new(Full::new(Bytes::from_static(b"ok")));
+        let config = HandlerConfig::default().with_request_body_timeout_ns(1);
+
+        let ingested =
+            block_on(ingest(request, config, Some(std::future::pending())))
+                .expect("body ready");
+
+        assert!(matches!(
+            ingested,
+            Ingested::Collected { ref body, .. } if body.as_ref() == b"ok"
+        ));
+    }
+
+    #[test]
+    fn a_downcastable_collect_error_keeps_its_wasi_code() {
+        let request = Request::new(FailBody(Some(
+            ::wasip3::http::types::ErrorCode::HttpProtocolError,
+        )));
+        let err = block_on(ingest(
+            request,
+            HandlerConfig::default(),
+            None::<std::future::Ready<()>>,
+        ))
+        .expect_err("transport is Err");
+
+        assert!(matches!(
+            err,
+            HandlerError::Wasi(
+                ::wasip3::http::types::ErrorCode::HttpProtocolError
+            )
+        ));
+        assert!(matches!(
+            HandlerError::Wasi(
+                ::wasip3::http::types::ErrorCode::HttpProtocolError
+            )
+            .into_error_code(),
+            ::wasip3::http::types::ErrorCode::HttpProtocolError
+        ));
+    }
+
+    #[test]
+    fn from_ingested_presets_a_policy_rejection() {
+        let (parts, _) = Request::new(Bytes::new()).into_parts();
+        let handler = Handler::from_ingested(
+            Ingested::Rejected {
+                parts,
+                policy: RequestPolicyError::BodyTooLarge { limit: 8 },
+            },
+            HandlerConfig::default(),
+            #[cfg(feature = "tracing")]
+            std::time::Instant::now(),
+        );
+
+        let (status, class) = match &handler.core.selection {
+            Selection::Preset(response, class) => (response.0.status(), *class),
+            Selection::Unclaimed
+            | Selection::NotFound
+            | Selection::ServerFn(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "not-preset")
+            }
+        };
+        assert_eq!(class, "request_policy");
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[test]
+    fn into_error_code_preserves_a_recovered_wasi_code() {
+        let error = HandlerError::Wasi(
+            ::wasip3::http::types::ErrorCode::ConnectionReadTimeout,
+        );
+        assert!(matches!(
+            error.into_error_code(),
+            ::wasip3::http::types::ErrorCode::ConnectionReadTimeout
+        ));
     }
 }

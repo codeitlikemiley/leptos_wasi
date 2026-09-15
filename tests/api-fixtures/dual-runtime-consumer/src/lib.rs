@@ -52,6 +52,12 @@ pub async fn build_wasip3_configured(
     Wasip3Handler::build_with_config(request, config).await
 }
 
+pub fn map_wasip3_handler_error(
+    error: Wasip3HandlerError,
+) -> ::wasip3::http::types::ErrorCode {
+    error.into_error_code()
+}
+
 fn app() -> impl IntoView {
     view! { <p>"consumer"</p> }
 }

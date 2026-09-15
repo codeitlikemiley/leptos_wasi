@@ -147,7 +147,7 @@ installation commands, and the `wasm-bindgen` WASI regression history.
 ```rust
 use leptos::config::get_configuration;
 use leptos_wasi::wasip3::prelude::{
-    Handler, RegistrationError, RouteTable, init_wasip3_spawner,
+    Handler, HandlerError, RegistrationError, RouteTable, init_wasip3_spawner,
 };
 use wasip3::http::types::{ErrorCode, Request, Response};
 
@@ -171,7 +171,7 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
             .map_err(|_| ErrorCode::InternalError(None))?;
         let response = Handler::build(request)
             .await
-            .map_err(|_| ErrorCode::InternalError(None))?
+            .map_err(HandlerError::into_error_code)?
             .static_files_handler("/pkg", serve_static_files)
             .map_err(|_| ErrorCode::InternalError(None))?
             .with_server_fn::<IncrementCount>()
@@ -182,7 +182,7 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
                 || {},
             )
             .await
-            .map_err(|_| ErrorCode::InternalError(None))?;
+            .map_err(HandlerError::into_error_code)?;
 
         Ok(response)
     }

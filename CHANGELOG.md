@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `wasip3::HandlerError::into_error_code` so a Preview 3 guest can return a
+  recovered WASI `ErrorCode` instead of wiping every handler failure to
+  `InternalError(None)`. Policy 413/408/400 stay `Ok(Handler)` presets.
 - `RouteTable::discover` and `Handler::generate_routes_from` so a reused
   component instance can discover routes once and install the table with an
   `Arc` clone per request. Existing `generate_routes*` still discover per

@@ -10,7 +10,7 @@ use bytes::Bytes;
 use http_body_util::Full;
 use leptos::{config::get_configuration, prelude::use_context};
 use leptos_wasi::wasip3::prelude::{
-    Handler, RegistrationError, RouteTable, init_wasip3_spawner,
+    Handler, HandlerError, RegistrationError, RouteTable, init_wasip3_spawner,
 };
 use leptos_wasi_authz::{
     RequireAuthLayer, ResponseStatusSink, authorize_current,
@@ -307,7 +307,7 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
 
         Handler::build(request)
             .await
-            .map_err(internal_error)?
+            .map_err(HandlerError::into_error_code)?
             .static_files_handler("/pkg", serve_static_files)
             .map_err(internal_error)?
             .with_server_fn::<GetCount>()
@@ -323,7 +323,7 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
                 provide_fixture_context,
             )
             .await
-            .map_err(internal_error)
+            .map_err(HandlerError::into_error_code)
     }
 }
 

@@ -34,9 +34,7 @@ fn delayed_stream() -> leptos_wasi::response::Body {
     use futures::StreamExt;
 
     let first = futures::stream::once(async {
-        Ok::<_, throw_error::Error>(bytes::Bytes::from_static(
-            b"first-frame\n",
-        ))
+        Ok::<_, throw_error::Error>(bytes::Bytes::from_static(b"first-frame\n"))
     });
     let second = futures::stream::once(async {
         leptos_wasi::wasip2::sleep(500_000_000)
@@ -58,9 +56,7 @@ fn failing_stream() -> leptos_wasi::response::Body {
     use futures::StreamExt;
 
     let first = futures::stream::once(async {
-        Ok::<_, throw_error::Error>(bytes::Bytes::from_static(
-            b"first-frame\n",
-        ))
+        Ok::<_, throw_error::Error>(bytes::Bytes::from_static(b"first-frame\n"))
     });
     let failure = futures::stream::once(async {
         leptos_wasi::wasip2::sleep(150_000_000)
@@ -82,9 +78,7 @@ fn delayed_stream() -> leptos_wasi::response::Body {
     use futures::StreamExt;
 
     let first = futures::stream::once(async {
-        Ok::<_, throw_error::Error>(bytes::Bytes::from_static(
-            b"first-frame\n",
-        ))
+        Ok::<_, throw_error::Error>(bytes::Bytes::from_static(b"first-frame\n"))
     });
     let second = futures::stream::once(async {
         wasip3::clocks::monotonic_clock::wait_for(500_000_000).await;
@@ -100,9 +94,7 @@ fn failing_stream() -> leptos_wasi::response::Body {
     use futures::StreamExt;
 
     let first = futures::stream::once(async {
-        Ok::<_, throw_error::Error>(bytes::Bytes::from_static(
-            b"first-frame\n",
-        ))
+        Ok::<_, throw_error::Error>(bytes::Bytes::from_static(b"first-frame\n"))
     });
     let failure = futures::stream::once(async {
         wasip3::clocks::monotonic_clock::wait_for(150_000_000).await;
@@ -131,7 +123,9 @@ fn route_table() -> Result<RouteTable, RegistrationError> {
 
 #[cfg(feature = "wasip3")]
 mod preview3 {
-    use leptos_wasi::wasip3::prelude::{Handler, init_wasip3_spawner};
+    use leptos_wasi::wasip3::prelude::{
+        Handler, HandlerError, init_wasip3_spawner,
+    };
 
     use super::*;
 
@@ -151,7 +145,7 @@ mod preview3 {
             let routes = route_table().map_err(internal_error)?;
             let handler = Handler::build_with_config(request, handler_config())
                 .await
-                .map_err(internal_error)?
+                .map_err(handler_error)?
                 .static_files_handler("/static", serve_static_files)
                 .map_err(internal_error)?
                 .with_server_fn::<GetTest>()
@@ -175,7 +169,7 @@ mod preview3 {
                     provide_test_context,
                 )
                 .await
-                .map_err(internal_error)
+                .map_err(handler_error)
         }
     }
 
@@ -184,6 +178,11 @@ mod preview3 {
     ) -> wasip3::http::types::ErrorCode {
         eprintln!("test application error: {error}");
         wasip3::http::types::ErrorCode::InternalError(None)
+    }
+
+    fn handler_error(error: HandlerError) -> wasip3::http::types::ErrorCode {
+        eprintln!("test application error: {error}");
+        error.into_error_code()
     }
 
     wasip3::http::service::export!(LeptosServer);

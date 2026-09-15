@@ -27,7 +27,10 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
         let routes = ROUTES.with(Clone::clone).map_err(internal_error)?;
 
         // 2. Build and handle request natively
-        let handler = Handler::build(req).await.map_err(internal_error)?;
+        let handler = Handler::build(req).await.map_err(|error| {
+            eprintln!("leptos_wasi counter error: {error}");
+            error.into_error_code()
+        })?;
         let handler = handler
             .static_files_handler("/pkg", serve_static_files)
             .map_err(internal_error)?
@@ -38,7 +41,10 @@ impl wasip3::exports::http::handler::Guest for LeptosServer {
         let wasi_res = handler
             .handle_with_context(move || shell(leptos_options.clone()), || {})
             .await
-            .map_err(internal_error)?;
+            .map_err(|error| {
+                eprintln!("leptos_wasi counter error: {error}");
+                error.into_error_code()
+            })?;
 
         Ok(wasi_res)
     }
