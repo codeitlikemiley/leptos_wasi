@@ -46,9 +46,6 @@ impl HandlerError {
     /// [`HandlerError::Wasi`] is the code the adapter already recovered.
     /// [`HandlerError::ResponseStream`] has no WASI code and becomes
     /// `ErrorCode::InternalError(None)`.
-    ///
-    /// Registration and configuration errors are not [`HandlerError`]
-    /// and must not use this method.
     #[must_use]
     pub fn into_error_code(self) -> ::wasip3::http::types::ErrorCode {
         match self {
@@ -60,9 +57,6 @@ impl HandlerError {
     }
 }
 
-/// Result of Preview 3 body ingest after headers are known.
-///
-/// Policy stays [`Ok`]. Host body failure stays [`Err`].
 #[derive(Debug)]
 enum Ingested {
     Collected {
@@ -185,9 +179,6 @@ impl Handler {
     }
 }
 
-/// Validates Content-Length, collects through [`Limited`], and optionally
-/// races an injected expiry future.
-///
 /// `wait_for` is a WASI import, so the expiry is a future the caller owns.
 /// `select` prefers the collect side when both are ready.
 async fn ingest<B, Exp>(
