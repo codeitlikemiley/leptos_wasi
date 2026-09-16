@@ -1,3 +1,9 @@
+//! Minimal SSR response integration kept local so final-WASI builds do not
+//! inherit browser-only default features from `leptos_integration_utils`.
+//!
+//! The behavior mirrors Leptos' MIT-licensed integration utility while keeping
+//! the dependency feature graph explicit for WASI Preview 3 components.
+
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use futures::{Stream, StreamExt, stream::once};
@@ -112,6 +118,10 @@ fn register_split_prefetches(prefetches: &PrefetchLazyFn) {
         .iter()
         .flat_map(|key| modules.get(*key).into_iter().flatten())
     {
+        // Leptos' `<Link crossorigin=nonce>` serializes as
+        // `crossorigin="<nonce>"`. A wasm `fetch` preload needs `nonce="<nonce>"`
+        // (and `crossorigin="anonymous"` when `/pkg` is off-origin). Tracked
+        // separately upstream: leptos-rs/leptos `crossorigin=nonce` → `nonce=nonce`.
         _ = view! {
             <Link
                 rel="preload"
