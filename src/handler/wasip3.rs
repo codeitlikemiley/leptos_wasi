@@ -80,6 +80,8 @@ impl Handler {
     /// # Errors
     ///
     /// Returns [`HandlerError::Wasi`] if the request body cannot be read.
+    /// A body that breaches the configured size or time budget is
+    /// reported as a rejection response rather than an error.
     pub async fn build(
         request: Request<::wasip3::http_compat::IncomingRequestBody>,
     ) -> Result<Self, HandlerError> {

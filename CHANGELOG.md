@@ -25,9 +25,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Preview 2 `Handler::build` and `build_with_config` rustdoc now match the
-  code. Size and time policy breaches stay `Ok` rejection presets. They
-  are not `HandlerError::Request`.
+- Preview 2 rustdoc now matches the code. `Handler::build` size, time,
+  `Content-Length`, and malformed-request failures stay `Ok` rejection
+  presets. They are not `HandlerError::Request`. `from_wasi_request`
+  names `RequestError::BodyTooLarge` for a collected overflow.
 - In-repo guests adopt the reuse path: `examples/counter`, the soak/canary
   `tests/test-app`, and `tests/authz-fixture` discover once per instance and
   call `generate_routes_from`. Wasmtime Preview 2 candidate soaks pass
