@@ -181,7 +181,6 @@ impl Handler {
     }
 }
 
-/// `wait_for` is a WASI import, so the expiry is a future the caller owns.
 /// `select` prefers the collect side when both are ready.
 async fn ingest<B, Exp>(
     request: Request<B>,
