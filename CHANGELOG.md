@@ -25,6 +25,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Preview 2 `Handler::build` and `build_with_config` rustdoc now match the
+  code. Size and time policy breaches stay `Ok` rejection presets. They
+  are not `HandlerError::Request`.
 - In-repo guests adopt the reuse path: `examples/counter`, the soak/canary
   `tests/test-app`, and `tests/authz-fixture` discover once per instance and
   call `generate_routes_from`. Wasmtime Preview 2 candidate soaks pass
