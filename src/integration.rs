@@ -48,7 +48,7 @@ pub(crate) trait ExtendResponse: Sized {
     {
         async move {
             let prefetches = PrefetchLazyFn::default();
-            let (owner, stream) = build_response(
+            let (owner, shared_context, stream) = build_response(
                 app_fn,
                 additional_context,
                 stream_builder,
@@ -56,9 +56,6 @@ pub(crate) trait ExtendResponse: Sized {
             );
 
             owner.with(|| provide_context(prefetches.clone()));
-            let shared_context = owner
-                .shared_context()
-                .expect("SSR owner must have a shared context");
             let stream =
                 stream.await.ready_chunks(32).map(|chunks| chunks.join(""));
 
@@ -151,15 +148,21 @@ fn build_response<IV>(
     additional_context: impl FnOnce() + Send + 'static,
     stream_builder: StreamBuilder<IV>,
     supports_out_of_order: bool,
-) -> (Owner, PinnedFuture<PinnedStream<String>>)
+) -> (
+    Owner,
+    Arc<SsrSharedContext>,
+    PinnedFuture<PinnedStream<String>>,
+)
 where
     IV: IntoView + 'static,
 {
-    let shared_context = Arc::new(SsrSharedContext::new())
-        as Arc<dyn SharedContext + Send + Sync>;
-    let owner = Owner::new_root(Some(Arc::clone(&shared_context)));
+    let shared_context = Arc::new(SsrSharedContext::new());
+    let owner = Owner::new_root(Some(
+        Arc::clone(&shared_context) as Arc<dyn SharedContext + Send + Sync>
+    ));
     let stream = Box::pin(Sandboxed::new({
         let owner = owner.clone();
+        let shared_context = Arc::clone(&shared_context);
         async move {
             let stream = owner.with(|| {
                 additional_context();
@@ -168,25 +171,20 @@ where
                     .as_ref()
                     .map(|nonce| format!(" nonce=\"{nonce}\""))
                     .unwrap_or_default();
-                let shared_context = Owner::current_shared_context()
-                    .expect("SSR owner must have a shared context");
-                let chunks =
-                    Box::new(move || {
-                        Box::pin(
-                        shared_context.pending_data().expect(
-                            "SSR shared context must expose pending data",
-                        )
-                        .map(move |chunk| {
-                            format!("<script{nonce}>{chunk}</script>")
-                        }),
-                    ) as PinnedStream<String>
-                    });
+                let chunks = Box::new(move || {
+                    let pending = shared_context
+                        .pending_data()
+                        .unwrap_or_else(|| Box::pin(futures::stream::empty()));
+                    Box::pin(pending.map(move |chunk| {
+                        format!("<script{nonce}>{chunk}</script>")
+                    })) as PinnedStream<String>
+                });
                 stream_builder(app, chunks, supports_out_of_order)
             });
             stream.await
         }
     }));
-    (owner, stream)
+    (owner, shared_context, stream)
 }
 
 #[cfg(test)]

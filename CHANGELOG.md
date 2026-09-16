@@ -68,6 +68,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- SSR `from_app` keeps the `SsrSharedContext` it creates and no longer
+  `expect`s a second lookup through `Owner`. A missing `pending_data`
+  stream becomes an empty script stream instead of trapping the instance.
 - Route-discovery counter tests take a mutex so parallel `cargo test` cannot
   observe another registration mid-assert.
 - HTML error responses (401/403/422/500) no longer get promoted to 302 when a

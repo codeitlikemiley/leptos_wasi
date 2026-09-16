@@ -88,8 +88,7 @@ module_name_repetitions = "allow" # 0 hits; matches the three tests/ crates
 # expect_used is deliberately absent. [lints] is package-scoped, and the
 # Makefile passes -D warnings, so any level above "allow" would deny
 # `.expect("...")` in tests too - where a message-carrying assertion is
-# exactly what you want. The three production sites in src/integration.rs
-# are a code-review question, not a lint one.
+# exactly what you want.
 unwrap_used = "deny"
 panic = "deny"
 
