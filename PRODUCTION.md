@@ -357,4 +357,6 @@ cargo make ci
 
 The checked-in local comparison and reproduction details are in
 [PERFORMANCE.md](./PERFORMANCE.md). CI soak artifacts are the authoritative
-evidence for a particular commit and release environment.
+evidence for a particular commit and release environment. Record each
+merge-commit ten-minute soak in [SOAK_HISTORY.md](./SOAK_HISTORY.md); those
+artifacts expire after 14 days.
