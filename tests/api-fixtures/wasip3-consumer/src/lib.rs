@@ -37,6 +37,12 @@ pub async fn build_configured(
     Handler::build_with_config(request, config).await
 }
 
+pub fn map_handler_error(
+    error: HandlerError,
+) -> ::wasip3::http::types::ErrorCode {
+    error.into_error_code()
+}
+
 pub fn timeout_config() -> HandlerConfig {
     HandlerConfig::default()
         .with_request_body_timeout(std::time::Duration::from_secs(30))

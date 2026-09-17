@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `wasip3::HandlerError::into_error_code` so a Preview 3 guest can return a
+  recovered WASI `ErrorCode` instead of wiping every handler failure to
+  `InternalError(None)`. Policy 413/408/400 stay `Ok(Handler)` presets.
 - `RouteTable::discover` and `Handler::generate_routes_from` so a reused
   component instance can discover routes once and install the table with an
   `Arc` clone per request. Existing `generate_routes*` still discover per
@@ -22,6 +25,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Preview 2 rustdoc now matches the code. `Handler::build` size, time,
+  `Content-Length`, and malformed-request failures stay `Ok` rejection
+  presets. They are not `HandlerError::Request`. `from_wasi_request`
+  names `RequestError::BodyTooLarge` for a collected overflow.
 - In-repo guests adopt the reuse path: `examples/counter`, the soak/canary
   `tests/test-app`, and `tests/authz-fixture` discover once per instance and
   call `generate_routes_from`. Wasmtime Preview 2 candidate soaks pass
@@ -61,6 +68,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- SSR `from_app` keeps the `SsrSharedContext` it creates and no longer
+  `expect`s a second lookup through `Owner`. A missing `pending_data`
+  stream becomes an empty script stream instead of trapping the instance.
 - Route-discovery counter tests take a mutex so parallel `cargo test` cannot
   observe another registration mid-assert.
 - HTML error responses (401/403/422/500) no longer get promoted to 302 when a

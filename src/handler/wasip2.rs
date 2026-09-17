@@ -90,9 +90,12 @@ impl Handler {
     ///
     /// # Errors
     ///
-    /// Returns [`HandlerError::Request`] if the incoming request cannot be
-    /// converted, which includes a body that breaches the configured size
-    /// or time budget.
+    /// Returns [`HandlerError::Request`] when conversion fails and the
+    /// handler cannot answer the client. A body that breaches the
+    /// configured size or time budget is reported as a rejection
+    /// response rather than an error. A bad `Content-Length`, a
+    /// malformed method, URI, or header set, and a client body I/O
+    /// error are also rejection responses.
     pub fn build(
         request: IncomingRequest,
         response_out: ResponseOutparam,
@@ -104,8 +107,11 @@ impl Handler {
     ///
     /// # Errors
     ///
-    /// Returns [`HandlerError::Request`] if the incoming request cannot be
-    /// converted, which includes a body that breaches `config`.
+    /// Returns [`HandlerError::Request`] when conversion fails and the
+    /// handler cannot answer the client. A body that breaches `config`
+    /// is reported as a rejection response rather than an error. A bad
+    /// `Content-Length`, a malformed method, URI, or header set, and a
+    /// client body I/O error are also rejection responses.
     pub fn build_with_config(
         request: IncomingRequest,
         response_out: ResponseOutparam,

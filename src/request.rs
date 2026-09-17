@@ -17,8 +17,9 @@ pub mod p2 {
     ///
     /// # Errors
     ///
-    /// Returns [`RequestError::Policy`] if the body breaches
-    /// `max_body_size`, and the conversion variants of
+    /// Returns [`RequestError::Policy`] if the declared length is unusable
+    /// or over the limit, [`RequestError::BodyTooLarge`] if the collected
+    /// body exceeds `max_body_size`, and the conversion variants of
     /// [`RequestError`] if the method, scheme, or headers are unusable.
     pub fn from_wasi_request(
         request: IncomingRequest,
