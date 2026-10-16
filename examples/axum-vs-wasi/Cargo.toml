@@ -1,0 +1,21 @@
+[workspace]
+resolver = "3"
+members = ["app", "axum", "wasi"]
+default-members = ["app", "axum"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93.0"
+license = "MIT"
+
+[workspace.dependencies]
+compare-app = { path = "app" }
+http = "1.4"
+leptos = { version = "0.8.20", default-features = false }
+leptos_axum = "0.8.10"
+leptos_meta = { version = "0.8.6", default-features = false }
+leptos_router = { version = "0.8.14", default-features = false }
+leptos_wasi = { package = "leptos-wasi-runtime", path = "../..", default-features = false }
+server_fn = { version = "0.8.13", default-features = false, features = ["axum-no-default"] }
+wasi = "0.14.7"
