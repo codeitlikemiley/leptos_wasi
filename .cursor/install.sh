@@ -6,9 +6,11 @@
 # tests/middleware/components.lock.toml, then warms the workspace build.
 set -euo pipefail
 
-# Pinned versions. Keep in sync with tests/middleware/components.lock.toml.
-WASMTIME_VERSION="46.0.1"
-WASM_BINDGEN_VERSION="0.2.126"
+# Developer toolchain for this library revision. The signed companion lock
+# (tests/middleware/components.lock.toml) is a different tuple: Wasmtime
+# 46.0.1, Spin 4.0.2, wasm-bindgen 0.2.126, wasip3 0.7.0.
+WASMTIME_VERSION="50.0.0"
+WASM_BINDGEN_VERSION="0.2.129"
 CARGO_LEPTOS_VERSION="0.3.7"
 TAILWIND_VERSION="v4.2.1"
 
@@ -27,13 +29,14 @@ if command -v apt-get >/dev/null 2>&1; then
     pkg-config libssl-dev curl ca-certificates git
 fi
 
-log "Rust toolchain (MSRV is 1.93.0; stable satisfies it) + WASI/browser targets"
+log "Rust toolchain 1.99.0 (MSRV is 1.94.0) + WASI/browser targets"
 if ! command -v rustup >/dev/null 2>&1; then
-  curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+  curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.99.0
   # shellcheck disable=SC1091
   source "${CARGO_HOME:-$HOME/.cargo}/env"
 fi
-rustup default stable
+rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+rustup default 1.99.0
 rustup target add wasm32-wasip2 wasm32-unknown-unknown
 
 # Install a versioned prebuilt binary to /usr/local/bin unless already present

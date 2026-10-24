@@ -1,0 +1,13 @@
+[package]
+name = "leptos-wasi-identity-boundary"
+version = "0.0.0"
+edition = "2024"
+publish = false
+rust-version = "1.94.0"
+description = "Proves the portable middleware context and the HMAC trusted context are not interchangeable."
+
+[dev-dependencies]
+http = "1"
+wasi-auth = { path = "../../../wasi-auth/crates/wasi-auth", version = "=0.1.0-rc.3", default-features = false, features = ["http"] }
+wasi-http-authn = { path = "../../../wasi-auth/legacy/wasi-http-middleware/crates/authn", version = "=0.2.0-alpha.3" }
+wasi-http-metadata = { path = "../../../wasi-auth/legacy/wasi-http-middleware/crates/metadata", version = "=0.2.0-alpha.3" }

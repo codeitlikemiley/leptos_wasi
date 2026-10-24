@@ -102,8 +102,7 @@ dependencies.middleware = [
 ]
 ```
 
-The dependency list is ordered outermost to innermost. It is not a production
-path until a tagged Spin release supports final WASI HTTP. A second canary uses
+The dependency list is ordered outermost to innermost. A second canary uses
 the deterministic WAC-precomposed component through
 [`tests/spin-p3-middleware-composed.toml`](tests/spin-p3-middleware-composed.toml).
 Tagged Spin 4.0.2 rejects that component because its host linker does not
@@ -111,8 +110,12 @@ provide the final `wasi:http/types@0.3.0` resource implementation. The pinned
 Spin main revision runs plain final-WASI terminals and outbound HTTP, but its
 default CPU accounting hook panics when a WAC-composed handler is invoked.
 Building that revision without default features proves the component chain but
-is diagnostic only. Wasmtime 46.0.1 is therefore the only blocking final-WASI
-behavioral runtime in this release.
+is diagnostic only. Those canaries stay in the companion lock.
+Official Spin 4.2.5 and Wasmtime 50.0.0 additionally served `request-id`,
+`security-headers`, and `cors` around this revision's test-app, composed and,
+on Spin, native. That run is recorded in [COMPATIBILITY.md](./COMPATIBILITY.md).
+It did not include `authn-policy`, and it is not the CI gate. Wasmtime 46.0.1
+remains the blocking runtime for the signed companion checkout.
 Production deployments must consume versioned artifacts pinned by digest. The
 local runner accepts a sibling checkout only after checking the declared
 compatibility tuple, artifact checksums, component WIT, SBOMs, provenance
@@ -186,6 +189,21 @@ of that isolation. Native Spin manifests express the narrower broker origin in
 
 ## Identity propagation
 
+Two contexts share the header name `x-wasi-auth-context` and are not
+interchangeable. `leptos_wasi` does not parse either one. It forwards
+`http::Extensions` that a terminal installed before `Handler::build`.
+
+| Context | Crate | Wire | What it proves |
+|---|---|---|---|
+| Portable middleware context | `wasi-http-metadata::AuthContextV1`, installed as `wasi-http-metadata::VerifiedAuthContext` | one unpadded base64url JSON blob, no `.` | The composed `authn-policy` component, or `wasi-http-authn::accept_trusted_ingress`, checked service id, audience, and lifetime. The blob is not signed. |
+| HMAC trusted context | `wasi-auth::http::TrustedContextCodec`, opened as `wasi-auth::context::VerifiedRequestContext` | `base64url(payload).base64url(hmac-sha256)` | A native ingress sealed the envelope to one audience, method, path, and request id. |
+
+`tests/identity-boundary` links those crates from the sibling `wasi-auth`
+checkout and checks both directions: the HMAC codec rejects the portable blob,
+and `accept_trusted_ingress` rejects an HMAC-shaped value without installing
+`wasi-http-metadata::VerifiedAuthContext`. Do not decode one envelope with the
+other codec. A shared header name is not a shared type.
+
 `authn-policy` removes Authorization and every inbound `x-wasi-auth-*` header
 before forwarding. It injects one bounded, versioned `x-wasi-auth-context`
 value after validating the broker result. In optional mode, missing credentials
@@ -194,12 +212,13 @@ invalid credentials never fall back to anonymous. The final composed artifact
 must be the only externally routable handler, because the terminal service
 cannot prove that an inbound metadata header passed through the chain.
 
-In the production profile, `wasi-http-authn::accept_trusted_ingress` validates
-service ID, audience, lifetime, duplicate metadata, and the absence of a
-surviving bearer token. It strips the wire envelope and installs
-`VerifiedAuthContext` in `http::Extensions`. Missing typed context is a bypass,
-not anonymous identity, and maps to 503. The portable component profile must
-perform the same explicit promotion before `Handler::build`.
+`wasi-http-authn::accept_trusted_ingress` validates service ID, audience,
+lifetime, duplicate metadata, and the absence of a surviving bearer token. It
+strips the wire envelope and installs the portable `VerifiedAuthContext` in
+`http::Extensions`. Missing typed context is a bypass, not anonymous identity,
+and maps to 503 in the authorization fixture. That function does not open an
+HMAC envelope. The portable component profile must perform the same explicit
+promotion before `Handler::build`.
 
 `leptos_wasi` provides the resulting `http::request::Parts`, including
 extensions, to SSR routes and server functions. `handle_with_context` installs
@@ -377,7 +396,8 @@ DURATION=600 CONCURRENCY=100 ./scripts/soak-trusted-ingress.sh
 HOST=spin ./scripts/run-middleware-tests.sh
 ```
 
-Wasmtime 46.0.1 runs the final precomposed chain as the behavioral gate. Tagged
-Spin's linker lane, pinned Spin main's CPU-metrics regression lane, and the
-exact-commit native middleware lane remain incompatibility canaries until Spin
-publishes tagged final-WASI host and middleware support.
+Wasmtime 46.0.1 runs the signed companion's precomposed chain as the CI
+behavioral gate. Tagged Spin 4.0.2's linker lane, pinned Spin main's
+CPU-metrics regression lane, and the March RC native middleware lane remain
+incompatibility canaries for those hosts. Official Spin 4.2.5 served the
+public stack around this test-app; see [COMPATIBILITY.md](./COMPATIBILITY.md).

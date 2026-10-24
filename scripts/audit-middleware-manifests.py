@@ -661,8 +661,15 @@ def main() -> int:
     workflow = (ROOT / ".github/workflows/main.yaml").read_text()
     root_manifest = load("Cargo.toml")
 
-    if lock["wasi_http"] != "0.3.0" or lock["wasip3_version"] != "0.7.0":
-        raise AssertionError("middleware integration must use final WASI HTTP 0.3")
+    if lock["wasi_http"] != "0.3.0":
+        raise AssertionError("middleware integration must use final WASI HTTP 0.3.0")
+    # The pinned companion release still records wasip3 0.7.0 in its own
+    # compatibility.toml. This crate's guest binding is 0.9.0. Both embed
+    # package wasi:http@0.3.0. Advance the lock only when that release does.
+    if lock["wasip3_version"] != "0.7.0":
+        raise AssertionError(
+            "pinned companion release still records wasip3 0.7.0"
+        )
     if lock["schema"] != 2:
         raise AssertionError("middleware compatibility lock schema must be 2")
     middleware_lock = lock["middleware"]
@@ -681,8 +688,16 @@ def main() -> int:
     if authorization_lock["baseline_revision"] == authorization_lock["source_revision"]:
         raise AssertionError("authorization source revision must advance beyond its baseline")
     audit_companion_manifest_record(authorization_lock)
-    if root_manifest["dependencies"]["wasip3"]["version"] != "=0.7.0":
-        raise AssertionError("the library must pin wasip3 exactly")
+    if root_manifest["dependencies"]["wasip3"]["version"] != "=0.9.0":
+        raise AssertionError("the library must pin wasip3 0.9.0 exactly")
+    for name, manifest in (
+        ("counter", counter_cargo),
+        ("test app", test_app_cargo),
+        ("authorization fixture", authz_fixture),
+    ):
+        guest_wasip3 = manifest.get("dependencies", {}).get("wasip3", {})
+        if guest_wasip3.get("version") != "=0.9.0":
+            raise AssertionError(f"{name} must pin wasip3 0.9.0 exactly")
     authz_packages = {
         authorization_lock["leptos_package"],
         authorization_lock["client_package"],

@@ -14,7 +14,7 @@ use leptos::{
     nonce::use_nonce,
     reactive::owner::{Owner, Sandboxed},
 };
-use leptos_meta::{Link, ServerMetaContextOutput};
+use leptos_meta::ServerMetaContextOutput;
 
 pub(crate) type PinnedStream<T> = Pin<Box<dyn Stream<Item = T> + Send>>;
 type PinnedFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
@@ -63,7 +63,11 @@ pub(crate) trait ExtendResponse: Sized {
                 pending.await;
             }
 
-            register_split_prefetches(&prefetches);
+            // Prefetch registration has to run on the same owner that rendered
+            // the app. `use_nonce` and `WasmSplitManifest` are provided there;
+            // calling them after the owner is unset drops the links silently.
+            let prefetch_markup =
+                owner.with(|| split_prefetch_markup(&prefetches));
 
             let mut stream = Box::pin(
                 meta_context.inject_meta_context(stream).await.then({
@@ -82,7 +86,10 @@ pub(crate) trait ExtendResponse: Sized {
                 }),
             );
 
-            let first_chunk = stream.next().await.unwrap_or_default();
+            let first_chunk = insert_head_markup(
+                stream.next().await.unwrap_or_default(),
+                &prefetch_markup,
+            );
             let mut response = Self::from_stream(Sandboxed::new(
                 once(async move { first_chunk }).chain(stream).chain(once(
                     async move {
@@ -98,49 +105,114 @@ pub(crate) trait ExtendResponse: Sized {
     }
 }
 
-fn register_split_prefetches(prefetches: &PrefetchLazyFn) {
+/// Markup for lazy split-WASM preloads.
+///
+/// Must run inside the owner that rendered the app. `leptos_meta::Link` has
+/// no `nonce` attribute, and Leptos' own `HydrationScripts` still writes the
+/// nonce into `crossorigin` (`leptos` 0.8.22 `hydration/mod.rs`). These
+/// preloads are emitted here so `nonce` matches the per-request CSP nonce
+/// and `crossorigin` stays a CORS mode.
+fn split_prefetch_markup(prefetches: &PrefetchLazyFn) -> String {
     use leptos::prelude::*;
 
     if prefetches.0.read_value().is_empty() {
-        return;
+        return String::new();
     }
 
-    let nonce = use_nonce()
-        .map(|value| value.to_string())
-        .unwrap_or_default();
+    let nonce = use_nonce().map(|value| value.to_string());
     let Some(manifest) = use_context::<WasmSplitManifest>() else {
-        return;
+        return String::new();
     };
     let (package_path, modules, split_loader) = &*manifest.0.read_value();
     let requested = prefetches.0.read_value();
+    let mut markup = String::new();
 
     for module in requested
         .iter()
         .flat_map(|key| modules.get(*key).into_iter().flatten())
     {
-        // Leptos' `<Link crossorigin=nonce>` serializes as
-        // `crossorigin="<nonce>"`. A wasm `fetch` preload needs `nonce="<nonce>"`
-        // (and `crossorigin="anonymous"` when `/pkg` is off-origin). Tracked
-        // separately upstream: leptos-rs/leptos `crossorigin=nonce` → `nonce=nonce`.
-        _ = view! {
-            <Link
-                rel="preload"
-                href=format!("{package_path}/{module}.wasm")
-                as_="fetch"
-                type_="application/wasm"
-                crossorigin=nonce.clone()
-            />
+        let href = format!("{package_path}/{module}.wasm");
+        push_prefetch_link(
+            &mut markup,
+            "preload",
+            &href,
+            Some("fetch"),
+            Some("application/wasm"),
+            nonce.as_deref(),
+        );
+    }
+    let loader = format!("{package_path}/{split_loader}");
+    push_prefetch_link(
+        &mut markup,
+        "modulepreload",
+        &loader,
+        None,
+        None,
+        nonce.as_deref(),
+    );
+    markup
+}
+
+fn push_prefetch_link(
+    markup: &mut String,
+    rel: &str,
+    href: &str,
+    as_: Option<&str>,
+    type_: Option<&str>,
+    nonce: Option<&str>,
+) {
+    markup.push_str("<link rel=\"");
+    markup.push_str(rel);
+    markup.push_str("\" href=\"");
+    push_attr(markup, href);
+    markup.push('"');
+    if let Some(as_) = as_ {
+        markup.push_str(" as=\"");
+        push_attr(markup, as_);
+        markup.push('"');
+    }
+    if let Some(type_) = type_ {
+        markup.push_str(" type=\"");
+        push_attr(markup, type_);
+        markup.push('"');
+    }
+    markup.push_str(" crossorigin=\"anonymous\"");
+    if let Some(nonce) = nonce.filter(|nonce| !nonce.is_empty()) {
+        markup.push_str(" nonce=\"");
+        push_attr(markup, nonce);
+        markup.push('"');
+    }
+    markup.push('>');
+}
+
+fn push_attr(markup: &mut String, value: &str) {
+    for character in value.chars() {
+        match character {
+            '&' => markup.push_str("&amp;"),
+            '"' => markup.push_str("&quot;"),
+            '<' => markup.push_str("&lt;"),
+            '>' => markup.push_str("&gt;"),
+            _ => markup.push(character),
         }
-        .to_html();
     }
-    _ = view! {
-        <Link
-            rel="modulepreload"
-            href=format!("{package_path}/{split_loader}")
-            crossorigin=nonce
-        />
+}
+
+fn insert_head_markup(chunk: String, markup: &str) -> String {
+    if markup.is_empty() {
+        return chunk;
     }
-    .to_html();
+    if let Some(index) = chunk.find("</head>") {
+        let mut updated = String::with_capacity(chunk.len() + markup.len());
+        updated.push_str(&chunk[..index]);
+        updated.push_str(markup);
+        updated.push_str(&chunk[index..]);
+        updated
+    } else {
+        let mut updated = String::with_capacity(chunk.len() + markup.len());
+        updated.push_str(markup);
+        updated.push_str(&chunk);
+        updated
+    }
 }
 
 fn build_response<IV>(
@@ -197,7 +269,7 @@ mod tests {
     fn empty_prefetches_are_a_no_op() {
         let owner = Owner::new();
         owner.with(|| {
-            register_split_prefetches(&PrefetchLazyFn::default());
+            assert_eq!(split_prefetch_markup(&PrefetchLazyFn::default()), "");
         });
     }
 
@@ -207,7 +279,55 @@ mod tests {
         owner.with(|| {
             let prefetches = PrefetchLazyFn::default();
             prefetches.0.write_value().insert("missing-chunk");
-            register_split_prefetches(&prefetches);
+            assert_eq!(split_prefetch_markup(&prefetches), "");
         });
+    }
+
+    #[test]
+    fn split_preloads_carry_the_request_nonce_not_crossorigin() {
+        use std::collections::HashMap;
+
+        let owner = Owner::new();
+        owner.with(|| {
+            leptos::nonce::provide_nonce();
+            let nonce = leptos::nonce::use_nonce()
+                .expect("nonce context")
+                .to_string();
+            leptos::context::provide_context(WasmSplitManifest(
+                reactive_graph::owner::ArcStoredValue::new((
+                    "/pkg".to_owned(),
+                    HashMap::from([(
+                        "chunk".to_owned(),
+                        vec!["chunk&a".to_owned()],
+                    )]),
+                    "split.js".to_owned(),
+                )),
+            ));
+            let prefetches = PrefetchLazyFn::default();
+            prefetches.0.write_value().insert("chunk");
+            let markup = split_prefetch_markup(&prefetches);
+            assert!(
+                markup.contains(&format!("nonce=\"{nonce}\"")),
+                "preload links must carry the request nonce, got {markup}"
+            );
+            assert!(markup.contains("crossorigin=\"anonymous\""));
+            assert!(
+                !markup.contains(&format!("crossorigin=\"{nonce}\"")),
+                "the nonce must not be written into crossorigin, got {markup}"
+            );
+            assert!(markup.contains("chunk&amp;a.wasm"));
+            assert!(markup.contains("rel=\"modulepreload\""));
+        });
+    }
+
+    #[test]
+    fn prefetch_markup_is_inserted_before_the_head_closes() {
+        let updated = insert_head_markup(
+            "<head><title>t</title></head><body></body>".to_owned(),
+            "<link rel=\"modulepreload\" href=\"/pkg/split.js\" nonce=\"abc\">",
+        );
+        assert!(updated.contains(
+            "<link rel=\"modulepreload\" href=\"/pkg/split.js\" nonce=\"abc\"></head>"
+        ));
     }
 }

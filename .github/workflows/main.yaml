@@ -44,10 +44,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust
+      - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
@@ -65,10 +65,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust
+      - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
@@ -76,7 +76,7 @@ jobs:
         run: cargo bench --locked --bench hot_path --no-default-features --features wasip2
 
   msrv:
-    name: Rust 1.93.0 / ${{ matrix.runtime }}
+    name: Rust 1.94.0 / ${{ matrix.runtime }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -91,22 +91,22 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install Rust 1.93.0
+      - name: Install Rust 1.94.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: 1.93.0
+          toolchain: 1.94.0
           components: clippy
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
       - name: Test the declared MSRV
         run: >-
-          cargo test --locked --no-default-features
+          cargo +1.94.0 test --locked --no-default-features
           --features "${{ matrix.features }}"
 
       - name: Lint the declared MSRV
         run: >-
-          cargo clippy --locked --all-targets --no-default-features
+          cargo +1.94.0 clippy --locked --all-targets --no-default-features
           --features "${{ matrix.features }}"
           -- -D warnings
 
@@ -114,7 +114,7 @@ jobs:
         env:
           RUSTDOCFLAGS: "-Dmissing-docs -Drustdoc::broken-intra-doc-links"
         run: >-
-          cargo doc --locked --no-deps --no-default-features
+          cargo +1.94.0 doc --locked --no-deps --no-default-features
           --features "${{ matrix.features }}"
 
   api-fixtures:
@@ -133,10 +133,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust
+      - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
@@ -149,10 +149,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust
+      - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
@@ -170,10 +170,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install stable Rust
+      - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
@@ -189,10 +189,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust
+      - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
@@ -209,10 +209,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust and WASI target
+      - name: Install Rust 1.99.0 and WASI target
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
           targets: wasm32-wasip2
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
@@ -243,7 +243,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: ["1.93.0", stable]
+        rust: ["1.93.0", "1.99.0"]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -260,9 +260,9 @@ jobs:
       - name: Test and lint the private persistence service
         working-directory: examples/production-counter/store
         run: |
-          cargo fmt --all -- --check
-          cargo test --locked
-          cargo clippy --locked --all-targets -- -D warnings
+          cargo +${{ matrix.rust }} fmt --all -- --check
+          cargo +${{ matrix.rust }} test --locked
+          cargo +${{ matrix.rust }} clippy --locked --all-targets -- -D warnings
 
   browser:
     name: Split WASM browser / Wasmtime final WASI
@@ -277,10 +277,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust and browser/WASI targets
+      - name: Install Rust 1.99.0 and browser/WASI targets
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
           targets: wasm32-unknown-unknown, wasm32-wasip2
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
@@ -296,10 +296,10 @@ jobs:
           cache: npm
           cache-dependency-path: tests/browser/package-lock.json
 
-      - name: Install Cargo Leptos 0.3.6 and wasm-bindgen 0.2.126
+      - name: Install Cargo Leptos 0.3.6 and wasm-bindgen 0.2.129
         run: |
           cargo install cargo-leptos --version 0.3.6 --locked
-          cargo install wasm-bindgen-cli --version 0.2.126 --locked
+          cargo install wasm-bindgen-cli --version 0.2.129 --locked
 
       - name: Install Wasmtime 46.0.1
         if: matrix.host == 'wasmtime'
@@ -340,10 +340,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust and WASI target
+      - name: Install Rust 1.99.0 and WASI target
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
           targets: wasm32-wasip2
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
@@ -486,10 +486,10 @@ jobs:
           fetch-depth: 0
           path: wasi-auth
 
-      - name: Install Rust 1.93.0 and the WASI target
+      - name: Install Rust 1.99.0 and the WASI target
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: 1.93.0
+          toolchain: "1.99.0"
           targets: wasm32-wasip2
           components: clippy
 
@@ -557,9 +557,14 @@ jobs:
 
       - name: Build the WASIp2 lifecycle fixture against the pinned companion
         run: >-
-          cargo clippy --locked
+          cargo +1.99.0 clippy --locked
           --manifest-path tests/authz-lifecycle-wasip2/Cargo.toml
           --target wasm32-wasip2 --all-targets -- -D warnings
+
+      - name: Prove portable and HMAC contexts are not interchangeable
+        run: >-
+          cargo +1.99.0 test --locked
+          --manifest-path tests/identity-boundary/Cargo.toml
 
       # The middleware bundle lives in the same companion checkout but on its
       # own version line and its own release tag, so it is fetched separately.
@@ -653,10 +658,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install stable Rust and WASI target
+      - name: Install Rust 1.99.0 and WASI target
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
           targets: wasm32-wasip2
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2

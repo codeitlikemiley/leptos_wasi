@@ -3,7 +3,7 @@ name = "leptos-wasi-authz-wasip2-lifecycle"
 description = "Real-host WASIp2 authorization and WaitPoll lifecycle fixture"
 version = "0.0.0"
 edition = "2024"
-rust-version = "1.93.0"
+rust-version = "1.94.0"
 license = "MIT OR Apache-2.0"
 publish = false
 

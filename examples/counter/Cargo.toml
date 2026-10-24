@@ -2,7 +2,7 @@
 name = "counter"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.93.0"
+rust-version = "1.94.0"
 authors = ["codeitlikemiley <codeitlikemiley@gmail.com>"]
 description = "A Leptos application running as a WASIp3 Component"
 
@@ -13,17 +13,17 @@ crate-type = ["cdylib"]
 console_error_panic_hook = "0.1"
 futures = { version = "0.3.32", optional = true }
 http = { version = "1.4", optional = true }
-leptos = { version = "0.8.20", default-features = false }
+leptos = { version = "0.8.22", default-features = false }
 leptos_meta = { version = "0.8.6", default-features = false }
 leptos_router = { version = "0.8.14", default-features = false }
 leptos_wasi = { package = "leptos-wasi-runtime", path = "../..", default-features = false, features = ["wasip3"], optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
-server_fn = { version = "0.8.12", default-features = false, features = ["axum-no-default"] }
+server_fn = { version = "0.8.13", default-features = false, features = ["axum-no-default"] }
 thiserror = { version = "2.0", optional = true }
 uuid = { version = "1.18", features = ["js", "v4"], optional = true }
-wasip3 = { version = "=0.7.0", features = ["http-compat"], optional = true }
-wasm-bindgen = { version = "=0.2.126", optional = true }
+wasip3 = { version = "=0.9.0", features = ["http-compat"], optional = true }
+wasm-bindgen = { version = "=0.2.129", optional = true }
 
 [features]
 hydrate = [
