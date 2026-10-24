@@ -155,6 +155,9 @@ struct BoundedGuard {
 }
 
 impl BoundedGuard {
+    // `AtomicUsize::try_update` is 1.95. This fixture's rust-version is 1.94,
+    // so the 1.99 deprecation of `fetch_update` stays allowed here.
+    #[allow(deprecated)]
     fn try_new(counter: &'static AtomicUsize, limit: usize) -> Option<Self> {
         counter
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {

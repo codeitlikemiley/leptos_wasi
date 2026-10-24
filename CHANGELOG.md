@@ -91,6 +91,11 @@ All notable changes to this project will be documented in this file.
   `components.lock.toml` records `wasip3_version` `0.9.0`. Published digests
   in `artifact-sets.toml` remain the previous `wasi-auth-v0.1.0-rc.3` and
   `wasi-http-middleware-v0.2.0-alpha.3` bundles and were not recomputed.
+  After that pin, Wasmtime 50 ran the fault-PDP's four unit tests and the
+  WASIp2 lifecycle fixture's two tests. The four ignored Spin 4.2.5 and
+  Wasmtime 50 end-to-end filters passed again. Headless Chrome 154 rendered
+  `GET /ssr/async` and enforced a nonce CSP in front of that document. The
+  composed authorization lifecycle still needs published component artifacts.
 - Spin 4.2.5 served body-consuming Preview 3 routes (`POST /api/post_test`,
   `GET /ssr/async`, a 60 KiB POST body) for git `6727a21` (`wasip3` 0.7.0,
   `wit-bindgen` 0.57.1) and for this revision (`wasip3` 0.9.0, `wit-bindgen`

@@ -72,8 +72,8 @@ or the CI install steps.
 |---|---|---|
 | rustc 1.99.0 | `cargo +1.99.0` fmt, clippy `-D warnings`, test, doc for default, `wasip2,islands-router`, `wasip3,islands-router`, both, and all-features | Passed. Lib tests 152 / 153 / 129 / 164 / 165. Ignored e2e tests stayed ignored |
 | rustc 1.94.0 (`4a4ef493e`, 2026-03-02) | test, clippy, doc for `wasip2,islands-router`, `wasip3,islands-router`, and both. `CARGO_TARGET_DIR=/tmp/tgt-194` | Passed. Lib tests 153 / 129 / 164 |
-| Wasmtime 50.0.0 (`ebe5e8df1`, 2026-10-20), `/tmp/tools/wasmtime50/wasmtime` | `cargo +1.99.0 test --locked --test e2e -- --ignored --test-threads=1` with `WASMTIME_BIN` set, filters `test_e2e_wasip2` and `test_e2e_wasip3` | Passed, including `POST /api/post_test`, SSR, a 64 KiB body, chunked overflow, a slow upload, and client disconnect |
-| Spin 4.2.5 (`e09d7d5`, 2026-10-23), official linux-amd64 `/tmp/tools/spin425/spin` | Same e2e command with `SPIN_BIN`, filters `test_e2e_spin_wasip2` and `test_e2e_spin_wasip3` | Passed. Same body cases |
+| Wasmtime 50.0.0 (`ebe5e8df1`, 2026-10-20), `/tmp/tools/wasmtime50/wasmtime` | `cargo +1.99.0 test --locked --test e2e -- --ignored --test-threads=1` with `WASMTIME_BIN` set, filters `test_e2e_wasip2` and `test_e2e_wasip3` | Passed, including `POST /api/post_test`, SSR, a 64 KiB body, chunked overflow, a slow upload, and client disconnect. Re-run after the companion pin: both filters passed again |
+| Spin 4.2.5 (`e09d7d5`, 2026-10-23), official linux-amd64 `/tmp/tools/spin425/spin` | Same e2e command with `SPIN_BIN`, filters `test_e2e_spin_wasip2` and `test_e2e_spin_wasip3` | Passed. Same body cases. Re-run after the companion pin: both filters passed again |
 | Spin 4.0.2 `/tmp/tools/spin402/spin` | `spin up` of the current Preview 3 guest | Still fails: `wasi:http/types@0.3.0` resource implementation is missing |
 | `wasi-http-middleware` `896f8f5426b1bdc6d208367d0ac8dbf44146dfda` | WAC 0.10.1 plug of `cors`, then `security-headers`, then `request-id` around the clean `wasip3` 0.9 test-app. `wasm-tools` 1.253.0 `validate --features component-model,cm-async`. Export is only `wasi:http/handler@0.3.0` | See the composition note below |
 
@@ -108,7 +108,9 @@ Wasmtime 50 serve of the same composed component without the CORS environment va
 
 ## Not re-run
 
-Browser E2E, cargo-leptos islands build, ten-minute soaks, benchmarks, and the 0.4.2-rc.1 test-app binary. Identity tests ran against `wasi-auth` `bdfad803` (crate `0.1.0-rc.5` at that commit; unpublished target `0.1.0-rc.6`). CI still installs cargo-leptos 0.3.6. `.cursor/install.sh` installs cargo-leptos 0.3.7, Wasmtime 50.0.0, and `wasm-bindgen` 0.2.129 for the library toolchain. The companion lock's `wasm-bindgen` field stays 0.2.126.
+cargo-leptos islands build (`tests/browser/run.sh`), ten-minute soaks, benchmarks, and the 0.4.2-rc.1 test-app binary. The composed authorization lifecycle script still needs published component artifacts, which `rc.6` and `v0.2.0-alpha.4` do not have, so that full chain was not re-run. Identity tests ran against `wasi-auth` `bdfad803` (crate `0.1.0-rc.5` at that commit; unpublished target `0.1.0-rc.6`). CI still installs cargo-leptos 0.3.6. `.cursor/install.sh` installs cargo-leptos 0.3.7, Wasmtime 50.0.0, and `wasm-bindgen` 0.2.129 for the library toolchain. The companion lock's `wasm-bindgen` field stays 0.2.126.
+
+Headless Chrome 154 loaded `GET /ssr/async` from Wasmtime 50 serving this revision's Preview 3 test-app. The page rendered `Async View` / `Async resource resolved`. Two responses carried four equal `nonce` attributes each (`md5WlCgWDMNZLW2ItHCAvA`, then `uscVl8OqepMqX_zbPGG74A`). Hydration preloads still set `crossorigin` to that nonce; that remains Leptos 0.8.22 `HydrationScripts`. A local response with `Content-Security-Policy: script-src 'nonce-...'` allowed the nonce-bearing inline scripts. An added inline script without a nonce was blocked. The test-app itself does not emit a CSP header; the header in that check was added in front of the saved SSR document.
 
 Install the developer-facing tools:
 
