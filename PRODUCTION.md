@@ -243,7 +243,7 @@ the first request and propagate a persistent initialization conflict. Do not
 discard its result.
 
 The final `wasi:http@0.3.0` component tuple is pinned in
-`tests/middleware/components.lock.toml`. Wasmtime 46.0.1 runs the deterministic
+`tests/middleware/components.lock.toml`. Wasmtime 50.0.0 runs the deterministic
 WAC-precomposed chain. Tagged Spin 4.0.2 cannot link the final
 `wasi:http/types@0.3.0` resources. Pinned Spin `4.1.0-pre0` at `c34c584...`
 runs plain terminals, final outbound HTTP, trusted ingress, islands, and the
@@ -315,10 +315,12 @@ deployment promotion is tracked separately:
 
 - Formatting, Clippy, tests, and rustdoc pass for default features, WASIp2,
   WASIp3, and both features together.
-- Rust 1.93.0 and current stable pass the feature matrix.
-- Wasmtime E2E passes for both previews; Spin E2E passes for Preview 2; the
-  tagged Preview 3 expected-failure canary matches its pinned linker failure;
-  and the exact pinned-main terminal lane passes final-WASI browser behavior.
+- Rust 1.94.0 and the pinned 1.99.0 toolchain pass the feature matrix.
+  The 2026-10-24 run did. "Current stable" newer than 1.99.0 was not run.
+- Wasmtime E2E passes for both previews. On 2026-10-24 that was Wasmtime
+  50.0.0, and Spin 4.2.5 passed Preview 2 and Preview 3, including body
+  routes. CI still installs Spin 4.0.2, whose Preview 3 canary matches the
+  pinned linker failure. The pinned-main browser lane was not re-run.
 - Raw encoded-path security cases, middleware, SSR query context, body limits,
   cancellation, disconnect, delayed stream, and mid-stream failure are tested.
 - Preview 3 browser E2E proves SSR output, an initially unhydrated island, lazy

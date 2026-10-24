@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FIXTURE_ROOT="${ROOT}/tests/authz-lifecycle"
 LOCK="${ROOT}/tests/middleware/components.lock.toml"
-MIDDLEWARE_REPOSITORY="${WASI_HTTP_MIDDLEWARE_DIR:-$(dirname "${ROOT}")/wasi-auth/legacy/wasi-http-middleware}"
+MIDDLEWARE_REPOSITORY="${WASI_HTTP_MIDDLEWARE_DIR:-$(dirname "${ROOT}")/wasi-http-middleware}"
 AUTHZ_REPOSITORY="${WASI_AUTH_DIR:-${WASI_AUTHZ_DIR:-$(dirname "${ROOT}")/wasi-auth}}"
 ALLOW_DIRTY="${AUTHZ_LIFECYCLE_ALLOW_DIRTY_COMPANIONS:-0}"
 
@@ -24,7 +24,7 @@ BROKER_URL="http://${BROKER_ADDRESS}/authenticate"
 PDP_URL="http://${PDP_ADDRESS}"
 PDP_EVALUATION_URL="${PDP_URL}/access/v1/evaluation"
 PDP_TOKEN="lifecycle-pdp-transport-token"
-RUST_VERSION="1.93.0"
+RUST_VERSION="1.99.0"
 
 lock_value() {
     python3 - "${LOCK}" "$1" "$2" <<'PY'

@@ -2,7 +2,7 @@
 name = "leptos-wasi-trusted-ingress"
 version = "0.0.0"
 edition = "2024"
-rust-version = "1.93.0"
+rust-version = "1.94.0"
 publish = false
 
 [dependencies]
@@ -17,8 +17,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.52", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 toml = "0.9"
-wasi-http-metadata = { path = "../../../wasi-auth/legacy/wasi-http-middleware/crates/metadata", version = "=0.2.0-alpha.3" }
-wasi-http-policy-core = { path = "../../../wasi-auth/legacy/wasi-http-middleware/crates/policy-core", version = "=0.2.0-alpha.3" }
+wasi-http-metadata = { git = "https://github.com/codeitlikemiley/wasi-http-middleware", rev = "3df96c21a7906b885e67229e9a7c8c01b6497109", version = "=0.2.0-alpha.3" }
+wasi-http-policy-core = { git = "https://github.com/codeitlikemiley/wasi-http-middleware", rev = "3df96c21a7906b885e67229e9a7c8c01b6497109", version = "=0.2.0-alpha.3" }
 
 [lints.rust]
 unsafe_code = "forbid"

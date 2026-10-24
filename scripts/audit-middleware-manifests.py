@@ -661,8 +661,10 @@ def main() -> int:
     workflow = (ROOT / ".github/workflows/main.yaml").read_text()
     root_manifest = load("Cargo.toml")
 
-    if lock["wasi_http"] != "0.3.0" or lock["wasip3_version"] != "0.7.0":
-        raise AssertionError("middleware integration must use final WASI HTTP 0.3")
+    if lock["wasi_http"] != "0.3.0":
+        raise AssertionError("middleware integration must use final WASI HTTP 0.3.0")
+    if lock["wasip3_version"] != "0.9.0":
+        raise AssertionError("middleware integration must pin wasip3 0.9.0")
     if lock["schema"] != 2:
         raise AssertionError("middleware compatibility lock schema must be 2")
     middleware_lock = lock["middleware"]
@@ -673,16 +675,36 @@ def main() -> int:
             raise AssertionError(f"middleware {key} must be a full Git revision")
     if middleware_lock["baseline_revision"] == middleware_lock["source_revision"]:
         raise AssertionError("middleware source revision must advance beyond its baseline")
-    if authorization_lock["version"] != "0.1.0-rc.3":
-        raise AssertionError("authorization integration must target the released wasi-auth candidate")
+    if authorization_lock["version"] != "0.1.0-rc.5":
+        raise AssertionError(
+            "authorization integration must target wasi-auth 0.1.0-rc.5 at the locked git revision"
+        )
+    if authorization_lock["source_revision"] != (
+        "bdfad80372287a3be4215aeefad534098ef6537b"
+    ):
+        raise AssertionError("authorization source revision drifted from wasi-auth PR 17")
+    if middleware_lock["source_revision"] != (
+        "3df96c21a7906b885e67229e9a7c8c01b6497109"
+    ):
+        raise AssertionError(
+            "middleware source revision drifted from wasi-http-middleware PR 1"
+        )
     for key in ("baseline_revision", "source_revision", "artifact_revision"):
         if re.fullmatch(r"[0-9a-f]{40}", authorization_lock[key]) is None:
             raise AssertionError(f"authorization {key} must be a full Git revision")
     if authorization_lock["baseline_revision"] == authorization_lock["source_revision"]:
         raise AssertionError("authorization source revision must advance beyond its baseline")
     audit_companion_manifest_record(authorization_lock)
-    if root_manifest["dependencies"]["wasip3"]["version"] != "=0.7.0":
-        raise AssertionError("the library must pin wasip3 exactly")
+    if root_manifest["dependencies"]["wasip3"]["version"] != "=0.9.0":
+        raise AssertionError("the library must pin wasip3 0.9.0 exactly")
+    for name, manifest in (
+        ("counter", counter_cargo),
+        ("test app", test_app_cargo),
+        ("authorization fixture", authz_fixture),
+    ):
+        guest_wasip3 = manifest.get("dependencies", {}).get("wasip3", {})
+        if guest_wasip3.get("version") != "=0.9.0":
+            raise AssertionError(f"{name} must pin wasip3 0.9.0 exactly")
     authz_packages = {
         authorization_lock["leptos_package"],
         authorization_lock["client_package"],
@@ -705,19 +727,19 @@ def main() -> int:
     ]
     if fixture_dependency["version"] != f'={authorization_lock["version"]}':
         raise AssertionError("authorization fixture must pin the exact locked version")
-    if not fixture_dependency["path"].endswith(
-        authorization_lock["leptos_crate_path"]
-    ):
-        raise AssertionError("authorization fixture must use the locked sibling crate path")
+    if fixture_dependency.get("rev") != authorization_lock["source_revision"]:
+        raise AssertionError("authorization fixture must pin the locked wasi-auth revision")
+    if "codeitlikemiley/wasi-auth" not in fixture_dependency.get("git", ""):
+        raise AssertionError("authorization fixture must git-depend on wasi-auth")
     client_dependency = authz_fixture["dependencies"][
         authorization_lock["client_package"]
     ]
     if client_dependency["version"] != f'={authorization_lock["version"]}':
         raise AssertionError("authorization fixture must pin the exact client version")
-    if not client_dependency["path"].endswith(
-        authorization_lock["client_crate_path"]
-    ):
-        raise AssertionError("authorization fixture must use the locked client crate path")
+    if client_dependency.get("rev") != authorization_lock["source_revision"]:
+        raise AssertionError("authorization fixture client must pin the locked wasi-auth revision")
+    if "codeitlikemiley/wasi-auth" not in client_dependency.get("git", ""):
+        raise AssertionError("authorization fixture client must git-depend on wasi-auth")
     if set(client_dependency.get("features", [])) != {"wasip3"}:
         raise AssertionError("authorization fixture must use only the WASIp3 client transport")
     if authz_fixture["package"].get("publish") is not False:

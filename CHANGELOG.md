@@ -23,6 +23,19 @@ All notable changes to this project will be documented in this file.
 - `HandlerConfig::with_request_body_timeout(Duration)` alongside the existing
   nanosecond builder. Values larger than `u64::MAX` nanoseconds saturate.
 
+### Fixed
+
+- The lazy split island is requested again. Cargo Leptos 0.3.6
+  (`wasm_split_cli_support` 0.2.0) left `__wbindgen_placeholder__` imports in
+  the hydrated `counter.wasm`. `--keep-lld-exports` kept them reachable from
+  the exported function table, `WebAssembly.instantiate` rejected import
+  `__wbindgen_describe`, and hydration never fetched `split_*.wasm`. The
+  browser job now installs Cargo Leptos 0.3.11 (`wasm_split_cli_support`
+  0.2.3), which shims the wasm-bindgen 0.2.128+ describe callers into the
+  main module so those imports are deleted. `make verify-split` rejects a
+  module that still contains the placeholder. CSP nonces and `wasip3`
+  `=0.9.0` are unchanged.
+
 ### Changed
 
 - Preview 2 rustdoc now matches the code. `Handler::build` size, time,
@@ -58,16 +71,68 @@ All notable changes to this project will be documented in this file.
 - Preview 3 maps response-stream errors with
   `HandlerError::ResponseStream` instead of a `WasiBuf` wrapper.
 - CI now lints, tests, and documents the default feature set (WASIp2 without
-  `islands-router`). The MSRV job installs Clippy on 1.93.0 and runs Clippy
+  `islands-router`). The MSRV job installs Clippy on 1.94.0 and runs Clippy
   plus rustdoc for every feature-matrix row. Advisory ignores live only in
   `deny.toml`; the duplicate `cargo audit --ignore` step is gone.
 - `cargo-semver-checks` is pinned to 0.50.0 so the SemVer job can read rustdoc
-  JSON v60 from current stable Rust.
+  JSON v60 from Rust 1.99.0.
+- `rust-toolchain.toml` pins the default toolchain to 1.99.0. `rust-version`
+  is 1.94.0. The MSRV job invokes `cargo +1.94.0`.
+- Direct `wasip3` is `=0.9.0` (`0.9.0+wasi-0.3.0`), which pins `wit-bindgen`
+  0.62.0. `leptos` is 0.8.22 (not 0.9.0-rc0) and `leptos_macro` is `=0.8.19`.
+  `server_fn` stays 0.8.13. The lock uses `server_fn_macro_default` 0.8.6
+  because 0.8.5 is `syn` 2 while `server_fn_macro` 0.8.12 is `syn` 3.
+  Transitive `wasm-bindgen` is 0.2.129. The counter pins `=0.2.129`.
+  Package version stays 0.4.2; crates.io 0.4.2 (2026-08-05) is older than git
+  `6727a21` and still declares `wasip3` 0.7.0. Downstream should git-depend
+  on this revision until a release exists.
+- `tests/identity-boundary` checks the sibling `wasi-auth` crates directly:
+  an HMAC-shaped `x-wasi-auth-context` is not a portable `AuthContextV1`, and
+  a portable blob is not an HMAC trusted context. That run used `wasi-auth`
+  `bdfad80372287a3be4215aeefad534098ef6537b` (PR 17). The crate version in
+  that tree is still `0.1.0-rc.5`. The unpublished release target is
+  `0.1.0-rc.6`. Middleware crates in the same run were
+  `wasi-http-middleware` `3df96c21a7906b885e67229e9a7c8c01b6497109` (PR 1),
+  crate version still `0.2.0-alpha.3`. The unpublished middleware target is
+  `v0.2.0-alpha.4`.
+- Authorization fixtures git-depend on that `wasi-auth` revision at
+  `=0.1.0-rc.5`. `tests/authz-fixture` path-patches `wasi-http-*` onto the
+  `3df96c21` checkout because `bdfad803` still git-depends on middleware
+  `896f8f54`. `tests/authz-lifecycle` git-depends on
+  `wasi-http-middleware-component-support` at `3df96c21`. Every `Cargo.lock`
+  resolves `wasip3` `0.9.0+wasi-0.3.0`. None resolve `0.7.0+wasi`.
+  `components.lock.toml` records `wasip3_version` `0.9.0`. Published digests
+  in `artifact-sets.toml` remain the previous `wasi-auth-v0.1.0-rc.3` and
+  `wasi-http-middleware-v0.2.0-alpha.3` bundles and were not recomputed.
+  After that pin, Wasmtime 50 ran the fault-PDP's four unit tests and the
+  WASIp2 lifecycle fixture's two tests. The four ignored Spin 4.2.5 and
+  Wasmtime 50 end-to-end filters passed again. Headless Chrome 154 rendered
+  `GET /ssr/async` and enforced a nonce CSP in front of that document. The
+  composed authorization lifecycle still needs published component artifacts.
+- Spin 4.2.5 served body-consuming Preview 3 routes (`POST /api/post_test`,
+  `GET /ssr/async`, a 60 KiB POST body) for git `6727a21` (`wasip3` 0.7.0,
+  `wit-bindgen` 0.57.1) and for this revision (`wasip3` 0.9.0, `wit-bindgen`
+  0.62.0). Agent 7 root-caused the fullstack waitable-set trap to
+  wit-bindgen 0.57.1 `inter-task-wakeup` (fixed in 0.59+, wit-bindgen
+  #1638), not to this crate's body collector. `wasip3` 0.9.0 depends on
+  `wit-bindgen` 0.62.0. `tests/middleware/components.lock.toml`
+  `wasip3_version` is `0.9.0`. Details are in `COMPATIBILITY.md`.
 - `deny.toml` ignores `RUSTSEC-2026-0249` (`smartstring` via `routefinder`), an
   unmaintained advisory with no safe upgrade, documented in `PRODUCTION.md`.
 
 ### Fixed
 
+- Lazy split-WASM preloads are registered on the request owner and emitted
+  with `nonce` plus `crossorigin="anonymous"`. They no longer pass the nonce
+  through `leptos_meta::Link`'s `crossorigin` attribute, which dropped the
+  CSP nonce. Leptos 0.8.22 `HydrationScripts` still does that; that fix
+  belongs in Leptos.
+- Preview 2 pollable registration increments with a compare-exchange loop.
+  `AtomicU64::try_update` is newer than the 1.94 MSRV, and `fetch_update` is
+  deprecated on the 1.99 toolchain.
+- Preview 3 task spawning calls `wasip3::spawn_local`. `wasip3` 0.8 renamed
+  `wit_bindgen::spawn`, and 0.9 does not re-export the old name. Both
+  `CustomExecutor::spawn` and `spawn_local` use that one host entry.
 - SSR `from_app` keeps the `SsrSharedContext` it creates and no longer
   `expect`s a second lookup through `Owner`. A missing `pending_data`
   stream becomes an empty script stream instead of trapping the instance.

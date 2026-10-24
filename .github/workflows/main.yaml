@@ -44,10 +44,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust
+      - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
@@ -65,10 +65,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust
+      - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
@@ -76,7 +76,7 @@ jobs:
         run: cargo bench --locked --bench hot_path --no-default-features --features wasip2
 
   msrv:
-    name: Rust 1.93.0 / ${{ matrix.runtime }}
+    name: Rust 1.94.0 / ${{ matrix.runtime }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -91,22 +91,22 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install Rust 1.93.0
+      - name: Install Rust 1.94.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: 1.93.0
+          toolchain: 1.94.0
           components: clippy
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
       - name: Test the declared MSRV
         run: >-
-          cargo test --locked --no-default-features
+          cargo +1.94.0 test --locked --no-default-features
           --features "${{ matrix.features }}"
 
       - name: Lint the declared MSRV
         run: >-
-          cargo clippy --locked --all-targets --no-default-features
+          cargo +1.94.0 clippy --locked --all-targets --no-default-features
           --features "${{ matrix.features }}"
           -- -D warnings
 
@@ -114,7 +114,7 @@ jobs:
         env:
           RUSTDOCFLAGS: "-Dmissing-docs -Drustdoc::broken-intra-doc-links"
         run: >-
-          cargo doc --locked --no-deps --no-default-features
+          cargo +1.94.0 doc --locked --no-deps --no-default-features
           --features "${{ matrix.features }}"
 
   api-fixtures:
@@ -133,10 +133,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust
+      - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
@@ -149,10 +149,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust
+      - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
@@ -170,10 +170,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install stable Rust
+      - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
@@ -189,10 +189,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust
+      - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
@@ -209,10 +209,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust and WASI target
+      - name: Install Rust 1.99.0 and WASI target
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
           targets: wasm32-wasip2
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
@@ -221,10 +221,10 @@ jobs:
             . -> target
             tests/test-app -> tests/test-app/target
 
-      - name: Install Wasmtime 46.0.1
+      - name: Install Wasmtime 50.0.0
         uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
         with:
-          version: "46.0.1"
+          version: "50.0.0"
 
       - name: Install Spin 4.0.2
         uses: fermyon/actions/spin/setup@8849a6c41270af8e9f60f371982eddf33b8e35c9 # v1
@@ -243,7 +243,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: ["1.93.0", stable]
+        rust: ["1.93.0", "1.99.0"]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -260,9 +260,9 @@ jobs:
       - name: Test and lint the private persistence service
         working-directory: examples/production-counter/store
         run: |
-          cargo fmt --all -- --check
-          cargo test --locked
-          cargo clippy --locked --all-targets -- -D warnings
+          cargo +${{ matrix.rust }} fmt --all -- --check
+          cargo +${{ matrix.rust }} test --locked
+          cargo +${{ matrix.rust }} clippy --locked --all-targets -- -D warnings
 
   browser:
     name: Split WASM browser / Wasmtime final WASI
@@ -277,10 +277,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust and browser/WASI targets
+      - name: Install Rust 1.99.0 and browser/WASI targets
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
           targets: wasm32-unknown-unknown, wasm32-wasip2
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
@@ -296,16 +296,22 @@ jobs:
           cache: npm
           cache-dependency-path: tests/browser/package-lock.json
 
-      - name: Install Cargo Leptos 0.3.6 and wasm-bindgen 0.2.126
+      - name: Install Cargo Leptos 0.3.11 and wasm-bindgen 0.2.129
         run: |
-          cargo install cargo-leptos --version 0.3.6 --locked
-          cargo install wasm-bindgen-cli --version 0.2.126 --locked
+          # 0.3.6 (wasm_split_cli_support 0.2.0) leaves wasm-bindgen 0.2.128+
+          # __wbindgen_placeholder__ imports in the split module. --keep-lld-exports
+          # then keeps them reachable from the exported table, so the browser
+          # cannot instantiate counter.wasm and never requests split_*.wasm.
+          # 0.3.11 (wasm_split_cli_support 0.2.3) shims those describe callers
+          # into the main module so wasm-bindgen can delete the imports.
+          cargo install cargo-leptos --version 0.3.11 --locked
+          cargo install wasm-bindgen-cli --version 0.2.129 --locked
 
-      - name: Install Wasmtime 46.0.1
+      - name: Install Wasmtime 50.0.0
         if: matrix.host == 'wasmtime'
         uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
         with:
-          version: "46.0.1"
+          version: "50.0.0"
 
       - name: Install browser test dependencies
         working-directory: tests/browser
@@ -340,10 +346,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install stable Rust and WASI target
+      - name: Install Rust 1.99.0 and WASI target
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
           targets: wasm32-wasip2
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
@@ -425,12 +431,14 @@ jobs:
 
           Terminal final-WIT checks and both Spin incompatibility canaries ran.
 
-          Both signed companion bundles are gated in CI by the `companion-authz`
-          job, which pins `wasi-auth` by the revision recorded in
-          `tests/middleware/components.lock.toml` and verifies each artifact set
-          against the assets published for its own release tag. Neither bundle
-          is rebuilt: the upstream signing key is ephemeral per run, so only the
-          published assets can satisfy the recorded signature digests.
+          The `companion-authz` job checks out `wasi-auth` and
+          `wasi-http-middleware` at the source revisions in
+          `tests/middleware/components.lock.toml`. Those trees still declare
+          `0.1.0-rc.5` and `0.2.0-alpha.3`. The unpublished targets are
+          `0.1.0-rc.6` and `v0.2.0-alpha.4`. The job checks those revisions
+          and does not download signed bundles. Digests in
+          `artifact-sets.toml` are the previous published assets and are not
+          a measurement of these revisions.
 
           What still runs only from sibling checkouts is behaviour, not
           provenance: the Wasmtime full-chain lane and the browser lanes need a
@@ -442,16 +450,13 @@ jobs:
           EOF
 
   companion-authz:
-    name: Signed authorization companion
+    name: Authorization companion source pin
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    env:
-      GOBIN: ${{ github.workspace }}/go-bin
-    # The fixture manifests declare `wasi-auth` by the relative path
-    # `../../../wasi-auth`, and `authz_repository` resolves the lock's
-    # `relative_path` against the parent of this repository's root. Both only
-    # hold if the two checkouts are siblings, which is why neither uses the
-    # default checkout location.
+    # Fixture Cargo.toml files git-depend on wasi-auth. The authz-fixture
+    # path-patches wasi-http-* to ../../../wasi-http-middleware, and
+    # authz_repository resolves the lock's relative_path against the parent
+    # of this repository. Both checkouts must be siblings of leptos_wasi.
     defaults:
       run:
         working-directory: leptos_wasi
@@ -472,8 +477,7 @@ jobs:
               lock = tomllib.load(source)
           authorization = lock["authorization"]
           print(f'revision={authorization["source_revision"]}')
-          print(f'tag=wasi-auth-v{authorization["artifact_version"]}')
-          print(f'middleware_tag=wasi-http-middleware-v{lock["middleware"]["version"]}')
+          print(f'middleware_revision={lock["middleware"]["source_revision"]}')
           PY
           cat "${GITHUB_OUTPUT}"
 
@@ -486,10 +490,17 @@ jobs:
           fetch-depth: 0
           path: wasi-auth
 
-      - name: Install Rust 1.93.0 and the WASI target
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: codeitlikemiley/wasi-http-middleware
+          ref: ${{ steps.pin.outputs.middleware_revision }}
+          fetch-depth: 0
+          path: wasi-http-middleware
+
+      - name: Install Rust 1.99.0 and the WASI target
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: 1.93.0
+          toolchain: "1.99.0"
           targets: wasm32-wasip2
           components: clippy
 
@@ -500,108 +511,28 @@ jobs:
             leptos_wasi/tests/authz-fixture -> tests/authz-fixture/target
             leptos_wasi/tests/authz-lifecycle-wasip2 -> tests/authz-lifecycle-wasip2/target
 
-      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
-        with:
-          go-version: "1.26.2"
-
-      - name: Install pinned verification tools
+      # rc.6 and wasi-http-middleware v0.2.0-alpha.4 are unpublished, so this
+      # job cannot download a signed bundle for these revisions. The digests
+      # in artifact-sets.toml are the previous published assets and are not
+      # checked here.
+      - name: Confirm the companion checkouts are unmodified
         run: |
-          cargo install wasm-tools --version 1.253.0 --locked
-          go install github.com/sigstore/cosign/v3/cmd/cosign@v3.1.1
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ripgrep
+          git -C "${GITHUB_WORKSPACE}/wasi-auth" diff --exit-code
+          git -C "${GITHUB_WORKSPACE}/wasi-http-middleware" diff --exit-code
 
-      # `reports/supply-chain/` and the release checksum manifest are git-ignored
-      # upstream by design: the bundle is release-run output, not repository
-      # content. The signing key is ephemeral per run, so rebuilding it here
-      # could never reproduce the recorded signature digests — only the
-      # published assets can.
-      - name: Install the published authorization bundle
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.pin.outputs.tag }}
-        run: |
-          assets="${RUNNER_TEMP}/authz-assets"
-          repository="${GITHUB_WORKSPACE}/wasi-auth"
-          gh release download "${TAG}" --repo codeitlikemiley/wasi-auth \
-            --dir "${assets}" --clobber
-          mkdir -p "${repository}/artifacts/components" \
-            "${repository}/artifacts/native" \
-            "${repository}/reports/supply-chain"
-          install -m 0644 "${assets}/RELEASE-SHA256SUMS" \
-            "${assets}/provenance.intoto.json" "${repository}/artifacts/"
-          install -m 0644 "${assets}/authz-http-pep.wasm" "${assets}/cedar-pdp.wasm" \
-            "${assets}/spicedb-pdp.wasm" "${repository}/artifacts/components/"
-          install -m 0644 "${assets}/cedar-pdp-x86_64-unknown-linux-gnu" \
-            "${repository}/artifacts/native/"
-          install -m 0644 "${assets}/native-SHA256SUMS" \
-            "${repository}/artifacts/native/SHA256SUMS"
-          install -m 0644 "${assets}/manifest.json" \
-            "${assets}/manifest.json.sigstore.json" \
-            "${assets}/provenance.intoto.json.sigstore.json" \
-            "${assets}/cosign.pub" "${repository}/reports/supply-chain/"
-
-      # Installing only into ignored paths keeps the companion checkout clean,
-      # which `check-authz-companion.sh` requires.
-      - name: Confirm the companion checkout is unmodified
-        run: git -C "${GITHUB_WORKSPACE}/wasi-auth" diff --exit-code
-
-      # Runs check-authz-companion.sh (revision, version, baseline ancestry,
-      # clean tree, locked fixture clippy), verify-artifact-set.py (every digest
-      # plus both cosign verify-blob calls), and per-component wasm-tools
-      # validation with the WIT stack-order assertions.
-      - name: Verify the signed authorization companion
-        env:
-          COSIGN_BIN: ${{ github.workspace }}/go-bin/cosign
-        run: ./scripts/sync-authz-components.sh
+      - name: Verify the authorization companion source pin
+        run: ./scripts/check-authz-companion.sh
 
       - name: Build the WASIp2 lifecycle fixture against the pinned companion
         run: >-
-          cargo clippy --locked
+          cargo +1.99.0 clippy --locked
           --manifest-path tests/authz-lifecycle-wasip2/Cargo.toml
           --target wasm32-wasip2 --all-targets -- -D warnings
 
-      # The middleware bundle lives in the same companion checkout but on its
-      # own version line and its own release tag, so it is fetched separately.
-      # `artifacts/` is git-ignored throughout that subtree, so every path here
-      # has to be created before anything lands in it.
-      - name: Install the published middleware bundle
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.pin.outputs.middleware_tag }}
-        run: |
-          assets="${RUNNER_TEMP}/middleware-assets"
-          repository="${GITHUB_WORKSPACE}/wasi-auth/legacy/wasi-http-middleware"
-          gh release download "${TAG}" --repo codeitlikemiley/wasi-auth \
-            --dir "${assets}" --clobber
-          mkdir -p "${repository}/artifacts/components" \
-            "${repository}/artifacts/test-components" \
-            "${repository}/artifacts/sbom" \
-            "${repository}/reports/supply-chain"
-          install -m 0644 "${assets}/SHA256SUMS" \
-            "${assets}/provenance.intoto.json" "${repository}/artifacts/"
-          for component in request-id security-headers cors authn-policy secure-defaults; do
-            install -m 0644 "${assets}/${component}.wasm" \
-              "${repository}/artifacts/components/"
-          done
-          for component in passthrough echo-service mock-authn-broker; do
-            install -m 0644 "${assets}/${component}.wasm" \
-              "${repository}/artifacts/test-components/"
-          done
-          install -m 0644 "${assets}"/*.cdx.json "${repository}/artifacts/sbom/"
-          install -m 0644 "${assets}/manifest.json" \
-            "${assets}/manifest.sigstore.json" \
-            "${assets}/provenance.sigstore.json" \
-            "${assets}/cosign.pub" "${repository}/reports/supply-chain/"
-
-      - name: Confirm the companion checkout is still unmodified
-        run: git -C "${GITHUB_WORKSPACE}/wasi-auth" diff --exit-code
-
-      - name: Verify the signed middleware bundle
+      - name: Prove portable and HMAC contexts are not interchangeable
         run: >-
-          python3 scripts/verify-artifact-set.py middleware
-          --repository "${GITHUB_WORKSPACE}/wasi-auth/legacy/wasi-http-middleware"
-          --cosign "${{ github.workspace }}/go-bin/cosign"
+          cargo +1.99.0 test --locked
+          --manifest-path tests/identity-boundary/Cargo.toml
 
   soak:
     name: Ten-minute soak / ${{ matrix.host }} / ${{ matrix.preview }}
@@ -653,10 +584,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install stable Rust and WASI target
+      - name: Install Rust 1.99.0 and WASI target
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
           targets: wasm32-wasip2
 
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
@@ -665,11 +596,11 @@ jobs:
             . -> target
             tests/test-app -> tests/test-app/target
 
-      - name: Install Wasmtime 46.0.1
+      - name: Install Wasmtime 50.0.0
         if: matrix.host == 'wasmtime'
         uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
         with:
-          version: "46.0.1"
+          version: "50.0.0"
 
       - name: Install Spin 4.0.2
         if: matrix.host == 'spin'

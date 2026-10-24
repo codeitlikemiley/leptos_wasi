@@ -131,13 +131,26 @@ impl<P> WaitQueue<P> {
         pollable: P,
         waker: &Waker,
     ) -> Result<Arc<WaitRegistration>, ExecutorError> {
-        let id = self
-            .next_id
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| {
-                id.checked_add(1)
-            })
-            .map(RegistrationId)
-            .map_err(|_| ExecutorError::PollableRegistrationExhausted)?;
+        // `fetch_update` is deprecated since 1.95 and `try_update` is newer
+        // than the 1.94 MSRV, so the same checked increment is a CAS loop.
+        let id = loop {
+            let current = self.next_id.load(Ordering::Relaxed);
+            let Some(next) = current.checked_add(1) else {
+                return Err(ExecutorError::PollableRegistrationExhausted);
+            };
+            if self
+                .next_id
+                .compare_exchange(
+                    current,
+                    next,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                break RegistrationId(current);
+            }
+        };
         let registration = Arc::new(WaitRegistration::new(id, waker));
 
         let queue_depth = {

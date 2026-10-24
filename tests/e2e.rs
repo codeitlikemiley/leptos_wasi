@@ -1445,13 +1445,13 @@ async fn test_e2e_spin_wasip2() {
 }
 
 #[tokio::test]
-#[ignore = "Promotion fixture: stable Spin 4 currently fails the final-WASI canary"]
+#[ignore = "CI installs Spin 4.0.2, which fails the final-WASI linker canary. Spin 4.2.5 serves this guest when SPIN_BIN points at it"]
 async fn test_e2e_spin_wasip3() {
     run_spin_e2e_tests("tests/spin-p3.toml").await;
 }
 
 #[tokio::test]
-#[ignore = "Promotion fixture: stable Spin 4 currently fails the final-WASI canary"]
+#[ignore = "CI installs Spin 4.0.2, which fails the final-WASI linker canary. Spin 4.2.5 serves a public middleware stack when SPIN_BIN points at it"]
 async fn experimental_middleware_spin_wasip3() {
     run_spin_e2e_tests_with_middleware(
         "tests/spin-p3-middleware-composed.toml",

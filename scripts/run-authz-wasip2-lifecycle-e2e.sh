@@ -8,7 +8,7 @@ FAULT_FIXTURE_ROOT="${ROOT}/tests/authz-lifecycle"
 LOCK="${ROOT}/tests/middleware/components.lock.toml"
 AUTHZ_REPOSITORY="${WASI_AUTH_DIR:-${WASI_AUTHZ_DIR:-$(dirname "${ROOT}")/wasi-auth}}"
 ALLOW_DIRTY="${AUTHZ_WASIP2_LIFECYCLE_ALLOW_DIRTY_COMPANION:-0}"
-RUST_VERSION="1.93.0"
+RUST_VERSION="1.99.0"
 CEDAR_TOKEN="wasip2-cedar-transport-token"
 FAULT_TOKEN="lifecycle-pdp-transport-token"
 

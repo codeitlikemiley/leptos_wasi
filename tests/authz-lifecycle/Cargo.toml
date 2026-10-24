@@ -5,7 +5,7 @@ resolver = "2"
 [workspace.package]
 version = "0.0.0"
 edition = "2024"
-rust-version = "1.93.0"
+rust-version = "1.94.0"
 license = "MIT OR Apache-2.0"
 publish = false
 
@@ -13,9 +13,9 @@ publish = false
 http = "1.4"
 http-body-util = "0.1"
 serde_json = "1.0"
-wasip3 = { version = "=0.7.0", features = ["http-compat"] }
-wasi-http-middleware-component-support = { path = "../../../wasi-auth/legacy/wasi-http-middleware/crates/component-support" }
-wit-bindgen = { version = "=0.59.0", features = ["async-spawn"] }
+wasip3 = { version = "=0.9.0", features = ["http-compat"] }
+wasi-http-middleware-component-support = { git = "https://github.com/codeitlikemiley/wasi-http-middleware", rev = "3df96c21a7906b885e67229e9a7c8c01b6497109", version = "=0.2.0-alpha.3" }
+wit-bindgen = { version = "=0.62.0", features = ["async-spawn"] }
 
 [workspace.lints.rust]
 missing_docs = "deny"
