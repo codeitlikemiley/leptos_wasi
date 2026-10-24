@@ -18,8 +18,9 @@ https://github.com/user-attachments/assets/6596e0f3-80c0-4258-a4e3-f85c41b328b4
 
 - Rust 1.94.0 or newer. CI and `rust-toolchain.toml` pin 1.99.0
 - `wasm32-wasip2` (`rustup target add wasm32-wasip2`)
-- Cargo Leptos 0.3.7 for the included islands example. The CI workflow still
-  installs 0.3.6
+- Cargo Leptos 0.3.11 for the included islands example. The browser CI job
+  installs the same version. 0.3.6 leaves `__wbindgen_placeholder__` imports
+  in the split module, so the browser never instantiates it.
 - `wasm-bindgen-cli` 0.2.129, matching the counter's locked browser crate
 - Wasmtime 50.0.0 and official Spin 4.2.5 serve this revision's Preview 3
   test-app, including server-function POST and SSR. CI installs Wasmtime

@@ -11,7 +11,7 @@ served on Wasmtime 50.0.0 and official Spin 4.2.5. See `COMPATIBILITY.md`.
 
 - **Rust Toolchain:** Version 1.94.0 or later. `rust-toolchain.toml` pins 1.99.0.
 - **Rust target:** `rustup target add wasm32-wasip2`
-- **Cargo Leptos:** Version 0.3.6 (`cargo install cargo-leptos --version 0.3.6 --locked`).
+- **Cargo Leptos:** Version 0.3.11 (`cargo install cargo-leptos --version 0.3.11 --locked`). 0.3.6's splitter leaves `__wbindgen_placeholder__` imports in the hydrated module.
 - **wasm-bindgen CLI:** Version 0.2.129 (`cargo install wasm-bindgen-cli --version 0.2.129 --locked`).
 - **Spin CLI:** the exact main revision in `components.lock.toml`; `make spin`
   builds it into the repository-local tool cache when needed.

@@ -11,7 +11,7 @@ set -euo pipefail
 # wasm-bindgen 0.2.126, Spin 4.0.2, and Rust 1.93.0 as the counter floor.
 WASMTIME_VERSION="50.0.0"
 WASM_BINDGEN_VERSION="0.2.129"
-CARGO_LEPTOS_VERSION="0.3.7"
+CARGO_LEPTOS_VERSION="0.3.11"
 TAILWIND_VERSION="v4.2.1"
 
 log() { printf '\n=== %s ===\n' "$1"; }

@@ -23,6 +23,19 @@ All notable changes to this project will be documented in this file.
 - `HandlerConfig::with_request_body_timeout(Duration)` alongside the existing
   nanosecond builder. Values larger than `u64::MAX` nanoseconds saturate.
 
+### Fixed
+
+- The lazy split island is requested again. Cargo Leptos 0.3.6
+  (`wasm_split_cli_support` 0.2.0) left `__wbindgen_placeholder__` imports in
+  the hydrated `counter.wasm`. `--keep-lld-exports` kept them reachable from
+  the exported function table, `WebAssembly.instantiate` rejected import
+  `__wbindgen_describe`, and hydration never fetched `split_*.wasm`. The
+  browser job now installs Cargo Leptos 0.3.11 (`wasm_split_cli_support`
+  0.2.3), which shims the wasm-bindgen 0.2.128+ describe callers into the
+  main module so those imports are deleted. `make verify-split` rejects a
+  module that still contains the placeholder. CSP nonces and `wasip3`
+  `=0.9.0` are unchanged.
+
 ### Changed
 
 - Preview 2 rustdoc now matches the code. `Handler::build` size, time,

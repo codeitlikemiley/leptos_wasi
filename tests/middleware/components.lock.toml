@@ -1,6 +1,10 @@
 schema = 2
 rust_version = "1.93.0"
-cargo_leptos_version = "0.3.7"
+# 0.3.11 vendors wasm_split_cli_support 0.2.3. That release keeps
+# wasm-bindgen 0.2.128+ generic describe shims in the main module.
+# 0.3.6 (wasm_split 0.2.0) leaves __wbindgen_placeholder__ imports in the
+# split browser module, and WebAssembly.instantiate rejects them.
+cargo_leptos_version = "0.3.11"
 wasm_bindgen_cli_version = "0.2.126"
 wasm_bindgen_wasi_fix_version = "0.2.123"
 wasi_http = "0.3.0"

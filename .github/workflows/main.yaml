@@ -296,9 +296,15 @@ jobs:
           cache: npm
           cache-dependency-path: tests/browser/package-lock.json
 
-      - name: Install Cargo Leptos 0.3.6 and wasm-bindgen 0.2.129
+      - name: Install Cargo Leptos 0.3.11 and wasm-bindgen 0.2.129
         run: |
-          cargo install cargo-leptos --version 0.3.6 --locked
+          # 0.3.6 (wasm_split_cli_support 0.2.0) leaves wasm-bindgen 0.2.128+
+          # __wbindgen_placeholder__ imports in the split module. --keep-lld-exports
+          # then keeps them reachable from the exported table, so the browser
+          # cannot instantiate counter.wasm and never requests split_*.wasm.
+          # 0.3.11 (wasm_split_cli_support 0.2.3) shims those describe callers
+          # into the main module so wasm-bindgen can delete the imports.
+          cargo install cargo-leptos --version 0.3.11 --locked
           cargo install wasm-bindgen-cli --version 0.2.129 --locked
 
       - name: Install Wasmtime 50.0.0

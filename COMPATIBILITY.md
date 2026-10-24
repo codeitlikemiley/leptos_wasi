@@ -108,7 +108,7 @@ Wasmtime 50 serve of the same composed component without the CORS environment va
 
 ## Not re-run
 
-cargo-leptos islands build (`tests/browser/run.sh`), ten-minute soaks, benchmarks, and the 0.4.2-rc.1 test-app binary. The composed authorization lifecycle script still needs published component artifacts, which `rc.6` and `v0.2.0-alpha.4` do not have, so that full chain was not re-run. Identity tests ran against `wasi-auth` `bdfad803` (crate `0.1.0-rc.5` at that commit; unpublished target `0.1.0-rc.6`). CI still installs cargo-leptos 0.3.6. `.cursor/install.sh` installs cargo-leptos 0.3.7, Wasmtime 50.0.0, and `wasm-bindgen` 0.2.129 for the library toolchain. The companion lock's `wasm-bindgen` field stays 0.2.126.
+Ten-minute soaks, benchmarks, and the 0.4.2-rc.1 test-app binary were not re-run for the splitter pin. The composed authorization lifecycle script still needs published component artifacts, which `rc.6` and `v0.2.0-alpha.4` do not have, so that full chain was not re-run. Identity tests ran against `wasi-auth` `bdfad803` (crate `0.1.0-rc.5` at that commit; unpublished target `0.1.0-rc.6`). The browser job and `.cursor/install.sh` install cargo-leptos 0.3.11 with `wasm-bindgen` 0.2.129. The companion lock's `wasm-bindgen` field stays 0.2.126.
 
 Headless Chrome 154 loaded `GET /ssr/async` from Wasmtime 50 serving this revision's Preview 3 test-app. The page rendered `Async View` / `Async resource resolved`. Two responses carried four equal `nonce` attributes each (`md5WlCgWDMNZLW2ItHCAvA`, then `uscVl8OqepMqX_zbPGG74A`). Hydration preloads still set `crossorigin` to that nonce; that remains Leptos 0.8.22 `HydrationScripts`. A local response with `Content-Security-Policy: script-src 'nonce-...'` allowed the nonce-bearing inline scripts. An added inline script without a nonce was blocked. The test-app itself does not emit a CSP header; the header in that check was added in front of the saved SSR document.
 
@@ -116,7 +116,7 @@ Install the developer-facing tools:
 
 ```bash
 rustup target add wasm32-wasip2 wasm32-unknown-unknown
-cargo install cargo-leptos --version 0.3.7 --locked
+cargo install cargo-leptos --version 0.3.11 --locked
 cargo install wasm-bindgen-cli --version 0.2.126 --locked
 cargo install wasmtime-cli --version 50.0.0 --locked
 cargo install --git https://github.com/codeitlikemiley/spin \
@@ -145,6 +145,14 @@ companion lock still records 0.2.126 for the signed middleware checkout. The
 The browser CLI and the `wasm-bindgen` crate resolved in the counter lockfile
 must remain identical. This version does not define the server ABI: the server
 component uses `wasip3` 0.9.0 and final `wasi:http@0.3.0`.
+
+A separate browser failure showed up with `wasm-bindgen` 0.2.129 and Cargo
+Leptos 0.3.6. The splitter left `__wbindgen_placeholder__.__wbindgen_describe`
+in the hydrated module. `--keep-lld-exports` kept that import reachable from
+the exported function table, so `WebAssembly.instantiate` failed and the lazy
+`split_*.wasm` request never started. Cargo Leptos 0.3.11 deletes that import.
+The counter document in the failing run had no `Content-Security-Policy`
+header; the nonce attributes were not what blocked the chunk.
 
 The temporary 0.2.114 pin and its Leptos template context are recorded in
 [leptos-spin #63](https://github.com/spinframework/leptos-spin/pull/63).
