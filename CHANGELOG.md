@@ -75,17 +75,30 @@ All notable changes to this project will be documented in this file.
   on this revision until a release exists.
 - `tests/identity-boundary` checks the sibling `wasi-auth` crates directly:
   an HMAC-shaped `x-wasi-auth-context` is not a portable `AuthContextV1`, and
-  a portable blob is not an HMAC trusted context. That run used
-  `wasi-auth` 0.1.0-rc.3 (`fc66aabe`), not a newer tag.
+  a portable blob is not an HMAC trusted context. That run used `wasi-auth`
+  `bdfad80372287a3be4215aeefad534098ef6537b` (PR 17). The crate version in
+  that tree is still `0.1.0-rc.5`. The unpublished release target is
+  `0.1.0-rc.6`. Middleware crates in the same run were
+  `wasi-http-middleware` `3df96c21a7906b885e67229e9a7c8c01b6497109` (PR 1),
+  crate version still `0.2.0-alpha.3`. The unpublished middleware target is
+  `v0.2.0-alpha.4`.
+- Authorization fixtures git-depend on that `wasi-auth` revision at
+  `=0.1.0-rc.5`. `tests/authz-fixture` path-patches `wasi-http-*` onto the
+  `3df96c21` checkout because `bdfad803` still git-depends on middleware
+  `896f8f54`. `tests/authz-lifecycle` git-depends on
+  `wasi-http-middleware-component-support` at `3df96c21`. Every `Cargo.lock`
+  resolves `wasip3` `0.9.0+wasi-0.3.0`. None resolve `0.7.0+wasi`.
+  `components.lock.toml` records `wasip3_version` `0.9.0`. Published digests
+  in `artifact-sets.toml` remain the previous `wasi-auth-v0.1.0-rc.3` and
+  `wasi-http-middleware-v0.2.0-alpha.3` bundles and were not recomputed.
 - Spin 4.2.5 served body-consuming Preview 3 routes (`POST /api/post_test`,
   `GET /ssr/async`, a 60 KiB POST body) for git `6727a21` (`wasip3` 0.7.0,
   `wit-bindgen` 0.57.1) and for this revision (`wasip3` 0.9.0, `wit-bindgen`
   0.62.0). Agent 7 root-caused the fullstack waitable-set trap to
   wit-bindgen 0.57.1 `inter-task-wakeup` (fixed in 0.59+, wit-bindgen
   #1638), not to this crate's body collector. `wasip3` 0.9.0 depends on
-  `wit-bindgen` 0.62.0. `tests/middleware/components.lock.toml` still
-  records the signed companion's `wasip3` 0.7.0 and is not the runtime
-  crate's dependency. Details are in `COMPATIBILITY.md`.
+  `wit-bindgen` 0.62.0. `tests/middleware/components.lock.toml`
+  `wasip3_version` is `0.9.0`. Details are in `COMPATIBILITY.md`.
 - `deny.toml` ignores `RUSTSEC-2026-0249` (`smartstring` via `routefinder`), an
   unmaintained advisory with no safe upgrade, documented in `PRODUCTION.md`.
 

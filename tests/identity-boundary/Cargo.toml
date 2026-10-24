@@ -8,6 +8,6 @@ description = "Proves the portable middleware context and the HMAC trusted conte
 
 [dev-dependencies]
 http = "1"
-wasi-auth = { path = "../../../wasi-auth/crates/wasi-auth", version = "=0.1.0-rc.3", default-features = false, features = ["http"] }
-wasi-http-authn = { path = "../../../wasi-auth/legacy/wasi-http-middleware/crates/authn", version = "=0.2.0-alpha.3" }
-wasi-http-metadata = { path = "../../../wasi-auth/legacy/wasi-http-middleware/crates/metadata", version = "=0.2.0-alpha.3" }
+wasi-auth = { git = "https://github.com/codeitlikemiley/wasi-auth", rev = "bdfad80372287a3be4215aeefad534098ef6537b", version = "=0.1.0-rc.5", default-features = false, features = ["http"] }
+wasi-http-authn = { git = "https://github.com/codeitlikemiley/wasi-http-middleware", rev = "3df96c21a7906b885e67229e9a7c8c01b6497109", version = "=0.2.0-alpha.3" }
+wasi-http-metadata = { git = "https://github.com/codeitlikemiley/wasi-http-middleware", rev = "3df96c21a7906b885e67229e9a7c8c01b6497109", version = "=0.2.0-alpha.3" }

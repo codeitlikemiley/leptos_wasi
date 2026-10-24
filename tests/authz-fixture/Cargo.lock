@@ -1356,7 +1356,8 @@ dependencies = [
 
 [[package]]
 name = "leptos-wasi-authz"
-version = "0.1.0-rc.3"
+version = "0.1.0-rc.5"
+source = "git+https://github.com/codeitlikemiley/wasi-auth?rev=bdfad80372287a3be4215aeefad534098ef6537b#bdfad80372287a3be4215aeefad534098ef6537b"
 dependencies = [
  "axum-core",
  "bytes",
@@ -1394,7 +1395,7 @@ dependencies = [
  "wasi-authz-contract",
  "wasi-authz-spicedb",
  "wasi-http-authn",
- "wasip3 0.9.0+wasi-0.3.0",
+ "wasip3",
 ]
 
 [[package]]
@@ -1422,7 +1423,7 @@ dependencies = [
  "tachys",
  "thiserror 2.0.21",
  "throw_error",
- "wasip3 0.9.0+wasi-0.3.0",
+ "wasip3",
 ]
 
 [[package]]
@@ -2990,7 +2991,8 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-cedar"
-version = "0.1.0-rc.3"
+version = "0.1.0-rc.5"
+source = "git+https://github.com/codeitlikemiley/wasi-auth?rev=bdfad80372287a3be4215aeefad534098ef6537b#bdfad80372287a3be4215aeefad534098ef6537b"
 dependencies = [
  "base64 0.22.1",
  "cedar-policy",
@@ -3002,7 +3004,8 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-client"
-version = "0.1.0-rc.3"
+version = "0.1.0-rc.5"
+source = "git+https://github.com/codeitlikemiley/wasi-auth?rev=bdfad80372287a3be4215aeefad534098ef6537b#bdfad80372287a3be4215aeefad534098ef6537b"
 dependencies = [
  "bytes",
  "futures",
@@ -3010,12 +3013,13 @@ dependencies = [
  "http-body-util",
  "thiserror 2.0.21",
  "wasi-authz-contract",
- "wasip3 0.7.0+wasi-0.3.0",
+ "wasip3",
 ]
 
 [[package]]
 name = "wasi-authz-contract"
-version = "0.1.0-rc.3"
+version = "0.1.0-rc.5"
+source = "git+https://github.com/codeitlikemiley/wasi-auth?rev=bdfad80372287a3be4215aeefad534098ef6537b#bdfad80372287a3be4215aeefad534098ef6537b"
 dependencies = [
  "serde",
  "serde_json",
@@ -3024,7 +3028,8 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-http"
-version = "0.1.0-rc.3"
+version = "0.1.0-rc.5"
+source = "git+https://github.com/codeitlikemiley/wasi-auth?rev=bdfad80372287a3be4215aeefad534098ef6537b#bdfad80372287a3be4215aeefad534098ef6537b"
 dependencies = [
  "http",
  "wasi-authz-client",
@@ -3035,7 +3040,8 @@ dependencies = [
 
 [[package]]
 name = "wasi-authz-spicedb"
-version = "0.1.0-rc.3"
+version = "0.1.0-rc.5"
+source = "git+https://github.com/codeitlikemiley/wasi-auth?rev=bdfad80372287a3be4215aeefad534098ef6537b#bdfad80372287a3be4215aeefad534098ef6537b"
 dependencies = [
  "base64 0.22.1",
  "http",
@@ -3084,19 +3090,6 @@ version = "1.0.4+wasi-0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487"
 dependencies = [
- "wit-bindgen 0.57.1",
-]
-
-[[package]]
-name = "wasip3"
-version = "0.7.0+wasi-0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07aa681120704bf09828d1f7cf7e763666c1dc6a36e5096efd0ad9aadfb302d3"
-dependencies = [
- "bytes",
- "http",
- "http-body",
- "thiserror 2.0.21",
  "wit-bindgen 0.57.1",
 ]
 
@@ -3305,10 +3298,6 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
-dependencies = [
- "bitflags 2.13.2",
- "futures",
-]
 
 [[package]]
 name = "wit-bindgen"

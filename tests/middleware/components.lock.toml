@@ -4,7 +4,7 @@ cargo_leptos_version = "0.3.7"
 wasm_bindgen_cli_version = "0.2.126"
 wasm_bindgen_wasi_fix_version = "0.2.123"
 wasi_http = "0.3.0"
-wasip3_version = "0.7.0"
+wasip3_version = "0.9.0"
 spin_stable_version = "4.0.2"
 spin_stable_final_wasi_supported = false
 spin_final_wasi_supported = false
@@ -22,7 +22,7 @@ spin_middleware_default_features = false
 spin_middleware_wasi_http = "0.3.0-rc-2026-03-15"
 spin_middleware_final_wasi_supported = false
 spin_sdk_version = "6.0.0"
-wasmtime_version = "46.0.1"
+wasmtime_version = "50.0.0"
 wac_cli_version = "0.10.1"
 wasm_tools_version = "1.253.0"
 oha_version = "1.14.0"
@@ -31,21 +31,16 @@ cosign_version = "3.1.1"
 [middleware]
 name = "wasi-http-middleware"
 version = "0.2.0-alpha.3"
-relative_path = "../wasi-auth/legacy/wasi-http-middleware"
-# Also recorded as [release].semver_baseline in this subtree's own
-# compatibility.toml. It predates the subtree import but is reachable from
-# wasi-auth's main, because the import preserved the standalone repository's
-# history rather than squashing it.
+relative_path = "../wasi-http-middleware"
+# Also recorded as [release].semver_baseline in the standalone repository's
+# compatibility.toml.
 baseline_revision = "6977a75c4d2cb1558158341c109e419189dc2c52"
-# This subtree no longer has a checkout of its own: it is imported into
-# wasi-auth, so its source revision is the revision of that one shared
-# checkout, and must equal [authorization].source_revision. The value this
-# replaced, 42db2e18, is a pre-import commit — reachable, but from before the
-# files moved under legacy/wasi-http-middleware — so no checkout could ever
-# report it and the sibling gate could never pass.
-source_revision = "fc66aabefdbc57c37e72924cf7f6746c23b0c1fa"
-# The commit tagged wasi-http-middleware-v0.2.0-alpha.3. Its bundle is recorded
-# from that release's assets; see the note in artifact-sets.toml.
+# PR https://github.com/codeitlikemiley/wasi-http-middleware/pull/1 head.
+# Header policy is non-overwriting. The crate version at this commit is
+# still 0.2.0-alpha.3. The unpublished release target is v0.2.0-alpha.4.
+source_revision = "3df96c21a7906b885e67229e9a7c8c01b6497109"
+# Last published signed bundle. v0.2.0-alpha.4 is not published, so these
+# bytes are not a measurement of source_revision. See artifact-sets.toml.
 artifact_revision = "d29dbfcd13033d923cf0425751c852b21321bf3e"
 components = [
   "request-id",
@@ -57,20 +52,22 @@ components = [
 
 [authorization]
 name = "wasi-auth"
-version = "0.1.0-rc.3"
+version = "0.1.0-rc.5"
 relative_path = "../wasi-auth"
 leptos_package = "leptos-wasi-authz"
 leptos_crate_path = "crates/leptos-wasi-authz"
 client_package = "wasi-authz-client"
 client_crate_path = "crates/wasi-authz-client"
 baseline_revision = "27689e087af7946ff280102dbec94fb9b2fe0590"
-# The commit tagged wasi-auth-v0.1.0-rc.3 — the tree the upstream release
-# workflow rebuilt, verified, published, and signed. Its bundle is recorded
-# from the release assets, not from any local pipeline run.
-source_revision = "fc66aabefdbc57c37e72924cf7f6746c23b0c1fa"
+# PR https://github.com/codeitlikemiley/wasi-auth/pull/17. HMAC boundary,
+# replay defense, and a single wasip3 0.9.0. The crate version at this
+# commit is 0.1.0-rc.5. The unpublished release target is rc.6. main's
+# published 0.1.0-rc.5 still resolves wasip3 0.7.0, so the git revision is
+# the pin, not the version number.
+source_revision = "bdfad80372287a3be4215aeefad534098ef6537b"
 artifact_name = "wasi-authz"
-artifact_version = "0.1.0-rc.3"
-artifact_revision = "fc66aabefdbc57c37e72924cf7f6746c23b0c1fa"
+artifact_version = "0.1.0-rc.5"
+artifact_revision = "bdfad80372287a3be4215aeefad534098ef6537b"
 fixture_manifest = "tests/authz-fixture/Cargo.toml"
 # The companion publishes its own surface manifest, generated from `cargo
 # metadata` across both its workspaces and drift-checked in its CI. Pinning it
@@ -78,7 +75,7 @@ fixture_manifest = "tests/authz-fixture/Cargo.toml"
 # so a rename or a version bump upstream surfaces here as a digest mismatch
 # instead of as a build break in a fixture.
 companion_manifest = "companion.toml"
-companion_manifest_sha256 = "e63197ed8d2b10ae8ae2872ff70d9792a2ff83c4103df3ddad8f2691e89b2bcb"
+companion_manifest_sha256 = "c324ee8b452ffdcf8838c705334e90174d4e86082464dd69516d9d1be6405bd7"
 components = [
   "authz-http-pep",
   "cedar-pdp",

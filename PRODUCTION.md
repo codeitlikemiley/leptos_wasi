@@ -243,7 +243,7 @@ the first request and propagate a persistent initialization conflict. Do not
 discard its result.
 
 The final `wasi:http@0.3.0` component tuple is pinned in
-`tests/middleware/components.lock.toml`. Wasmtime 46.0.1 runs the deterministic
+`tests/middleware/components.lock.toml`. Wasmtime 50.0.0 runs the deterministic
 WAC-precomposed chain. Tagged Spin 4.0.2 cannot link the final
 `wasi:http/types@0.3.0` resources. Pinned Spin `4.1.0-pre0` at `c34c584...`
 runs plain terminals, final outbound HTTP, trusted ingress, islands, and the

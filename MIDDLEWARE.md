@@ -114,8 +114,8 @@ is diagnostic only. Those canaries stay in the companion lock.
 Official Spin 4.2.5 and Wasmtime 50.0.0 additionally served `request-id`,
 `security-headers`, and `cors` around this revision's test-app, composed and,
 on Spin, native. That run is recorded in [COMPATIBILITY.md](./COMPATIBILITY.md).
-It did not include `authn-policy`, and it is not the CI gate. Wasmtime 46.0.1
-remains the blocking runtime for the signed companion checkout.
+It did not include `authn-policy`, and it is not the CI gate. The companion
+lock and CI install Wasmtime 50.0.0.
 Production deployments must consume versioned artifacts pinned by digest. The
 local runner accepts a sibling checkout only after checking the declared
 compatibility tuple, artifact checksums, component WIT, SBOMs, provenance
@@ -124,14 +124,21 @@ gate runs pinned Cosign verification for both the provenance statement and OCI
 manifest before copying a component. The checked
 `tests/middleware/artifact-sets.toml` record binds those exact files.
 
-Both bundles are recorded from published releases, each on its own version line
-and its own tag: `wasi-authz 0.1.0-rc.3` from
-[`wasi-auth-v0.1.0-rc.3`](https://github.com/codeitlikemiley/wasi-auth/releases/tag/wasi-auth-v0.1.0-rc.3),
-and `wasi-http-middleware 0.2.0-alpha.3` from
-[`wasi-http-middleware-v0.2.0-alpha.3`](https://github.com/codeitlikemiley/wasi-auth/releases/tag/wasi-http-middleware-v0.2.0-alpha.3).
-Each is rebuilt and signed by a tag-triggered release workflow that refuses any
-tag whose commit is not on `main` or whose name does not match the prepared
-version.
+Source checkouts and published bundles are different pins. `components.lock.toml`
+tracks `wasi-auth` `bdfad80372287a3be4215aeefad534098ef6537b` (crate version
+`0.1.0-rc.5` in that tree; unpublished target `0.1.0-rc.6`) and
+`wasi-http-middleware` `3df96c21a7906b885e67229e9a7c8c01b6497109` (crate
+version `0.2.0-alpha.3` in that tree; unpublished target `v0.2.0-alpha.4`).
+The digests in `artifact-sets.toml` are still the published bundles:
+`wasi-authz 0.1.0-rc.3` from
+[`wasi-auth-v0.1.0-rc.3`](https://github.com/codeitlikemiley/wasi-auth/releases/tag/wasi-auth-v0.1.0-rc.3)
+(`fc66aabe`), and `wasi-http-middleware 0.2.0-alpha.3` from
+[`wasi-http-middleware-v0.2.0-alpha.3`](https://github.com/codeitlikemiley/wasi-auth/releases/tag/wasi-http-middleware-v0.2.0-alpha.3)
+(`d29dbfcd`). Those bytes are not a measurement of the git pins. CI does not
+run `verify-artifact-set` until `rc.6` and `v0.2.0-alpha.4` exist.
+Each published bundle was rebuilt and signed by a tag-triggered release
+workflow that refuses any tag whose commit is not on `main` or whose name
+does not match the prepared version.
 
 Neither may be regenerated locally. The signing key is generated per release run
 and discarded, so `signing_key_sha256`, `provenance_signature_sha256`, and
@@ -396,8 +403,7 @@ DURATION=600 CONCURRENCY=100 ./scripts/soak-trusted-ingress.sh
 HOST=spin ./scripts/run-middleware-tests.sh
 ```
 
-Wasmtime 46.0.1 runs the signed companion's precomposed chain as the CI
-behavioral gate. Tagged Spin 4.0.2's linker lane, pinned Spin main's
+Wasmtime 50.0.0 is the companion lock and the CI install. Tagged Spin 4.0.2's linker lane, pinned Spin main's
 CPU-metrics regression lane, and the March RC native middleware lane remain
 incompatibility canaries for those hosts. Official Spin 4.2.5 served the
 public stack around this test-app; see [COMPATIBILITY.md](./COMPATIBILITY.md).

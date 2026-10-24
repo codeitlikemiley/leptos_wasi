@@ -23,25 +23,45 @@ There is no 0.5.0-alpha.3 release of this crate.
 
 `production-counter/store` does not use `wasip3` and keeps `rust-version` 1.93.0.
 
-## Signed companion lock
+## Companion source pins
 
 [`tests/middleware/components.lock.toml`](./tests/middleware/components.lock.toml)
-is the checksum-pinned `wasi-auth` 0.1.0-rc.3 / legacy middleware
-`0.2.0-alpha.3` companion. It still records Rust 1.93.0, `wasip3` 0.7.0,
-`wasm-bindgen` 0.2.126, Wasmtime 46.0.1, tagged Spin 4.0.2,
-`wit-bindgen` 0.59.0, Spin SDK 6.0.0, `wasm-tools` 1.253.0, WAC 0.10.1, and
-the Spin fork `4.1.0-pre0` at `c34c584dbf77b3a3528ad0536aa9ce4761b9f772`.
+pins git checkouts. It does not pin the unpublished release names.
+
+| Companion | Git revision | Crate version in that tree | Unpublished target |
+|---|---|---|---|
+| `wasi-auth` ([PR 17](https://github.com/codeitlikemiley/wasi-auth/pull/17)) | `bdfad80372287a3be4215aeefad534098ef6537b` | `0.1.0-rc.5` | `0.1.0-rc.6` |
+| `wasi-http-middleware` ([PR 1](https://github.com/codeitlikemiley/wasi-http-middleware/pull/1)) | `3df96c21a7906b885e67229e9a7c8c01b6497109` | `0.2.0-alpha.3` | `v0.2.0-alpha.4` |
+
+Published `wasi-auth` 0.1.0-rc.5 on main still resolves `wasip3` 0.7.0. The git
+revision is the pin. `wasi-auth` at `bdfad803` still git-depends on middleware
+`896f8f54`; `tests/authz-fixture` path-patches `wasi-http-*` to the sibling
+checkout at `3df96c21`. Header policy at that middleware commit is
+non-overwriting. `tests/authz-lifecycle` git-depends on
+`wasi-http-middleware-component-support` at the same revision, version
+`=0.2.0-alpha.3`.
+
+The lock's `wasip3_version` is `0.9.0` and `wasmtime_version` is `50.0.0`.
+It still records Rust 1.93.0 as the counter-toolchain floor, `wasm-bindgen`
+0.2.126, tagged Spin 4.0.2, Spin SDK 6.0.0, `wasm-tools` 1.253.0, WAC 0.10.1,
+and the Spin fork `4.1.0-pre0` at `c34c584dbf77b3a3528ad0536aa9ce4761b9f772`.
 `spin_final_wasi_supported` stays false. The failure string stays
-`wasi:http/types@0.3.0 resource implementation is missing`.
+`wasi:http/types@0.3.0 resource implementation is missing`. CI installs
+Wasmtime 50.0.0 and Spin 4.0.2. Spin 4.0.2 remains the stable-rejection canary.
 
-`scripts/sync-middleware-components.sh` compares that lock to the companion
-checkout. CI middleware jobs still install Wasmtime 46.0.1 and Spin 4.0.2.
-The library `wasip3` pin is not that lock's `wasip3_version`. Moving the lock
-requires a companion release that is not this crate's change.
+`tests/middleware/artifact-sets.toml` still stores the previous published
+bundles. Authorization digests are the `wasi-auth-v0.1.0-rc.3` assets
+(`fc66aabe`). Middleware digests are the `wasi-http-middleware-v0.2.0-alpha.3`
+bundle (`d29dbfcd13033d923cf0425751c852b21321bf3e`). Those bytes were not
+recomputed for `bdfad803` or `3df96c21`. The companion CI job checks the
+source revisions and does not run `verify-artifact-set` until `0.1.0-rc.6`
+and `v0.2.0-alpha.4` exist.
 
-`tests/authz-fixture` and `tests/authz-lifecycle` still path-depend on that
-0.7 companion, so their lockfiles contain both `wasip3` 0.7.0 and 0.9.0.
-Those fixtures were not recompiled on this revision.
+Every `Cargo.lock` in this repository resolves `wasip3` `0.9.0+wasi-0.3.0`.
+None resolve `wasip3` `0.7.0+wasi`. `tests/authz-fixture` clippy
+`--target wasm32-wasip2 --all-features -D warnings` passed against that graph
+on rustc 1.99.0. `tests/identity-boundary` (2 tests) passed against
+`bdfad803` and `3df96c21`.
 
 ## Hosts verified on 2026-10-24
 
@@ -70,7 +90,7 @@ Spin 4.2.5 served a clean release guest (`wasm32-wasip2`, `--no-default-features
 
 Guest stderr on both is the existing `LEPTOS_OUTPUT_NAME` warning. Neither log contains `trap` or `waitable`.
 
-Agent 7 root-caused that trap to wit-bindgen 0.57.1 `inter-task-wakeup`: a synchronous `stream.cancel-read` while the waitable is still in a waitable set (`FutureState::callback` during `wasi:http/handler@0.3.0#handle`). The fix is wit-bindgen 0.59+ ([wit-bindgen #1638](https://github.com/bytecodealliance/wit-bindgen/pull/1638)). This crate's body collector is not the cause. `wasip3` 0.9.0 depends on `wit-bindgen` 0.62.0, so this revision no longer pulls the 0.57.1 bindings. The old single-file `src/executor.rs` `wasip3::spawn` calls (0.4.2-rc.1 lines 1003 and 1007) now live in `src/executor/p3.rs`, and both `spawn` and `spawn_local` call `wasip3::spawn_local`. Direct `wasip3 =0.7.0` pins are gone from this crate and its in-repo guests. The root `Cargo.lock` resolves only `wasip3` 0.9.0+wasi-0.3.0. `tests/authz-fixture` and `tests/authz-lifecycle` still also lock 0.7.0 through the `wasi-auth` 0.1.0-rc.3 path dependency; that is the companion, not the runtime crate a fullstack guest links.
+Agent 7 root-caused that trap to wit-bindgen 0.57.1 `inter-task-wakeup`: a synchronous `stream.cancel-read` while the waitable is still in a waitable set (`FutureState::callback` during `wasi:http/handler@0.3.0#handle`). The fix is wit-bindgen 0.59+ ([wit-bindgen #1638](https://github.com/bytecodealliance/wit-bindgen/pull/1638)). This crate's body collector is not the cause. `wasip3` 0.9.0 depends on `wit-bindgen` 0.62.0, so this revision no longer pulls the 0.57.1 bindings. The old single-file `src/executor.rs` `wasip3::spawn` calls (0.4.2-rc.1 lines 1003 and 1007) now live in `src/executor/p3.rs`, and both `spawn` and `spawn_local` call `wasip3::spawn_local`. Direct `wasip3 =0.7.0` pins are gone from this crate, its in-repo guests, and the authorization fixture locks. Every `Cargo.lock` resolves only `wasip3` 0.9.0+wasi-0.3.0.
 
 ### Composition
 
@@ -88,7 +108,7 @@ Wasmtime 50 serve of the same composed component without the CORS environment va
 
 ## Not re-run
 
-Browser E2E, cargo-leptos islands build, ten-minute soaks, benchmarks, identity tests against `wasi-auth` newer than 0.1.0-rc.3, and the 0.4.2-rc.1 test-app binary. CI still installs cargo-leptos 0.3.6. `.cursor/install.sh` installs cargo-leptos 0.3.7, Wasmtime 50.0.0, and `wasm-bindgen` 0.2.129 for the library toolchain. That script is not the companion lock.
+Browser E2E, cargo-leptos islands build, ten-minute soaks, benchmarks, and the 0.4.2-rc.1 test-app binary. Identity tests ran against `wasi-auth` `bdfad803` (crate `0.1.0-rc.5` at that commit; unpublished target `0.1.0-rc.6`). CI still installs cargo-leptos 0.3.6. `.cursor/install.sh` installs cargo-leptos 0.3.7, Wasmtime 50.0.0, and `wasm-bindgen` 0.2.129 for the library toolchain. The companion lock's `wasm-bindgen` field stays 0.2.126.
 
 Install the developer-facing tools:
 
@@ -96,7 +116,7 @@ Install the developer-facing tools:
 rustup target add wasm32-wasip2 wasm32-unknown-unknown
 cargo install cargo-leptos --version 0.3.7 --locked
 cargo install wasm-bindgen-cli --version 0.2.126 --locked
-cargo install wasmtime-cli --version 46.0.1 --locked
+cargo install wasmtime-cli --version 50.0.0 --locked
 cargo install --git https://github.com/codeitlikemiley/spin \
   --rev c34c584dbf77b3a3528ad0536aa9ce4761b9f772 \
   --locked --force spin-cli
@@ -129,9 +149,8 @@ The temporary 0.2.114 pin and its Leptos template context are recorded in
 
 ## Runtime claims
 
-The companion lock's Wasmtime 46.0.1 lane remains the CI correctness reference
-for the signed middleware checkout. It is not a claim that its stock CLI meets
-the authorization latency SLO. Tagged Spin 4.0.2 lacks final WASI 0.3 resource
+The companion lock's Wasmtime field is 50.0.0, and CI installs that CLI. It is
+not a claim that the stock CLI meets the authorization latency SLO. Tagged Spin 4.0.2 lacks final WASI 0.3 resource
 implementations; that rejection was reproduced against this revision's Preview 3
 guest. The pinned Spin main commit remains an experimental input in the lock.
 Official Spin 4.2.5 does link and serve this revision's Preview 3 test-app,

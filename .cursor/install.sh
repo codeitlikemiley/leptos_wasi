@@ -6,9 +6,9 @@
 # tests/middleware/components.lock.toml, then warms the workspace build.
 set -euo pipefail
 
-# Developer toolchain for this library revision. The signed companion lock
-# (tests/middleware/components.lock.toml) is a different tuple: Wasmtime
-# 46.0.1, Spin 4.0.2, wasm-bindgen 0.2.126, wasip3 0.7.0.
+# Developer toolchain for this library revision. components.lock.toml pins
+# wasip3 0.9.0 and Wasmtime 50.0.0 for companion source, and still records
+# wasm-bindgen 0.2.126, Spin 4.0.2, and Rust 1.93.0 as the counter floor.
 WASMTIME_VERSION="50.0.0"
 WASM_BINDGEN_VERSION="0.2.129"
 CARGO_LEPTOS_VERSION="0.3.7"

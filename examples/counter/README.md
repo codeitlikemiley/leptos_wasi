@@ -2,7 +2,7 @@
 
 This example demonstrates running a Leptos application using native WASI
 Preview 3 task scheduling and standard HTTP triggers. The commands below
-follow `tests/middleware/components.lock.toml`: Wasmtime 46.0.1, tagged Spin
+follow `tests/middleware/components.lock.toml`: Wasmtime 50.0.0, tagged Spin
 4.0.2 for Preview 2, and the pinned Spin main revision for the experimental
 Preview 3 lane. The library test-app, not this example's browser build, was
 served on Wasmtime 50.0.0 and official Spin 4.2.5. See `COMPATIBILITY.md`.
@@ -15,7 +15,7 @@ served on Wasmtime 50.0.0 and official Spin 4.2.5. See `COMPATIBILITY.md`.
 - **wasm-bindgen CLI:** Version 0.2.129 (`cargo install wasm-bindgen-cli --version 0.2.129 --locked`).
 - **Spin CLI:** the exact main revision in `components.lock.toml`; `make spin`
   builds it into the repository-local tool cache when needed.
-- **Wasmtime CLI:** Version 46.0.1 (`cargo install wasmtime-cli --version 46.0.1 --locked`).
+- **Wasmtime CLI:** Version 50.0.0 (`cargo install wasmtime-cli --version 50.0.0 --locked`).
 
 ## Build and Run
 
