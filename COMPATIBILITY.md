@@ -42,8 +42,8 @@ non-overwriting. `tests/authz-lifecycle` git-depends on
 `=0.2.0-alpha.3`.
 
 The lock's `wasip3_version` is `0.9.0` and `wasmtime_version` is `50.0.0`.
-It still records Rust 1.93.0 as the counter-toolchain floor, `wasm-bindgen`
-0.2.126, tagged Spin 4.0.2, Spin SDK 6.0.0, `wasm-tools` 1.253.0, WAC 0.10.1,
+It records Rust 1.94.0 as the counter-toolchain floor, `wasm-bindgen` CLI
+0.2.129, tagged Spin 4.0.2, Spin SDK 6.0.0, `wasm-tools` 1.253.0, WAC 0.10.1,
 and the Spin fork `4.1.0-pre0` at `c34c584dbf77b3a3528ad0536aa9ce4761b9f772`.
 `spin_final_wasi_supported` stays false. The failure string stays
 `wasi:http/types@0.3.0 resource implementation is missing`. CI installs
@@ -117,7 +117,7 @@ Install the developer-facing tools:
 ```bash
 rustup target add wasm32-wasip2 wasm32-unknown-unknown
 cargo install cargo-leptos --version 0.3.11 --locked
-cargo install wasm-bindgen-cli --version 0.2.126 --locked
+cargo install wasm-bindgen-cli --version 0.2.129 --locked
 cargo install wasmtime-cli --version 50.0.0 --locked
 cargo install --git https://github.com/codeitlikemiley/spin \
   --rev c34c584dbf77b3a3528ad0536aa9ce4761b9f772 \
@@ -138,9 +138,9 @@ emitted on `target_os = "wasi"`. Version 0.2.115 broadened the gate to the
 entire WebAssembly target family, causing WASIp2 components to retain unresolved
 `__wbindgen_placeholder__` imports. The fix was merged in
 [wasm-bindgen #5175](https://github.com/wasm-bindgen/wasm-bindgen/pull/5175)
-and released in 0.2.123. The counter on this revision locks 0.2.129. The
-companion lock still records 0.2.126 for the signed middleware checkout. The
-0.2.114 workaround is not required for either.
+and released in 0.2.123. The counter on this revision locks 0.2.129, and
+the companion lock records the same CLI version. The 0.2.114 workaround is
+not required.
 
 The browser CLI and the `wasm-bindgen` crate resolved in the counter lockfile
 must remain identical. This version does not define the server ABI: the server

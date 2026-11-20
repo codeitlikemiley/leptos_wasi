@@ -208,10 +208,9 @@ fn insert_head_markup(chunk: String, markup: &str) -> String {
         updated.push_str(&chunk[index..]);
         updated
     } else {
-        let mut updated = String::with_capacity(chunk.len() + markup.len());
-        updated.push_str(markup);
-        updated.push_str(&chunk);
-        updated
+        // Preloads are only a hint. Writing them ahead of the document would
+        // put markup before `<!DOCTYPE html>` and force quirks mode.
+        chunk
     }
 }
 
@@ -329,5 +328,15 @@ mod tests {
         assert!(updated.contains(
             "<link rel=\"modulepreload\" href=\"/pkg/split.js\" nonce=\"abc\"></head>"
         ));
+    }
+
+    #[test]
+    fn prefetch_markup_is_dropped_when_the_first_chunk_has_no_head() {
+        let chunk = "<!DOCTYPE html><html><body>".to_owned();
+        let updated = insert_head_markup(
+            chunk.clone(),
+            "<link rel=\"modulepreload\" href=\"/pkg/split.js\">",
+        );
+        assert_eq!(updated, chunk);
     }
 }
