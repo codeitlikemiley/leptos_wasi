@@ -12,7 +12,6 @@ from compare import ENDPOINTS, print_table, warmup
 
 def measure(base, endpoint, duration, concurrency):
     command = ["oha", "--no-tui", "--output-format", "json", "--http-version", "1.1",
-               "--worker-threads", os.environ.get("LOADGEN_THREADS", "4"),
                "-w", "-z", f"{duration}s", "-c", str(concurrency),
                "-m", endpoint["method"]]
     if os.environ.get("LOADGEN_CPUS"):
@@ -22,7 +21,11 @@ def measure(base, endpoint, duration, concurrency):
     if endpoint["body"] is not None:
         command += ["-d", endpoint["body"].decode()]
     command.append(base.rstrip("/") + endpoint["path"])
-    result = json.loads(subprocess.check_output(command, text=True))
+    # The tokio variable works on every oha release; the `--worker-threads`
+    # flag only exists in newer ones.
+    env = {**os.environ,
+           "TOKIO_WORKER_THREADS": os.environ.get("LOADGEN_THREADS", "4")}
+    result = json.loads(subprocess.check_output(command, text=True, env=env))
     validate(result)
     return result
 
