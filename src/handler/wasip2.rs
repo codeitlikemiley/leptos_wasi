@@ -302,8 +302,11 @@ async fn send_response(
                 }
             }
         }
+        // Request the flush without waiting for it. Every byte is already
+        // handed to the host, and `OutgoingBody::finish` below ends the body
+        // after them. Waiting would park this request until the host drains
+        // its body buffer, one extra host round trip per response.
         output.flush()?;
-        crate::executor::WaitPoll::new(output.subscribe()).await?;
         Ok::<_, HandlerError>(())
     }
     .await;
