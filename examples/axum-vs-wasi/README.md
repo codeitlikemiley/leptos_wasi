@@ -70,6 +70,21 @@ then runs a 10-second, 20-concurrency closed loop per endpoint per backend
 and prints rps / p50 / p99 / errors plus `axum / wasi` ratios.
 Raw JSON measurements follow the tables, including achieved concurrency.
 
+For a native keep-alive load generator, install `oha` (`cargo install oha --locked`)
+and select `LOADGEN=oha`. Backend order alternates between endpoints, concurrency
+levels, and runs. For example, on a machine with eight available CPUs:
+
+```bash
+LOADGEN=oha RUNS=3 CONCURRENCY_LIST=20,64 DURATION=30 WARMUP=25 \
+  SERVER_CPUS=0-3 LOADGEN_CPUS=4-7 make compare
+```
+
+The servers share the server CPU set; only one backend is loaded at a time.
+`LOADGEN_THREADS` defaults to 4. oha uses HTTP/1.1 keep-alive and waits for
+in-flight requests at the deadline. Failed or non-2xx requests abort the run.
+Per-probe oha JSON and median tables are printed to stdout. Omit the CPU variables
+to disable affinity. The default `LOADGEN=python` retains the original probe.
+
 ```bash
 DURATION=30 CONCURRENCY=20 make compare
 ```

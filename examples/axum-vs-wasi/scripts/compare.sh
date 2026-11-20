@@ -15,6 +15,16 @@ WASI_URL="${WASI_URL:-http://127.0.0.1:${WASI_PORT}}"
 AXUM_URL="${AXUM_URL:-http://127.0.0.1:${AXUM_PORT}}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 SKIP_START="${SKIP_START:-0}"
+LOADGEN="${LOADGEN:-python}"
+SERVER_PREFIX=()
+if [[ -n "${SERVER_CPUS:-}" ]]; then
+  SERVER_PREFIX=(taskset -c "$SERVER_CPUS")
+fi
+case "$LOADGEN" in
+  python) PROBE=compare.py ;;
+  oha) PROBE=compare_oha.py ;;
+  *) echo "unknown LOADGEN: $LOADGEN (expected python or oha)" >&2; exit 2 ;;
+esac
 
 WASI_WASM="$ROOT/target/wasm32-wasip2/release/compare_wasi.wasm"
 AXUM_BIN="$ROOT/target/release/compare-axum"
@@ -62,7 +72,7 @@ if [[ "$SKIP_START" != "1" ]]; then
   trap cleanup EXIT INT TERM
 
   echo "starting WASI (Preview 2, reuse $REUSE_COUNT) on $WASI_URL"
-  wasmtime serve \
+  "${SERVER_PREFIX[@]}" wasmtime serve \
     -S cli=y \
     --max-instance-reuse-count "$REUSE_COUNT" \
     --dir "$ROOT/public::/static" \
@@ -72,14 +82,14 @@ if [[ "$SKIP_START" != "1" ]]; then
   SERVER_PIDS+=("$!")
 
   echo "starting axum on $AXUM_URL"
-  LEPTOS_SITE_ADDR="127.0.0.1:${AXUM_PORT}" "$AXUM_BIN" >/dev/null 2>&1 &
+  LEPTOS_SITE_ADDR="127.0.0.1:${AXUM_PORT}" "${SERVER_PREFIX[@]}" "$AXUM_BIN" >/dev/null 2>&1 &
   SERVER_PIDS+=("$!")
 
   wait_for "$WASI_URL" "wasi"
   wait_for "$AXUM_URL" "axum"
 fi
 
-python3 "$ROOT/scripts/compare.py" \
+python3 "$ROOT/scripts/$PROBE" \
   --wasi-url "$WASI_URL" \
   --axum-url "$AXUM_URL" \
   --duration "$DURATION" \
