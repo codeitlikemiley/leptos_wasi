@@ -9,7 +9,7 @@ services:
       - public
       - private
   terminal:
-    image: ghcr.io/bytecodealliance/wasmtime:v46.0.1
+    image: ghcr.io/bytecodealliance/wasmtime:v50.0.0
     expose:
       - "8081"
     networks:

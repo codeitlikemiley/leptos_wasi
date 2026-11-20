@@ -6,7 +6,7 @@ repository = "https://github.com/codeitlikemiley/leptos_wasi"
 description = "WASI integrations for the Leptos web framework."
 version = "0.4.2"
 edition = "2024"
-rust-version = "1.93.0"
+rust-version = "1.94.0"
 include = [
     "/benches/**",
     "/src/**",
@@ -29,11 +29,11 @@ throw_error = "0.3.1"
 hydration_context = "0.3.0"
 futures = "0.3.32"
 wasi = { version = "0.14.7", optional = true }
-wasip3 = { version = "=0.7.0", features = ["http-compat"], optional = true }
-leptos = { version = "0.8.20", default-features = false, features = ["nonce", "ssr"] }
+wasip3 = { version = "=0.9.0", features = ["http-compat"], optional = true }
+leptos = { version = "0.8.22", default-features = false, features = ["nonce", "ssr"] }
 leptos_meta = { version = "0.8.6", default-features = false, features = ["ssr"] }
 leptos_router = { version = "0.8.14", default-features = false, features = ["ssr"] }
-leptos_macro = { version = "0.8.17", default-features = false, features = ["generic"] }
+leptos_macro = { version = "=0.8.19", default-features = false, features = ["generic"] }
 tachys = { version = "0.2.18", default-features = false }
 server_fn = { version = "0.8.13", features = ["generic", "axum-no-default"], default-features = false }
 any_spawner = { version = "0.3.0", features = ["futures-executor"] }

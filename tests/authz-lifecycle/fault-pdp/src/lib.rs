@@ -155,6 +155,9 @@ struct BoundedGuard {
 }
 
 impl BoundedGuard {
+    // `AtomicUsize::try_update` is 1.95. This fixture's rust-version is 1.94,
+    // so the 1.99 deprecation of `fetch_update` stays allowed here.
+    #[allow(deprecated)]
     fn try_new(counter: &'static AtomicUsize, limit: usize) -> Option<Self> {
         counter
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
@@ -234,7 +237,7 @@ fn slow_body_response() -> Result<Response, ErrorCode> {
     let (mut writer, reader) = wit_stream::new();
     let (body_result_writer, body_result) =
         wit_future::new(|| Err(ErrorCode::InternalError(None)));
-    wasip3::spawn(async move {
+    wasip3::spawn_local(async move {
         let _body_guard = ActiveGuard::new(&ACTIVE_BODIES);
         for (index, chunk) in chunks.into_iter().enumerate() {
             if index > 0 {
@@ -258,7 +261,7 @@ fn response(status: u16, body: Vec<u8>) -> Result<Response, ErrorCode> {
     let (mut writer, reader) = wit_stream::new();
     let (body_result_writer, body_result) =
         wit_future::new(|| Err(ErrorCode::InternalError(None)));
-    wasip3::spawn(async move {
+    wasip3::spawn_local(async move {
         if writer.write_all(body).await.is_empty() {
             drop(writer);
             let _write_result = body_result_writer.write(Ok(None)).await;
@@ -289,7 +292,7 @@ fn finish_response(
 ) -> Result<Response, ErrorCode> {
     let (response, transmission_result) =
         Response::new(headers, body, body_result);
-    wasip3::spawn(async move {
+    wasip3::spawn_local(async move {
         let _result = transmission_result.await;
     });
     response

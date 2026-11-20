@@ -2,7 +2,7 @@
 name = "test-app"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.93.0"
+rust-version = "1.94.0"
 
 [lib]
 crate-type = ["cdylib"]
@@ -11,12 +11,12 @@ crate-type = ["cdylib"]
 bytes = "1.7.2"
 futures = "0.3.30"
 hydration_context = { version = "0.3.0" }
-leptos = { version = "0.8.20", default-features = false, features = ["ssr"] }
+leptos = { version = "0.8.22", default-features = false, features = ["ssr"] }
 leptos_meta = { version = "0.8.6", default-features = false, features = ["ssr"] }
 leptos_router = { version = "0.8.14", default-features = false, features = ["ssr"] }
 leptos_wasi = { package = "leptos-wasi-runtime", path = "../..", default-features = false }
-server_fn = { version = "0.8.12", default-features = false, features = ["axum-no-default"] }
-wasip3 = { version = "=0.7.0", features = ["http-compat"], optional = true }
+server_fn = { version = "0.8.13", default-features = false, features = ["axum-no-default"] }
+wasip3 = { version = "=0.9.0", features = ["http-compat"], optional = true }
 wasi = { version = "0.14.7", optional = true }
 axum-core = "0.5.6"
 serde = { version = "1", features = ["derive"] }

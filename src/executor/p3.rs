@@ -12,11 +12,13 @@ pub struct Wasip3Executor;
 
 impl CustomExecutor for Wasip3Executor {
     fn spawn(&self, future: any_spawner::PinnedFuture<()>) {
-        wasip3::spawn(future);
+        // `wasip3` 0.8 renamed `spawn` to `spawn_local`. A `Send` task is a
+        // valid local task; Preview 3 still has one host executor.
+        wasip3::spawn_local(future);
     }
 
     fn spawn_local(&self, future: any_spawner::PinnedLocalFuture<()>) {
-        wasip3::spawn(future);
+        wasip3::spawn_local(future);
     }
 
     fn poll_local(&self) {

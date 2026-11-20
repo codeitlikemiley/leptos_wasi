@@ -69,12 +69,13 @@ longer paired evidence.
 
 The original Spin 4.0.0 run produced no final-WASI measurement: it rejects the component because
 the `wasi:http/types@0.3.0` resource implementation is missing. Its native
-middleware commit also hard-codes the March RC handler world. Both Spin paths
-are expected-failure canaries. Tagged Spin 4.0.2 has the same ABI limitation.
-Pinned Spin main now runs plain final-WASI terminals, but composed middleware
-is blocked by its default CPU-metrics panic; only Wasmtime 46 is a blocking final-WASI
-runtime. Release evidence must include generated comparison JSON rather than
-reusing the historical RC-era table above.
+middleware commit also hard-codes the March RC handler world. Both of those
+Spin paths are expected-failure canaries. Tagged Spin 4.0.2 has the same ABI
+limitation and was reproduced on 2026-10-24. Pinned Spin main's CPU-metrics
+panic was not re-run. Official Spin 4.2.5 serves this test-app; that serve
+was not a benchmark, and the table above was not remeasured on Wasmtime 50
+or `wasip3` 0.9. Release evidence must include generated comparison JSON
+rather than reusing the historical RC-era table above.
 
 ## Measured 0.3.2 versus 0.4 soak deltas
 

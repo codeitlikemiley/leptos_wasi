@@ -214,8 +214,9 @@ where
 
 #[cfg(test)]
 mod tests {
+    use futures::StreamExt;
     use http::{
-        Request, StatusCode,
+        HeaderValue, Request, StatusCode,
         header::{ACCEPT, CONTENT_TYPE, LOCATION, X_CONTENT_TYPE_OPTIONS},
         request::Parts,
     };
@@ -224,7 +225,7 @@ mod tests {
         HandlerConfig, RequestPolicyError, policy_response,
     };
     use super::*;
-    use leptos::prelude::{use_context, view};
+    use leptos::prelude::{ElementChild, GlobalAttributes, use_context, view};
     use leptos_router::{
         components::{Route, Router, Routes},
         path,
@@ -465,6 +466,121 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("off"),
             "an application value set through ResponseOptions must survive"
+        );
+    }
+
+    fn csp_page() -> impl IntoView {
+        use http::header::CONTENT_SECURITY_POLICY;
+
+        let nonce = leptos::nonce::use_nonce()
+            .map(|nonce| nonce.to_string())
+            .unwrap_or_default();
+        if !nonce.is_empty()
+            && let Some(options) = use_context::<ResponseOptions>()
+        {
+            let policy =
+                format!("default-src 'self'; script-src 'nonce-{nonce}'");
+            if let Ok(value) = HeaderValue::from_str(&policy) {
+                options.insert_header(CONTENT_SECURITY_POLICY, value);
+            }
+        }
+        view! {
+            <html>
+                <head></head>
+                <body>
+                    <script nonce=nonce>"console.log(1)"</script>
+                    <p>"csp"</p>
+                </body>
+            </html>
+        }
+    }
+
+    fn csp_app() -> impl IntoView {
+        view! {
+            <Router>
+                <Routes fallback=|| view! { "not found" }>
+                    <Route path=path!("/csp") view=csp_page />
+                </Routes>
+            </Router>
+        }
+    }
+
+    async fn render_csp_document() -> (String, String) {
+        let _ = any_spawner::Executor::init_futures_executor();
+        let request = Request::builder()
+            .uri("/csp")
+            .body(Bytes::new())
+            .expect("test request should be valid");
+        let core = HandlerCore::new(request, HandlerConfig::default())
+            .generate_routes_with_exclusions_and_discovery_context(
+                csp_app,
+                None,
+                || {},
+            )
+            .expect("route registration should succeed");
+        let response = core.render(csp_app, || {}).await;
+        let header = response
+            .0
+            .headers()
+            .get(http::header::CONTENT_SECURITY_POLICY)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        let body = match response.0.into_body() {
+            Body::Sync(bytes) => String::from_utf8(bytes.to_vec())
+                .expect("rendered body should be UTF-8"),
+            Body::Async(stream) => {
+                stream
+                    .map(|chunk| {
+                        let chunk =
+                            chunk.expect("stream chunk should not fail");
+                        String::from_utf8(chunk.to_vec())
+                            .expect("rendered chunk should be UTF-8")
+                    })
+                    .collect::<String>()
+                    .await
+            }
+        };
+        (header, body)
+    }
+
+    fn nonce_from_policy(policy: &str) -> Option<&str> {
+        let start = policy.find("'nonce-")?;
+        let rest = &policy[start + "'nonce-".len()..];
+        rest.split('\'').next()
+    }
+
+    fn nonce_from_script(body: &str) -> Option<&str> {
+        let marker = "<script nonce=\"";
+        let start = body.find(marker)?;
+        let rest = &body[start + marker.len()..];
+        rest.split('"').next()
+    }
+
+    /// The nonce is minted inside the request owner, stamped onto inline
+    /// scripts, and available to the application while the first chunk renders
+    /// so a CSP header written through `ResponseOptions` can name that same
+    /// value. A second request must not reuse it.
+    #[tokio::test(flavor = "current_thread")]
+    async fn csp_nonce_is_per_request_and_matches_the_script() {
+        let (first_policy, first_body) = render_csp_document().await;
+        let (second_policy, second_body) = render_csp_document().await;
+
+        let first_header = nonce_from_policy(&first_policy)
+            .expect("CSP header should name a nonce");
+        let first_script = nonce_from_script(&first_body)
+            .expect("SSR script should carry a nonce");
+        let second_header = nonce_from_policy(&second_policy)
+            .expect("second CSP header should name a nonce");
+        let second_script = nonce_from_script(&second_body)
+            .expect("second SSR script should carry a nonce");
+
+        assert_eq!(first_header, first_script);
+        assert_eq!(second_header, second_script);
+        assert_ne!(first_header, second_header);
+        assert!(
+            !first_body.contains(&format!("crossorigin=\"{first_header}\"")),
+            "script nonce must not be copied into crossorigin"
         );
     }
 

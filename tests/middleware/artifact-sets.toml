@@ -8,8 +8,10 @@ source_revision = "d29dbfcd13033d923cf0425751c852b21321bf3e"
 # Every digest below is recorded from the published release assets at
 # https://github.com/codeitlikemiley/wasi-auth/releases/tag/wasi-http-middleware-v0.2.0-alpha.3
 # The signing key is ephemeral per release run, so the three signature-related
-# digests can only ever be satisfied by that one immutable bundle; a local
-# pipeline rerun will not reproduce them.
+# digests can only ever be satisfied by that one immutable bundle.
+# Source builds now track wasi-http-middleware 3df96c21 (PR 1). That commit
+# still declares 0.2.0-alpha.3. v0.2.0-alpha.4 is unpublished, so these
+# digests are not a measurement of 3df96c21.
 checksum_manifest = "artifacts/SHA256SUMS"
 checksum_manifest_sha256 = "a5d33bd061d654abdf7cf4a0bfb699823c70417ed86d1210f7d8d321c18a50d2"
 provenance = "artifacts/provenance.intoto.json"
@@ -71,13 +73,13 @@ wit_sha256 = "6907a1a8738866e9402eda194075d9eaa39cfa436d9226047831a453e395807a"
 [[bundle]]
 id = "authorization"
 name = "wasi-authz"
-version = "0.1.0-rc.3"
-source_revision = "fc66aabefdbc57c37e72924cf7f6746c23b0c1fa"
-# Every digest below is recorded from the published release assets at
-# https://github.com/codeitlikemiley/wasi-auth/releases/tag/wasi-auth-v0.1.0-rc.3
-# The signing key is ephemeral per release run, so the three signature-related
-# digests can only ever be satisfied by that one immutable bundle; a local
-# pipeline rerun will not reproduce them.
+version = "0.1.0-rc.5"
+source_revision = "bdfad80372287a3be4215aeefad534098ef6537b"
+# The identity above is the git pin (wasi-auth PR 17). rc.6 is unpublished,
+# and this commit has no signed bundle. The digests below are still the
+# published wasi-auth-v0.1.0-rc.3 assets (fc66aabe). They are not a
+# measurement of bdfad803. Do not run verify-artifact-set against them
+# until an rc.6 bundle exists.
 checksum_manifest = "artifacts/RELEASE-SHA256SUMS"
 checksum_manifest_sha256 = "f8f2a78cc2cf9b39fbe2aeaf59dba329bf35e29b51a215ddee86ca38ee52cc62"
 provenance = "artifacts/provenance.intoto.json"

@@ -225,5 +225,27 @@ class SpinManifestDiscoveryTests(unittest.TestCase):
         )
 
 
+class TerminalCrateBoundaryTests(unittest.TestCase):
+    """Whole-service middleware and identity codecs stay outside this crate."""
+
+    def test_src_does_not_vendor_middleware_or_identity_codecs(self) -> None:
+        banned = (
+            "TrustedContextCodec",
+            "AuthContextV1",
+            "VerifiedRequestContext",
+            "compose_middleware_pipeline",
+            "fn with_middleware",
+            "wasi:http/handler@0.3.0-rc",
+        )
+        root = MODULE.ROOT / "src"
+        offenders: list[str] = []
+        for path in root.rglob("*.rs"):
+            text = path.read_text()
+            for needle in banned:
+                if needle in text:
+                    offenders.append(f"{path.relative_to(MODULE.ROOT)} contains {needle}")
+        self.assertEqual(offenders, [])
+
+
 if __name__ == "__main__":
     unittest.main()

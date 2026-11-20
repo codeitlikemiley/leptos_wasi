@@ -69,6 +69,10 @@ verify-split:
 	@test -f target/site/pkg/__wasm_split_manifest.json
 	@test -f target/site/pkg/__wasm_split.______________________.js
 	@test -n "$$(find target/site/pkg -maxdepth 1 -name 'split_*.wasm' -print -quit)"
+	@if grep -q -a -F '__wbindgen_placeholder__' target/site/pkg/counter.wasm; then \
+	  echo "counter.wasm still imports __wbindgen_placeholder__; the browser cannot instantiate it, so the lazy split chunk is never requested" >&2; \
+	  exit 1; \
+	fi
 	@echo "Verified islands entrypoint and lazy WASM split artifacts in target/site/pkg."
 
 reset-counter:

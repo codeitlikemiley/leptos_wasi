@@ -16,13 +16,17 @@ https://github.com/user-attachments/assets/6596e0f3-80c0-4258-a4e3-f85c41b328b4
 
 ## Requirements
 
-- Rust 1.93.0 or newer
+- Rust 1.94.0 or newer. CI and `rust-toolchain.toml` pin 1.99.0
 - `wasm32-wasip2` (`rustup target add wasm32-wasip2`)
-- Cargo Leptos 0.3.7 for the included islands example
-- `wasm-bindgen-cli` 0.2.126, matching the counter's locked browser crate
-- Wasmtime 46.0.1 as the final-WASI correctness reference; tagged Spin 4.0.2
-  for Preview 2; or the maintained Spin `4.1.0-pre0` fork at `c34c584...` for
-  the final Preview 3 release-candidate lane
+- Cargo Leptos 0.3.11 for the included islands example. The browser CI job
+  installs the same version. 0.3.6 leaves `__wbindgen_placeholder__` imports
+  in the split module, so the browser never instantiates it.
+- `wasm-bindgen-cli` 0.2.129, matching the counter's locked browser crate
+- Wasmtime 50.0.0 and official Spin 4.2.5 serve this revision's Preview 3
+  test-app, including server-function POST and SSR. CI installs Wasmtime
+  50.0.0 and Spin 4.0.2. Spin 4.0.2 rejects final `wasi:http@0.3.0`. The
+  maintained Spin `4.1.0-pre0` fork at `c34c584...` remains the lock's
+  experimental lane
 
 The Rust target name is `wasm32-wasip2` for both component models. The
 `wasip2` and `wasip3` crate features select the host bindings and executor, not
@@ -101,9 +105,11 @@ composition; it does not require another Handler builder method.
 
 | Runtime | Composed chain |
 |---|---|
-| Wasmtime 46.0.1 | Serves the WAC-precomposed chain |
+| Wasmtime 50.0.0 | Serves a WAC plug of `cors`, `security-headers`, and `request-id` around this test-app when the CORS environment is set. `POST /api/post_test` and `GET /ssr/async` returned 200 on 2026-10-24 |
+| Wasmtime 50.0.0 | CI install, matching `components.lock.toml` |
 | Tagged Spin 4.0.2 | Cannot link final `wasi:http@0.3.0` |
-| Pinned Spin main | Terminal and outbound HTTP work; the default CPU-metrics hook panics for WAC-composed handlers, and native middleware remains RC-only |
+| Official Spin 4.2.5 | Same public stack, WAC-composed and native `dependencies.middleware`, served those body routes. `authn-policy` was not in the chain |
+| Pinned Spin main | Terminal and outbound HTTP work on the lock's fork; the default CPU-metrics hook panic was not re-run |
 
 The Spin paths are compatibility canaries, not deployment claims. See [WASIp3
 HTTP Middleware](./MIDDLEWARE.md) for the boundary between component
@@ -115,15 +121,25 @@ final-WASI compatibility](./SPIN_COMPATIBILITY.md) for the exact gates.
 Typed authentication, Cedar/SpiceDB authorization, and trusted ingress live in
 the separately versioned `wasi-auth` repository, not in this crate. Its private
 `leptos-wasi-authz` bridge is an application dependency, not a `leptos_wasi`
-handler API. The compatibility middleware implementation and its imported
-history live under `wasi-auth/legacy/wasi-http-middleware`; this repository
-consumes checksum-pinned local artifacts from both.
+handler API. HTTP middleware lives in `wasi-http-middleware`.
 
-This repository pins `wasi-auth 0.1.0-rc.3` and its legacy middleware workspace
-at `0.2.0-alpha.3`. The authorization bundle is recorded from the assets
-published on the upstream `wasi-auth-v0.1.0-rc.3` release rather than from any
-local pipeline run, because that run's signing key is ephemeral.
-`tests/middleware/components.lock.toml` records the exact revisions.
+Source pins, recorded in `tests/middleware/components.lock.toml`:
+
+- `wasi-auth` `bdfad80372287a3be4215aeefad534098ef6537b`
+  ([PR 17](https://github.com/codeitlikemiley/wasi-auth/pull/17)). The crate
+  version in that tree is `0.1.0-rc.5`. The unpublished release target is
+  `0.1.0-rc.6`. Published `0.1.0-rc.5` on main still resolves `wasip3` 0.7.0,
+  so Cargo requirements stay `=0.1.0-rc.5` and the git revision is the pin.
+- `wasi-http-middleware` `3df96c21a7906b885e67229e9a7c8c01b6497109`
+  ([PR 1](https://github.com/codeitlikemiley/wasi-http-middleware/pull/1)).
+  The crate version in that tree is `0.2.0-alpha.3`. Header policy is
+  non-overwriting. The unpublished release target is `v0.2.0-alpha.4`.
+
+`tests/middleware/artifact-sets.toml` still records the published
+`wasi-auth-v0.1.0-rc.3` and `wasi-http-middleware-v0.2.0-alpha.3` bundles.
+Those digests were not recomputed for the git pins above. CI checks the
+source revisions and does not verify those signature digests until `rc.6`
+and `v0.2.0-alpha.4` are published.
 
 ### Scope
 
@@ -378,11 +394,12 @@ for the exact rule and how it differs from `leptos_axum` and `leptos_actix`.
 ## Content Security Policy
 
 `leptos_wasi` provides a fresh Leptos nonce for every request, alongside the
-other standard contexts, and stamps it onto the inline hydration and streaming
-`<script>` elements it emits. It does not emit a `Content-Security-Policy`
-header. An application can emit one with no additional `leptos_wasi` API by
-writing the header through `ResponseOptions` while the first chunk of the
-document is rendered:
+other standard contexts, and stamps it onto the inline streaming `<script>`
+elements it emits. Split-WASM preload links emitted by this crate use that
+same nonce on the `nonce` attribute and `crossorigin="anonymous"`. It does
+not emit a `Content-Security-Policy` header. An application can emit one with
+no additional `leptos_wasi` API by writing the header through `ResponseOptions`
+while the first chunk of the document is rendered:
 
 ```rust
 use http::{HeaderValue, header::CONTENT_SECURITY_POLICY};
@@ -447,6 +464,12 @@ server build without further feature configuration; enable `leptos_meta/nonce`
 as well if you want `leptos_meta`'s `Script` and `Style` to carry the nonce
 automatically.
 
+Leptos 0.8.22 `HydrationScripts` still writes the nonce into the `crossorigin`
+attribute of its modulepreload and wasm preload links (`hydration/mod.rs`).
+That is upstream of this crate. A nonce CSP will not match those two links
+until Leptos emits `nonce` and a separate `crossorigin`. The lazy split
+preloads this crate inserts are not that path.
+
 The reference production topology in [WASIp3 HTTP Middleware](./MIDDLEWARE.md)
 places response security headers at the ingress. Emitting the policy from the
 guest is what lets it carry the per-request nonce; an ingress that does not see
@@ -476,10 +499,11 @@ a host fileserver or CDN.
 
 ## Islands and split browser WASM
 
-Leptos islands and browser WASM splitting work with the Preview 3 server
-component on Wasmtime 46.0.1. Splitting affects the browser target
-(`wasm32-unknown-unknown`), not the WASI server component. Spin promotion is
-blocked until a tagged release links final `wasi:http@0.3.0`.
+Leptos islands and browser WASM splitting were last exercised with the
+Preview 3 server component on Wasmtime 46.0.1. That browser lane was not
+re-run on Wasmtime 50 or Spin 4.2.5. Splitting affects the browser target
+(`wasm32-unknown-unknown`), not the WASI server component. Spin 4.2.5 does
+link the server component; the browser promotion on that host is still open.
 
 ```rust
 #[wasm_bindgen::prelude::wasm_bindgen]
