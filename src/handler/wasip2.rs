@@ -294,14 +294,14 @@ async fn send_response(
     let mut response_bytes = 0_u64;
     let transfer = async {
         match response.0.into_body() {
+            // The whole body is in hand, so one host call writes it and
+            // waits for the flush. With tracing the separate write below is
+            // kept, so first-byte time is taken when the host accepts the
+            // write for every body type, not when the flush completes.
+            #[cfg(not(feature = "tracing"))]
             Body::Sync(bytes) if bytes.len() <= BLOCKING_WRITE_LIMIT => {
-                // The whole body is in hand, so one host call writes it and
-                // waits for the flush.
                 output.blocking_write_and_flush(&bytes)?;
                 response_bytes = bytes.len() as u64;
-                if !bytes.is_empty() {
-                    trace_first_byte(&trace);
-                }
                 return Ok(());
             }
             Body::Sync(bytes) => {
@@ -405,6 +405,7 @@ fn send_internal_error(response_out: ResponseOutparam) {
 }
 
 /// Largest write `blocking-write-and-flush` accepts in one call.
+#[cfg(not(feature = "tracing"))]
 const BLOCKING_WRITE_LIMIT: usize = 4096;
 
 async fn write_all(
