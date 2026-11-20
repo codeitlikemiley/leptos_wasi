@@ -6,9 +6,10 @@ Same Leptos 0.8 app, two servers:
   `RouteTable` installed via `generate_routes_from`
 - **axum**: `leptos_axum` SSR on tokio
 
-This folder is a measurement harness, not a stored benchmark. Run it on your
-machine and read the table it prints. There are no recorded rps or latency
-numbers here on purpose.
+This folder is a measurement harness. Run it on your machine and read the
+table it prints. One recorded run, with the Spin comparison and a breakdown of
+the gap, is in
+[PERFORMANCE.md](../../PERFORMANCE.md#comparison-with-native-axum).
 
 ## Prerequisites
 
