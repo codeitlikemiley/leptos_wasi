@@ -384,6 +384,9 @@ table](#reusing-the-route-table)) so discovery is not paid again on every SSR
 request. See [Production
 Support](./PRODUCTION.md#component-instance-reuse) for the measurements and the
 obligation, and [Performance Baseline](./PERFORMANCE.md) for the method.
+[Comparison with native axum](./PERFORMANCE.md#comparison-with-native-axum)
+records throughput against `leptos_axum`, Wasmtime against Spin, and where the
+difference comes from.
 
 A redirect carried by a server-function response has its `Location` reduced to
 a same-origin path before it is sent. A `Location` written through

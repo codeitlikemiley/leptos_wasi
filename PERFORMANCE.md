@@ -368,6 +368,92 @@ amortizes the 183 us across up to 128 requests (~1.4 us/request). Claimed
 paths already skip discovery without a table. The soak guest
 (`tests/test-app`) now installs that `RouteTable` with `generate_routes_from`.
 
+## Comparison with native axum
+
+`examples/axum-vs-wasi/` serves the same Leptos app from `leptos_wasi` on
+`wasmtime serve` and from `leptos_axum` on tokio. The numbers below are one
+recorded run, not a service-level objective. Run the harness on your own
+hardware before relying on them.
+
+Setup: 8 vCPU VM, library at `6d7d7f8`, Wasmtime 50.0.0 Preview 2 with
+`--max-instance-reuse-count 128`, `oha` HTTP/1.1 keep-alive, servers pinned to
+four CPUs and `oha` to the other four, medians of 3 alternating 15 s runs, no
+failed requests. Each cell is requests per second / p50 ms / p99 ms.
+
+```sh
+LOADGEN=oha RUNS=3 DURATION=15 WARMUP=25 CONCURRENCY_LIST=20,64 \
+  SERVER_CPUS=0-3 LOADGEN_CPUS=4-7 make compare
+```
+
+20 connections:
+
+| Endpoint | leptos_wasi | axum | axum / wasi rps |
+|---|---|---|---:|
+| `GET /` (SSR) | 37215 / 0.5 / 1.2 | 71820 / 0.2 / 1.4 | 1.93x |
+| `GET /api/get_test` | 63865 / 0.3 / 1.7 | 233786 / 0.1 / 0.3 | 3.66x |
+| `POST /api/post_test` | 49623 / 0.3 / 1.7 | 209002 / 0.1 / 0.3 | 4.21x |
+| `POST /api/form_test` | 50117 / 0.4 / 1.0 | 174580 / 0.1 / 0.4 | 3.48x |
+| `GET /static/hello.txt` | 26768 / 0.7 / 3.0 | 30506 / 0.6 / 4.2 | 1.14x |
+
+64 connections:
+
+| Endpoint | leptos_wasi | axum | axum / wasi rps |
+|---|---|---|---:|
+| `GET /` (SSR) | 39072 / 1.6 / 4.6 | 75243 / 0.8 / 4.5 | 1.93x |
+| `GET /api/get_test` | 68739 / 0.9 / 2.6 | 209229 / 0.2 / 1.5 | 3.04x |
+| `POST /api/post_test` | 53985 / 1.1 / 3.5 | 220832 / 0.3 / 2.8 | 4.09x |
+| `POST /api/form_test` | 54382 / 1.1 / 2.9 | 231487 / 0.3 / 0.6 | 4.26x |
+| `GET /static/hello.txt` | 28977 / 2.2 / 5.7 | 29578 / 2.1 / 5.7 | 1.02x |
+
+The default Python probe in that example tops out near 3,000 requests per
+second for both backends, so it measures the client. Use `LOADGEN=oha` for
+throughput.
+
+### Where the gap comes from
+
+Server CPU per request for a 14-byte response, measured with `perf` on the
+same setup:
+
+| Component | CPU per request |
+|---|---:|
+| Minimal `wasi:http` component, no Leptos and no `leptos_wasi` | 37 us |
+| The same component making the host calls `leptos_wasi` makes | 45 us |
+| `leptos_wasi` | 64 us |
+
+The minimal component reached about 119,000 requests per second on `GET`
+where axum reached about 216,000, so roughly half of the distance to axum is
+the cost of the host's `wasi:http` path. The rest is in the guest: 19 host
+calls per request against 8 for the minimal component, and guest code spread
+across the executor, `http` type conversion, allocation, and reactive context
+setup with no single hot spot.
+
+### Host settings
+
+- Instance reuse is the largest lever. Reuse 1 measured about 8,200 requests
+  per second where reuse 128 measured 35,000 to 37,000 on the same endpoint.
+- `--max-instance-reuse-count 20000 -S http-outgoing-body-buffer-chunks=64`
+  measured a further 11% to 15% on the server-function endpoints over reuse
+  128 in 16 paired runs.
+- A WASIp3 build of the same app with concurrent reuse was 27% to 36% slower
+  than the Preview 2 build on Wasmtime 50.
+
+### Spin
+
+The same Preview 2 component was run on Spin 4.3.0 (which embeds Wasmtime
+50.0.1) against `wasmtime serve` 50.0.0, 10 interleaved rounds per endpoint,
+no failed requests:
+
+| Spin 4.3.0 compared with | Spin rps / Wasmtime rps | Rounds Spin won |
+|---|---|---:|
+| Wasmtime, reuse 1 | 0.79x to 0.88x | 5 of 50 |
+| Wasmtime, reuse 128 | 0.14x to 0.24x | 0 of 50 |
+| Wasmtime, reuse 20000 and 64 buffer chunks | 0.13x to 0.24x | 0 of 50 |
+
+Spin does not reuse instances for Preview 2 components, so each request pays
+for a new instance, as Wasmtime does with reuse 1. The Spin build pinned by
+`scripts/bootstrap-spin-main.sh` was 4% to 11% slower than 4.3.0. A WASIp3
+build, the case where Spin reuses instances, was not measured.
+
 ## Reproducing release evidence
 
 Pull-request CI runs paired ten-minute, 100-concurrency baseline and candidate
