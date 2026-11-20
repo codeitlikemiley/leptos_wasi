@@ -135,7 +135,7 @@ impl Handler {
         };
         match crate::request::p2::collect_wasi_body(
             request,
-            &parts.headers,
+            &parts,
             config.max_request_body_size(),
             config.request_body_timeout_ns(),
         ) {
@@ -261,9 +261,12 @@ async fn send_response(
     let prepared = (|| {
         let headers = response.headers()?;
         let outgoing = OutgoingResponse::new(headers);
-        outgoing
-            .set_status_code(response.0.status().as_u16())
-            .map_err(|()| HandlerError::OutgoingResponse("status"))?;
+        // A new `outgoing-response` already has status 200.
+        if status != StatusCode::OK {
+            outgoing
+                .set_status_code(status.as_u16())
+                .map_err(|()| HandlerError::OutgoingResponse("status"))?;
+        }
         let body = outgoing
             .body()
             .map_err(|()| HandlerError::OutgoingResponse("body"))?;
@@ -291,6 +294,16 @@ async fn send_response(
     let mut response_bytes = 0_u64;
     let transfer = async {
         match response.0.into_body() {
+            Body::Sync(bytes) if bytes.len() <= BLOCKING_WRITE_LIMIT => {
+                // The whole body is in hand, so one host call writes it and
+                // waits for the flush.
+                output.blocking_write_and_flush(&bytes)?;
+                response_bytes = bytes.len() as u64;
+                if !bytes.is_empty() {
+                    trace_first_byte(&trace);
+                }
+                return Ok(());
+            }
             Body::Sync(bytes) => {
                 write_all(&output, &bytes, &trace, &mut response_bytes).await?;
             }
@@ -302,8 +315,9 @@ async fn send_response(
                 }
             }
         }
-        output.flush()?;
-        crate::executor::WaitPoll::new(output.subscribe()).await?;
+        // Nothing else in this request can make progress until the flush
+        // completes, so block in the host instead of parking on a pollable.
+        output.blocking_flush()?;
         Ok::<_, HandlerError>(())
     }
     .await;
@@ -389,6 +403,9 @@ fn send_internal_error(response_out: ResponseOutparam) {
     drop(output);
     let _ = OutgoingBody::finish(body, None);
 }
+
+/// Largest write `blocking-write-and-flush` accepts in one call.
+const BLOCKING_WRITE_LIMIT: usize = 4096;
 
 async fn write_all(
     output: &OutputStream,
