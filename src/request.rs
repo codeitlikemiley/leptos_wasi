@@ -42,12 +42,8 @@ pub mod p2 {
         timeout_ns: Option<u64>,
     ) -> Result<http::Request<Bytes>, RequestError> {
         let parts = request_parts(&request)?;
-        let body = collect_wasi_body(
-            request,
-            &parts.headers,
-            max_body_size,
-            timeout_ns,
-        )?;
+        let body =
+            collect_wasi_body(request, &parts, max_body_size, timeout_ns)?;
         Ok(http::Request::from_parts(parts, body))
     }
 
@@ -74,14 +70,17 @@ pub mod p2 {
     )]
     pub fn collect_wasi_body(
         request: IncomingRequest,
-        headers: &http::HeaderMap,
+        parts: &http::request::Parts,
         max_body_size: usize,
         timeout_ns: Option<u64>,
     ) -> Result<Bytes, RequestError> {
-        let declared =
-            crate::handler::validate_content_length(headers, max_body_size)?;
+        let declared = crate::handler::validate_content_length(
+            &parts.headers,
+            max_body_size,
+        )?;
 
-        if matches!(request.method(), Method::Get | Method::Head) {
+        // The converted method is used so the host is not asked twice.
+        if matches!(parts.method, http::Method::GET | http::Method::HEAD) {
             return Ok(Bytes::new());
         }
 
