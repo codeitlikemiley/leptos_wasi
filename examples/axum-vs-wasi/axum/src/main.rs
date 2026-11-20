@@ -28,6 +28,13 @@ async fn main() {
         .await
         .unwrap_or_else(|error| panic!("failed to bind {addr}: {error}"));
     println!("compare-axum listening on http://{addr}");
+    // Without TCP_NODELAY the static handler's separate header and body
+    // writes stall on the client's delayed ACK (about 40 ms per request).
+    let listener = axum::serve::ListenerExt::tap_io(listener, |stream| {
+        if let Err(error) = stream.set_nodelay(true) {
+            eprintln!("failed to set TCP_NODELAY: {error}");
+        }
+    });
     axum::serve(listener, app)
         .await
         .unwrap_or_else(|error| panic!("server error: {error}"));
