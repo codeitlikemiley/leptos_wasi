@@ -499,9 +499,9 @@ a host fileserver or CDN.
 
 ## Islands and split browser WASM
 
-Leptos islands and browser WASM splitting were last exercised with the
-Preview 3 server component on Wasmtime 46.0.1. That browser lane was not
-re-run on Wasmtime 50 or Spin 4.2.5. Splitting affects the browser target
+Leptos islands and browser WASM splitting work with the Preview 3 server
+component on Wasmtime 50.0.0; the browser CI job runs that lane. It was not
+re-run on Spin 4.2.5. Splitting affects the browser target
 (`wasm32-unknown-unknown`), not the WASI server component. Spin 4.2.5 does
 link the server component; the browser promotion on that host is still open.
 
